@@ -52,7 +52,7 @@ impl Application for Rustrest {
     }
 
     fn title(&self) -> String {
-        String::from("Rustrest Pro - Production API Client")
+        String::from("Rustrest - API Client")
     }
 
     fn update(&mut self, message: Message) -> Command<Message> {
