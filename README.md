@@ -1,5 +1,5 @@
 ## Description
-Rustrest is a native HTTP client written in Rust.
+Rustrest is a native API testing platform written in Rust.
 
 ## Screenshot
 
@@ -14,7 +14,11 @@ Rustrest is a native HTTP client written in Rust.
 - [ ] import/export collections
 - [ ] environment variables
 - [ ] docs generation
+- Request section
+  - [ ] params to update url and vice versa
 - Response section
+  - [ ] support bangla in body response
+  - [ ] add json view in body response
   - [ ] add different views in body response
   - [ ] add preview in body response
   - [ ] add response pages (cookies, headers, )
