@@ -2629,6 +2629,7 @@ dependencies = [
  "iced",
  "reqwest",
  "serde",
+ "serde_json",
  "tokio",
 ]
 
