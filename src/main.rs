@@ -1,31 +1,11 @@
+mod http_client;
+
+use http_client::{HttpMethod, send_request};
 use iced::widget::{Space, button, column, pick_list, row, text, text_input};
-use iced::{Alignment, Element, Length, Sandbox, Settings};
+use iced::{Alignment, Application, Command, Element, Length, Settings, Theme};
 
 pub fn main() -> iced::Result {
     Rustrest::run(Settings::default())
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-enum HttpMethod {
-    GET,
-    POST,
-    PUT,
-    DELETE,
-}
-
-impl std::fmt::Display for HttpMethod {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                HttpMethod::GET => "GET",
-                HttpMethod::POST => "POST",
-                HttpMethod::PUT => "PUT",
-                HttpMethod::DELETE => "DELETE",
-            }
-        )
-    }
 }
 
 struct Rustrest {
@@ -43,47 +23,50 @@ enum Message {
     ResponseReceived(Result<String, String>),
 }
 
-impl Sandbox for Rustrest {
+impl Application for Rustrest {
+    type Executor = iced::executor::Default;
     type Message = Message;
+    type Theme = Theme;
+    type Flags = ();
 
-    fn new() -> Self {
-        Self {
-            url: String::from("https://httpbin.org/get"),
-            method: HttpMethod::GET,
-            response_body: String::from("Response will appear here..."),
-            is_loading: false,
-        }
+    fn new(_flags: Self::Flags) -> (Self, Command<Message>) {
+        (
+            Self {
+                url: String::from("https://httpbin.org/get"),
+                method: HttpMethod::GET,
+                response_body: String::from("Response will appear here..."),
+                is_loading: false,
+            },
+            Command::none(),
+        )
     }
 
     fn title(&self) -> String {
         String::from("Rustrest - API Client")
     }
 
-    fn update(&mut self, message: Message) {
+    fn update(&mut self, message: Message) -> Command<Message> {
         match message {
             Message::UrlChanged(url) => {
                 self.url = url;
+                Command::none()
             }
             Message::MethodChanged(method) => {
                 self.method = method;
+                Command::none()
             }
             Message::SendPressed => {
                 if self.is_loading {
-                    return;
+                    return Command::none();
                 }
                 self.is_loading = true;
                 self.response_body = String::from("Sending request...");
 
-                let url = self.url.clone();
-                let method = self.method;
-
-                let url_clone = url.clone();
-
-                match send_request(url_clone, method) {
-                    Ok(res) => self.response_body = res,
-                    Err(err) => self.response_body = format!("Error: {}", err),
-                }
-                self.is_loading = false;
+                // Execute the asynchronous request off the main thread
+                Command::perform(
+                    send_request(self.url.clone(), self.method),
+                    Message::ResponseReceived,
+                )
             }
             Message::ResponseReceived(res) => {
                 self.is_loading = false;
@@ -91,21 +74,19 @@ impl Sandbox for Rustrest {
                     Ok(body) => self.response_body = body,
                     Err(err) => self.response_body = err,
                 }
+                Command::none()
             }
         }
     }
 
     fn view(&self) -> Element<Message> {
-        let methods = vec![
-            HttpMethod::GET,
-            HttpMethod::POST,
-            HttpMethod::PUT,
-            HttpMethod::DELETE,
-        ];
-
         // HTTP Method Dropdown
-        let method_picker =
-            pick_list(methods, Some(self.method), Message::MethodChanged).padding(10);
+        let method_picker = pick_list(
+            &HttpMethod::ALL[..],
+            Some(self.method),
+            Message::MethodChanged,
+        )
+        .padding(10);
 
         // URL Input field
         let url_input = text_input("Enter Request URL", &self.url)
@@ -118,7 +99,11 @@ impl Sandbox for Rustrest {
         } else {
             "Send"
         })
-        .on_press(Message::SendPressed)
+        .on_press_maybe(if self.is_loading {
+            None
+        } else {
+            Some(Message::SendPressed)
+        })
         .padding(10);
 
         // Top Request Bar
@@ -141,18 +126,4 @@ impl Sandbox for Rustrest {
         .padding(20)
         .into()
     }
-}
-
-// Helper synchronous wrapper for network request
-fn send_request(url: String, method: HttpMethod) -> Result<String, reqwest::Error> {
-    let client = reqwest::blocking::Client::new();
-    let req = match method {
-        HttpMethod::GET => client.get(&url),
-        HttpMethod::POST => client.post(&url).body("{}"),
-        HttpMethod::PUT => client.put(&url).body("{}"),
-        HttpMethod::DELETE => client.delete(&url),
-    };
-
-    let response = req.send()?;
-    response.text()
 }
