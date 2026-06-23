@@ -36,17 +36,14 @@ pub async fn send_request(
     body: String,
     headers_raw: String,
 ) -> Result<HttpResponse, String> {
-    // validate URL
     let reqwest_url =
         reqwest::Url::parse(&url).map_err(|e| format!("Invalid URL pattern: {}", e))?;
 
-    // initialize Client with production timeouts
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(30))
         .build()
         .map_err(|e| format!("Failed to initialize client: {}", e))?;
 
-    // build base request
     let req_method = match method {
         HttpMethod::GET => reqwest::Method::GET,
         HttpMethod::POST => reqwest::Method::POST,
@@ -57,7 +54,6 @@ pub async fn send_request(
 
     let mut req_builder = client.request(req_method, reqwest_url);
 
-    // parse and inject headers
     for line in headers_raw.lines() {
         if let Some((key, val)) = line.split_once(':') {
             let key = key.trim();
@@ -68,12 +64,10 @@ pub async fn send_request(
         }
     }
 
-    // inject request body if applicable
     if method != HttpMethod::GET && method != HttpMethod::DELETE && !body.trim().is_empty() {
         req_builder = req_builder.body(body);
     }
 
-    // execute request and profile response latency
     let start_time = Instant::now();
     let response = req_builder
         .send()
@@ -81,7 +75,6 @@ pub async fn send_request(
         .map_err(|e| format!("Network Dispatch Error: {}", e))?;
     let elapsed = start_time.elapsed();
 
-    // parse status and headers
     let status = response.status().as_u16();
     let mut headers = HashMap::new();
     for (key, value) in response.headers().iter() {
@@ -90,13 +83,11 @@ pub async fn send_request(
         }
     }
 
-    // safely decode response payload
     let body_text = response
         .text()
         .await
         .map_err(|e| format!("Payload Parsing Error: {}", e))?;
 
-    // pretty-print if JSON
     let finalized_body = if let Ok(json_val) = serde_json::from_str::<serde_json::Value>(&body_text)
     {
         serde_json::to_string_pretty(&json_val).unwrap_or(body_text)
