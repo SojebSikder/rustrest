@@ -1,5 +1,6 @@
-use super::types::{BodyType, KeyValuePair, RequestSubTab};
+use super::types::{BodyType, KeyValuePair, RawType, RequestSubTab};
 use crate::http_client::HttpMethod;
+use iced::widget::text_editor;
 
 #[derive(Debug, Clone)]
 pub enum TabMessage {
@@ -8,7 +9,9 @@ pub enum TabMessage {
     SubTabSelected(RequestSubTab),
     AuthChanged(String),
     BodyTypeChanged(BodyType),
-    BodyChanged(String),
+
+    BodyChanged(text_editor::Action),
+    RawTypeChanged(RawType),
 
     ParamRowChanged(usize, KeyValuePair),
     AddParamRow,

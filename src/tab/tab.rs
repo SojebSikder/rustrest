@@ -1,10 +1,10 @@
 use super::components::kv_editor_pane;
 use super::messages::TabMessage;
-use super::types::{BodyType, KeyValuePair, RequestSubTab};
+use super::types::{BodyType, KeyValuePair, RawType, RequestSubTab};
 use crate::http_client::{HttpMethod, HttpResponse};
 
 use iced::widget::{
-    button, column, container, pick_list, radio, row, scrollable, text, text_input,
+    button, column, container, pick_list, radio, row, scrollable, text, text_editor, text_input,
 };
 use iced::{Alignment, Element, Font, Length};
 
@@ -15,10 +15,11 @@ pub struct Tab {
     pub method: HttpMethod,
     pub active_sub_tab: RequestSubTab,
     pub body_type: BodyType,
+    pub raw_type: RawType,
     pub request_params: Vec<KeyValuePair>,
     pub request_headers: Vec<KeyValuePair>,
     pub request_auth: String,
-    pub request_body: String,
+    pub request_body: text_editor::Content,
     pub body_form_data: Vec<KeyValuePair>,
     pub body_urlencoded: Vec<KeyValuePair>,
     pub response: Option<Result<HttpResponse, String>>,
@@ -34,6 +35,7 @@ impl Tab {
             method: HttpMethod::GET,
             active_sub_tab: RequestSubTab::Params,
             body_type: BodyType::Raw,
+            raw_type: RawType::Json, // default option
             request_params: vec![
                 KeyValuePair::new("key", "value"),
                 KeyValuePair::new("foo", "bar"),
@@ -43,7 +45,8 @@ impl Tab {
                 KeyValuePair::new("Accept", "application/json"),
             ],
             request_auth: String::from("Bearer your_token_here"),
-            request_body: String::from("{\n  \"key\": \"value\"\n}"),
+            // initialize text_editor content with a default text string
+            request_body: text_editor::Content::with_text("{\n  \"key\": \"value\"\n}"),
             body_form_data: vec![KeyValuePair::new("form_field", "value")],
             body_urlencoded: vec![KeyValuePair::new("form_key", "form_value")],
             response: None,
@@ -58,7 +61,12 @@ impl Tab {
             TabMessage::SubTabSelected(sub_tab) => self.active_sub_tab = sub_tab,
             TabMessage::AuthChanged(auth) => self.request_auth = auth,
             TabMessage::BodyTypeChanged(body_type) => self.body_type = body_type,
-            TabMessage::BodyChanged(body) => self.request_body = body,
+
+            // updates tracking the text dropdown selection
+            TabMessage::RawTypeChanged(raw_type) => self.raw_type = raw_type,
+
+            // updates tracking internal multiline keystrokes/actions
+            TabMessage::BodyChanged(action) => self.request_body.perform(action),
 
             TabMessage::ParamRowChanged(index, kv) => {
                 if let Some(row) = self.request_params.get_mut(index) {
@@ -184,7 +192,7 @@ impl Tab {
                 .into(),
 
             RequestSubTab::Body => {
-                let mut radio_bar = row![].spacing(15);
+                let mut radio_bar = row![].spacing(15).align_items(Alignment::Center);
                 for variant in BodyType::ALL.iter() {
                     let radio_btn =
                         radio(variant.label(), *variant, Some(self.body_type), move |b| {
@@ -216,13 +224,40 @@ impl Tab {
                         move |i| wrap_msg(TabMessage::RemoveUrlencodedRow(i)),
                     ),
 
-                    _ => scrollable(
-                        text_input("Body Payload Configuration...", &self.request_body)
-                            .on_input(move |b| wrap_msg(TabMessage::BodyChanged(b)))
-                            .padding(10),
-                    )
-                    .height(Length::Fixed(110.0))
-                    .into(),
+                    BodyType::Raw => {
+                        // dropdown selection for the "Raw" view mode
+                        let raw_dropdown =
+                            pick_list(&RawType::ALL[..], Some(self.raw_type), move |t| {
+                                wrap_msg(TabMessage::RawTypeChanged(t))
+                            })
+                            .padding(5);
+
+                        // multiline text editor configuration block
+                        let editor = text_editor(&self.request_body)
+                            .on_action(move |action| wrap_msg(TabMessage::BodyChanged(action)))
+                            .padding(10);
+
+                        column![
+                            raw_dropdown,
+                            container(editor)
+                                .height(Length::Fixed(150.0))
+                                .style(iced::theme::Container::Box)
+                        ]
+                        .spacing(10)
+                        .into()
+                    }
+
+                    _ => {
+                        // safe fallback configuration handler for other variant states
+                        let editor = text_editor(&self.request_body)
+                            .on_action(move |action| wrap_msg(TabMessage::BodyChanged(action)))
+                            .padding(10);
+
+                        container(editor)
+                            .height(Length::Fixed(150.0))
+                            .style(iced::theme::Container::Box)
+                            .into()
+                    }
                 };
 
                 column![radio_bar, body_input].spacing(10).into()

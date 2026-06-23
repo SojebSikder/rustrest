@@ -64,3 +64,36 @@ impl KeyValuePair {
         }
     }
 }
+
+// body type
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RawType {
+    Text,
+    JavaScript,
+    Json,
+    Html,
+    Xml,
+}
+
+impl RawType {
+    pub const ALL: [Self; 5] = [
+        Self::Text,
+        Self::JavaScript,
+        Self::Json,
+        Self::Html,
+        Self::Xml,
+    ];
+}
+
+impl std::fmt::Display for RawType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Text => write!(f, "Text"),
+            Self::JavaScript => write!(f, "JavaScript"),
+            Self::Json => write!(f, "JSON"),
+            Self::Html => write!(f, "HTML"),
+            Self::Xml => write!(f, "XML"),
+        }
+    }
+}

@@ -125,11 +125,14 @@ impl Application for Rustrest {
                         .map(|kv| (kv.key.trim().to_string(), kv.value.trim().to_string()))
                         .collect();
 
+                    // extract the string out of the multi-line text editor state
+                    let body_string = tab.request_body.text();
+
                     return Command::perform(
                         send_request(
                             final_url,
                             tab.method,
-                            tab.request_body.clone(),
+                            body_string,
                             filtered_headers,
                             tab.request_auth.clone(),
                         ),
