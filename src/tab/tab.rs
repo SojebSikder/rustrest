@@ -270,7 +270,7 @@ impl Tab {
             None => text(if self.is_loading {
                 "Awaiting network response..."
             } else {
-                "No transactions dispatched yet."
+                "Enter a request and click 'Send' to see the response."
             })
             .style(iced::theme::Text::Color(iced::Color::from_rgb(
                 0.4, 0.4, 0.4,
