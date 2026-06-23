@@ -1,16 +1,24 @@
+#![windows_subsystem = "windows"]
+
 mod http_client;
 
 use http_client::{HttpMethod, HttpResponse, send_request};
 use iced::widget::{button, column, container, pick_list, row, scrollable, text, text_input};
 use iced::{Alignment, Application, Command, Element, Font, Length, Settings, Size, Theme};
 
+// define app name
+const APP_NAME: &str = "Rustrest";
+
 pub fn main() -> iced::Result {
     let mut settings = Settings::default();
-    settings.window.size = Size::new(900.0, 700.0);
+    settings.window.size = Size::new(1000.0, 750.0);
     Rustrest::run(settings)
 }
 
-struct Rustrest {
+/// Dynamic reusable state holding structural data for a singular Postman-style Tab
+struct Tab {
+    id: usize,
+    name: String,
     url: String,
     method: HttpMethod,
     request_body: String,
@@ -19,14 +27,43 @@ struct Rustrest {
     is_loading: bool,
 }
 
+impl Tab {
+    fn new(id: usize) -> Self {
+        Self {
+            id,
+            name: format!("Request {}", id),
+            url: String::from("https://httpbin.org/json"),
+            method: HttpMethod::GET,
+            request_body: String::from("{\n  \"key\": \"value\"\n}"),
+            request_headers: String::from(
+                "Content-Type: application/json\nAccept: application/json",
+            ),
+            response: None,
+            is_loading: false,
+        }
+    }
+}
+
+struct Rustrest {
+    tabs: Vec<Tab>,
+    active_tab_index: usize,
+    next_tab_id: usize,
+}
+
 #[derive(Debug, Clone)]
 enum Message {
+    // Tab Management
+    TabSelected(usize),
+    NewTabPressed,
+    CloseTabPressed(usize),
+
+    // Core Client Actions
     UrlChanged(String),
     MethodChanged(HttpMethod),
     RequestBodyChanged(String),
     RequestHeadersChanged(String),
     SendPressed,
-    ResponseReceived(Result<HttpResponse, String>),
+    ResponseReceived(usize, Result<HttpResponse, String>), // Carries tab target index context
 }
 
 impl Application for Rustrest {
@@ -38,87 +75,159 @@ impl Application for Rustrest {
     fn new(_flags: Self::Flags) -> (Self, Command<Message>) {
         (
             Self {
-                url: String::from("https://httpbin.org/json"),
-                method: HttpMethod::GET,
-                request_body: String::from("{\n  \"key\": \"value\"\n}"),
-                request_headers: String::from(
-                    "Content-Type: application/json\nAccept: application/json",
-                ),
-                response: None,
-                is_loading: false,
+                tabs: vec![Tab::new(1)],
+                active_tab_index: 0,
+                next_tab_id: 2,
             },
             Command::none(),
         )
     }
 
     fn title(&self) -> String {
-        String::from("Rustrest - API Client")
+        String::from(APP_NAME.to_string() + " - API Testing Platform")
     }
 
     fn update(&mut self, message: Message) -> Command<Message> {
         match message {
+            Message::TabSelected(index) => {
+                if index < self.tabs.len() {
+                    self.active_tab_index = index;
+                }
+                Command::none()
+            }
+            Message::NewTabPressed => {
+                self.tabs.push(Tab::new(self.next_tab_id));
+                self.active_tab_index = self.tabs.len() - 1;
+                self.next_tab_id += 1;
+                Command::none()
+            }
+            Message::CloseTabPressed(index) => {
+                if self.tabs.len() > 1 {
+                    self.tabs.remove(index);
+                    // Prevent index bound crashes when deleting surrounding components
+                    if self.active_tab_index >= self.tabs.len() {
+                        self.active_tab_index = self.tabs.len() - 1;
+                    }
+                }
+                Command::none()
+            }
             Message::UrlChanged(url) => {
-                self.url = url;
+                if let Some(tab) = self.tabs.get_mut(self.active_tab_index) {
+                    tab.url = url;
+                }
                 Command::none()
             }
             Message::MethodChanged(method) => {
-                self.method = method;
+                if let Some(tab) = self.tabs.get_mut(self.active_tab_index) {
+                    tab.method = method;
+                }
                 Command::none()
             }
             Message::RequestBodyChanged(body) => {
-                self.request_body = body;
+                if let Some(tab) = self.tabs.get_mut(self.active_tab_index) {
+                    tab.request_body = body;
+                }
                 Command::none()
             }
             Message::RequestHeadersChanged(headers) => {
-                self.request_headers = headers;
+                if let Some(tab) = self.tabs.get_mut(self.active_tab_index) {
+                    tab.request_headers = headers;
+                }
                 Command::none()
             }
             Message::SendPressed => {
-                if self.is_loading || self.url.is_empty() {
-                    return Command::none();
-                }
-                self.is_loading = true;
-                self.response = None;
+                let tab_idx = self.active_tab_index;
+                if let Some(tab) = self.tabs.get_mut(tab_idx) {
+                    if tab.is_loading || tab.url.is_empty() {
+                        return Command::none();
+                    }
+                    tab.is_loading = true;
+                    tab.response = None;
 
-                Command::perform(
-                    send_request(
-                        self.url.clone(),
-                        self.method,
-                        self.request_body.clone(),
-                        self.request_headers.clone(),
-                    ),
-                    Message::ResponseReceived,
-                )
+                    return Command::perform(
+                        send_request(
+                            tab.url.clone(),
+                            tab.method,
+                            tab.request_body.clone(),
+                            tab.request_headers.clone(),
+                        ),
+                        move |res| Message::ResponseReceived(tab_idx, res),
+                    );
+                }
+                Command::none()
             }
-            Message::ResponseReceived(res) => {
-                self.is_loading = false;
-                self.response = Some(res);
+            Message::ResponseReceived(tab_idx, res) => {
+                if let Some(tab) = self.tabs.get_mut(tab_idx) {
+                    tab.is_loading = false;
+                    tab.response = Some(res);
+                }
                 Command::none()
             }
         }
     }
 
     fn view(&self) -> Element<Message> {
+        // tab selector bar
+        let mut tab_bar = row![].spacing(5).align_items(Alignment::Center);
+
+        for (idx, tab) in self.tabs.iter().enumerate() {
+            let is_active = idx == self.active_tab_index;
+
+            // Build tab item containing title and individual close action
+            let mut tab_button = button(
+                row![
+                    text(&tab.name).size(13),
+                    button("×")
+                        .on_press(Message::CloseTabPressed(idx))
+                        .padding(2)
+                        .style(iced::theme::Button::Text)
+                ]
+                .spacing(8)
+                .align_items(Alignment::Center),
+            )
+            .padding(8);
+
+            if !is_active {
+                // Dim non-focused context variants
+                tab_button = tab_button
+                    .style(iced::theme::Button::Secondary)
+                    .on_press(Message::TabSelected(idx));
+            }
+
+            tab_bar = tab_bar.push(tab_button);
+        }
+
+        // action selector element addition button
+        let add_tab_btn = button("+")
+            .on_press(Message::NewTabPressed)
+            .padding(8)
+            .style(iced::theme::Button::Positive);
+
+        tab_bar = tab_bar.push(add_tab_btn);
+
+        // render the content panes for the selected tab
+        let current_tab = &self.tabs[self.active_tab_index];
+
         let method_picker: Element<Message> = pick_list(
             &HttpMethod::ALL[..],
-            Some(self.method),
+            Some(current_tab.method),
             Message::MethodChanged,
         )
         .padding(10)
         .into();
 
         let url_input: Element<Message> =
-            text_input("https://api.example.com/v1/resource", &self.url)
+            text_input("https://api.example.com/v1/resource", &current_tab.url)
                 .on_input(Message::UrlChanged)
                 .padding(12)
                 .into();
 
-        let send_btn: Element<Message> = button(if self.is_loading {
+        let send_btn: Element<Message> = button(if current_tab.is_loading {
             "Sending..."
         } else {
             "Send"
         })
-        .on_press_maybe(if self.is_loading {
+        .on_press_maybe(if current_tab.is_loading {
             None
         } else {
             Some(Message::SendPressed)
@@ -132,14 +241,14 @@ impl Application for Rustrest {
 
         let headers_input: Element<Message> = text_input(
             "Headers (Format -> Key: Value, one per line)",
-            &self.request_headers,
+            &current_tab.request_headers,
         )
         .on_input(Message::RequestHeadersChanged)
         .padding(10)
         .into();
 
         let body_input: Element<Message> =
-            text_input("JSON Request Body Payload...", &self.request_body)
+            text_input("JSON Request Body Payload...", &current_tab.request_body)
                 .on_input(Message::RequestBodyChanged)
                 .padding(10)
                 .into();
@@ -152,9 +261,9 @@ impl Application for Rustrest {
         ]
         .spacing(8);
 
-        let response_content: Element<Message> = match &self.response {
+        let response_content: Element<Message> = match &current_tab.response {
             None => {
-                if self.is_loading {
+                if current_tab.is_loading {
                     text("Awaiting network target buffer transmission...")
                         .style(iced::theme::Text::Color(iced::Color::from_rgb(
                             0.5, 0.5, 0.5,
@@ -170,12 +279,12 @@ impl Application for Rustrest {
             }
             Some(Ok(resp)) => {
                 let status_color = if resp.status >= 200 && resp.status < 300 {
-                    iced::Color::from_rgb(0.0, 0.6, 0.1) // Green
+                    iced::Color::from_rgb(0.0, 0.6, 0.1)
                 } else {
-                    iced::Color::from_rgb(0.8, 0.1, 0.1) // Red
+                    iced::Color::from_rgb(0.8, 0.1, 0.1)
                 };
 
-                let metadata_row: iced::widget::Row<'_, Message, Theme> = row![
+                let metadata_row = row![
                     text(format!("Status: {}", resp.status))
                         .style(iced::theme::Text::Color(status_color)),
                     text(format!(" | Latency: {}ms", resp.elapsed.as_millis())).size(14),
@@ -190,7 +299,7 @@ impl Application for Rustrest {
                             .padding(10)
                             .style(iced::theme::Container::Box)
                     )
-                    .height(Length::Fixed(320.0))
+                    .height(Length::Fixed(280.0))
                 ]
                 .spacing(10)
                 .into()
@@ -208,9 +317,11 @@ impl Application for Rustrest {
             .into(),
         };
 
+        // main application grid layout
         container(
             column![
-                text("Rustrest API Client Studio").size(26),
+                // text("Rustrest API Testing Platform").size(24),
+                tab_bar,
                 request_bar,
                 configuration_pane,
                 container(response_content)
