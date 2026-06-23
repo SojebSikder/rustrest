@@ -92,12 +92,46 @@ impl Application for Rustrest {
                     tab.is_loading = true;
                     tab.response = None;
 
+                    // construct dynamic URL by filtering and appending only selected query parameters
+                    let mut final_url = tab.url.clone();
+                    let active_params: Vec<String> = tab
+                        .request_params
+                        .iter()
+                        .filter(|kv| kv.is_active && !kv.key.trim().is_empty())
+                        .map(|kv| {
+                            format!(
+                                "{}={}",
+                                urlencoding::encode(kv.key.trim()),
+                                urlencoding::encode(kv.value.trim())
+                            )
+                        })
+                        .collect();
+
+                    if !active_params.is_empty() {
+                        let query_string = active_params.join("&");
+                        if final_url.contains('?') {
+                            final_url.push('&');
+                        } else {
+                            final_url.push('?');
+                        }
+                        final_url.push_str(&query_string);
+                    }
+
+                    // filter out and package only selected headers
+                    let filtered_headers: Vec<(String, String)> = tab
+                        .request_headers
+                        .iter()
+                        .filter(|kv| kv.is_active && !kv.key.trim().is_empty())
+                        .map(|kv| (kv.key.trim().to_string(), kv.value.trim().to_string()))
+                        .collect();
+
                     return Command::perform(
                         send_request(
-                            tab.url.clone(),
+                            final_url,
                             tab.method,
                             tab.request_body.clone(),
-                            tab.request_headers.clone(),
+                            filtered_headers,
+                            tab.request_auth.clone(),
                         ),
                         move |res| Message::ResponseReceived(tab_idx, res),
                     );
@@ -115,7 +149,6 @@ impl Application for Rustrest {
     }
 
     fn view(&self) -> Element<Message> {
-        // Main Tab Selection Bar Layout
         let mut tab_bar = row![].spacing(5).align_items(Alignment::Center);
         for (idx, tab) in self.tabs.iter().enumerate() {
             let is_active = idx == self.active_tab_index;
@@ -146,7 +179,6 @@ impl Application for Rustrest {
             .style(iced::theme::Button::Positive);
         tab_bar = tab_bar.push(add_tab_btn);
 
-        // Render current active layout workspace
         let current_tab = &self.tabs[self.active_tab_index];
         let tab_view = current_tab.view(Message::ActiveTabMessage, Message::SendPressed);
 

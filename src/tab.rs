@@ -1,5 +1,7 @@
 use crate::http_client::{HttpMethod, HttpResponse};
-use iced::widget::{button, column, container, pick_list, row, scrollable, text, text_input};
+use iced::widget::{
+    button, checkbox, column, container, pick_list, row, scrollable, text, text_input,
+};
 use iced::{Alignment, Element, Font, Length};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -23,15 +25,39 @@ impl RequestSubTab {
     }
 }
 
+// represents a key-value row with active selection status
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeyValuePair {
+    pub is_active: bool,
+    pub key: String,
+    pub value: String,
+}
+
+impl KeyValuePair {
+    pub fn new(key: &str, value: &str) -> Self {
+        Self {
+            is_active: true,
+            key: String::from(key),
+            value: String::from(value),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum TabMessage {
     UrlChanged(String),
     MethodChanged(HttpMethod),
     SubTabSelected(RequestSubTab),
-    ParamsChanged(String),
+    // Auth and Body remain strings, while Params and Headers are now list-based
     AuthChanged(String),
-    HeadersChanged(String),
     BodyChanged(String),
+    // Multi-item action messages
+    ParamRowChanged(usize, KeyValuePair),
+    HeaderRowChanged(usize, KeyValuePair),
+    AddParamRow,
+    AddHeaderRow,
+    RemoveParamRow(usize),
+    RemoveHeaderRow(usize),
 }
 
 pub struct Tab {
@@ -40,9 +66,9 @@ pub struct Tab {
     pub url: String,
     pub method: HttpMethod,
     pub active_sub_tab: RequestSubTab,
-    pub request_params: String,
+    pub request_params: Vec<KeyValuePair>,
+    pub request_headers: Vec<KeyValuePair>,
     pub request_auth: String,
-    pub request_headers: String,
     pub request_body: String,
     pub response: Option<Result<HttpResponse, String>>,
     pub is_loading: bool,
@@ -56,11 +82,15 @@ impl Tab {
             url: String::from("https://httpbin.org/json"),
             method: HttpMethod::GET,
             active_sub_tab: RequestSubTab::Params,
-            request_params: String::from("key=value&foo=bar"),
+            request_params: vec![
+                KeyValuePair::new("key", "value"),
+                KeyValuePair::new("foo", "bar"),
+            ],
+            request_headers: vec![
+                KeyValuePair::new("Content-Type", "application/json"),
+                KeyValuePair::new("Accept", "application/json"),
+            ],
             request_auth: String::from("Bearer your_token_here"),
-            request_headers: String::from(
-                "Content-Type: application/json\nAccept: application/json",
-            ),
             request_body: String::from("{\n  \"key\": \"value\"\n}"),
             response: None,
             is_loading: false,
@@ -72,10 +102,36 @@ impl Tab {
             TabMessage::UrlChanged(url) => self.url = url,
             TabMessage::MethodChanged(method) => self.method = method,
             TabMessage::SubTabSelected(sub_tab) => self.active_sub_tab = sub_tab,
-            TabMessage::ParamsChanged(params) => self.request_params = params,
             TabMessage::AuthChanged(auth) => self.request_auth = auth,
-            TabMessage::HeadersChanged(headers) => self.request_headers = headers,
             TabMessage::BodyChanged(body) => self.request_body = body,
+
+            // Params and Headers mutations
+            TabMessage::ParamRowChanged(index, kv) => {
+                if let Some(row) = self.request_params.get_mut(index) {
+                    *row = kv;
+                }
+            }
+            TabMessage::HeaderRowChanged(index, kv) => {
+                if let Some(row) = self.request_headers.get_mut(index) {
+                    *row = kv;
+                }
+            }
+            TabMessage::AddParamRow => {
+                self.request_params.push(KeyValuePair::new("", ""));
+            }
+            TabMessage::AddHeaderRow => {
+                self.request_headers.push(KeyValuePair::new("", ""));
+            }
+            TabMessage::RemoveParamRow(index) => {
+                if index < self.request_params.len() {
+                    self.request_params.remove(index);
+                }
+            }
+            TabMessage::RemoveHeaderRow(index) => {
+                if index < self.request_headers.len() {
+                    self.request_headers.remove(index);
+                }
+            }
         }
     }
 
@@ -128,22 +184,141 @@ impl Tab {
 
         // Sub-tab active panel selection
         let inner_input_field: Element<Message> = match self.active_sub_tab {
-            RequestSubTab::Params => text_input("Query Parameters...", &self.request_params)
-                .on_input(move |p| wrap_msg(TabMessage::ParamsChanged(p)))
-                .padding(10)
-                .into(),
+            RequestSubTab::Params => {
+                let mut content = column![].spacing(5);
+                for (idx, item) in self.request_params.iter().enumerate() {
+                    let item_clone = item.clone();
+                    let key_clone = item.key.clone();
+                    let val_clone = item.value.clone();
+
+                    let row_element = row![
+                        checkbox("", item.is_active).on_toggle(move |checked| {
+                            wrap_msg(TabMessage::ParamRowChanged(
+                                idx,
+                                KeyValuePair {
+                                    is_active: checked,
+                                    key: key_clone.clone(),
+                                    value: val_clone.clone(),
+                                },
+                            ))
+                        }),
+                        text_input("Key", &item.key)
+                            .on_input(move |k| {
+                                wrap_msg(TabMessage::ParamRowChanged(
+                                    idx,
+                                    KeyValuePair {
+                                        is_active: item_clone.is_active,
+                                        key: k,
+                                        value: item_clone.value.clone(),
+                                    },
+                                ))
+                            })
+                            .padding(8),
+                        text_input("Value", &item.value)
+                            .on_input(move |v| {
+                                wrap_msg(TabMessage::ParamRowChanged(
+                                    idx,
+                                    KeyValuePair {
+                                        is_active: item_clone.is_active,
+                                        key: item_clone.key.clone(),
+                                        value: v,
+                                    },
+                                ))
+                            })
+                            .padding(8),
+                        button("Delete")
+                            .on_press(wrap_msg(TabMessage::RemoveParamRow(idx)))
+                            .padding(8)
+                            .style(iced::theme::Button::Destructive)
+                    ]
+                    .spacing(8)
+                    .align_items(Alignment::Center);
+
+                    content = content.push(row_element);
+                }
+
+                column![
+                    scrollable(content).height(Length::Fixed(150.0)),
+                    button("Add Param")
+                        .on_press(wrap_msg(TabMessage::AddParamRow))
+                        .padding(8)
+                ]
+                .spacing(10)
+                .into()
+            }
+            RequestSubTab::Headers => {
+                let mut content = column![].spacing(5);
+                for (idx, item) in self.request_headers.iter().enumerate() {
+                    let item_clone = item.clone();
+                    let key_clone = item.key.clone();
+                    let val_clone = item.value.clone();
+
+                    let row_element = row![
+                        checkbox("", item.is_active).on_toggle(move |checked| {
+                            wrap_msg(TabMessage::HeaderRowChanged(
+                                idx,
+                                KeyValuePair {
+                                    is_active: checked,
+                                    key: key_clone.clone(),
+                                    value: val_clone.clone(),
+                                },
+                            ))
+                        }),
+                        text_input("Key", &item.key)
+                            .on_input(move |k| {
+                                wrap_msg(TabMessage::HeaderRowChanged(
+                                    idx,
+                                    KeyValuePair {
+                                        is_active: item_clone.is_active,
+                                        key: k,
+                                        value: item_clone.value.clone(),
+                                    },
+                                ))
+                            })
+                            .padding(8),
+                        text_input("Value", &item.value)
+                            .on_input(move |v| {
+                                wrap_msg(TabMessage::HeaderRowChanged(
+                                    idx,
+                                    KeyValuePair {
+                                        is_active: item_clone.is_active,
+                                        key: item_clone.key.clone(),
+                                        value: v,
+                                    },
+                                ))
+                            })
+                            .padding(8),
+                        button("Delete")
+                            .on_press(wrap_msg(TabMessage::RemoveHeaderRow(idx)))
+                            .padding(8)
+                            .style(iced::theme::Button::Destructive)
+                    ]
+                    .spacing(8)
+                    .align_items(Alignment::Center);
+
+                    content = content.push(row_element);
+                }
+
+                column![
+                    scrollable(content).height(Length::Fixed(150.0)),
+                    button("Add Header")
+                        .on_press(wrap_msg(TabMessage::AddHeaderRow))
+                        .padding(8)
+                ]
+                .spacing(10)
+                .into()
+            }
             RequestSubTab::Auth => text_input("Authorization Headers...", &self.request_auth)
                 .on_input(move |a| wrap_msg(TabMessage::AuthChanged(a)))
                 .padding(10)
                 .into(),
-            RequestSubTab::Headers => text_input("Headers (Key: Value)...", &self.request_headers)
-                .on_input(move |h| wrap_msg(TabMessage::HeadersChanged(h)))
-                .padding(10)
-                .into(),
-            RequestSubTab::Body => text_input("JSON Request Body Payload...", &self.request_body)
-                .on_input(move |b| wrap_msg(TabMessage::BodyChanged(b)))
-                .padding(10)
-                .into(),
+            RequestSubTab::Body => scrollable(
+                text_input("JSON Request Body Payload...", &self.request_body)
+                    .on_input(move |b| wrap_msg(TabMessage::BodyChanged(b)))
+                    .padding(10),
+            )
+            .height(Length::Fixed(150.0))
+            .into(),
         };
 
         let configuration_pane = column![sub_tab_bar, inner_input_field].spacing(10);

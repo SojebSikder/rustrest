@@ -29,12 +29,12 @@ pub struct HttpResponse {
     pub elapsed: Duration,
 }
 
-/// Robust asynchronous network execution function
 pub async fn send_request(
     url: String,
     method: HttpMethod,
     body: String,
-    headers_raw: String,
+    headers_list: Vec<(String, String)>,
+    auth_raw: String,
 ) -> Result<HttpResponse, String> {
     let reqwest_url =
         reqwest::Url::parse(&url).map_err(|e| format!("Invalid URL pattern: {}", e))?;
@@ -54,14 +54,15 @@ pub async fn send_request(
 
     let mut req_builder = client.request(req_method, reqwest_url);
 
-    for line in headers_raw.lines() {
-        if let Some((key, val)) = line.split_once(':') {
-            let key = key.trim();
-            let val = val.trim();
-            if !key.is_empty() {
-                req_builder = req_builder.header(key, val);
-            }
-        }
+    // append filtered clean header key-value items
+    for (key, val) in headers_list {
+        req_builder = req_builder.header(key, val);
+    }
+
+    // append authorization header if specified
+    let auth_trimmed = auth_raw.trim();
+    if !auth_trimmed.is_empty() {
+        req_builder = req_builder.header("Authorization", auth_trimmed);
     }
 
     if method != HttpMethod::GET && method != HttpMethod::DELETE && !body.trim().is_empty() {
