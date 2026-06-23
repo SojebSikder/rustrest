@@ -235,6 +235,7 @@ impl Tab {
                         // multiline text editor configuration block
                         let editor = text_editor(&self.request_body)
                             .on_action(move |action| wrap_msg(TabMessage::BodyChanged(action)))
+                            .height(Length::Fixed(300.0))
                             .padding(10);
 
                         column![
@@ -251,6 +252,7 @@ impl Tab {
                         // safe fallback configuration handler for other variant states
                         let editor = text_editor(&self.request_body)
                             .on_action(move |action| wrap_msg(TabMessage::BodyChanged(action)))
+                            .height(Length::Fixed(300.0))
                             .padding(10);
 
                         container(editor)
