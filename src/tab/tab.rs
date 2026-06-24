@@ -1,6 +1,6 @@
 use super::components::kv_editor_pane;
 use super::messages::TabMessage;
-use super::types::{BodyType, KeyValuePair, RawType, RequestSubTab, ResponseSubTab, ResponseView}; // Added ResponseSubTab
+use super::types::{BodyType, KeyValuePair, RawType, RequestSubTab, ResponseSubTab, ResponseView};
 use crate::http_client::{HttpMethod, HttpResponse};
 use tokio_util::sync::CancellationToken;
 
@@ -21,6 +21,7 @@ pub struct Tab {
     pub response_view: ResponseView,
     pub request_params: Vec<KeyValuePair>,
     pub request_headers: Vec<KeyValuePair>,
+    pub request_cookies: Vec<KeyValuePair>,
     pub request_auth: String,
     pub request_body: text_editor::Content,
     pub body_form_data: Vec<KeyValuePair>,
@@ -50,6 +51,7 @@ impl Tab {
                 KeyValuePair::new("Content-Type", "application/json"),
                 KeyValuePair::new("Accept", "application/json"),
             ],
+            request_cookies: vec![KeyValuePair::new("session_id", "xyz123abc")],
             request_auth: String::from("Bearer your_token_here"),
             request_body: text_editor::Content::with_text("{\n  \"key\": \"value\"\n}"),
             body_form_data: vec![KeyValuePair::new("form_field", "value")],
@@ -69,9 +71,7 @@ impl Tab {
             TabMessage::AuthChanged(auth) => self.request_auth = auth,
             TabMessage::BodyTypeChanged(body_type) => self.body_type = body_type,
             TabMessage::RawTypeChanged(raw_type) => self.raw_type = raw_type,
-
             TabMessage::ResponseViewChanged(view) => self.response_view = view,
-
             TabMessage::BodyChanged(action) => self.request_body.perform(action),
 
             TabMessage::ParamRowChanged(index, kv) => {
@@ -99,6 +99,20 @@ impl Tab {
             TabMessage::RemoveHeaderRow(index) => {
                 if index < self.request_headers.len() {
                     self.request_headers.remove(index);
+                }
+            }
+
+            TabMessage::CookieRowChanged(index, kv) => {
+                if let Some(row) = self.request_cookies.get_mut(index) {
+                    *row = kv;
+                }
+            }
+            TabMessage::AddCookieRow => {
+                self.request_cookies.push(KeyValuePair::new("", ""));
+            }
+            TabMessage::RemoveCookieRow(index) => {
+                if index < self.request_cookies.len() {
+                    self.request_cookies.remove(index);
                 }
             }
 
@@ -201,6 +215,13 @@ impl Tab {
                 wrap_msg(TabMessage::AddHeaderRow),
                 move |i| wrap_msg(TabMessage::RemoveHeaderRow(i)),
             ),
+            RequestSubTab::Cookies => kv_editor_pane(
+                &self.request_cookies,
+                "Add Cookie",
+                move |i, kv| wrap_msg(TabMessage::CookieRowChanged(i, kv)),
+                wrap_msg(TabMessage::AddCookieRow),
+                move |i| wrap_msg(TabMessage::RemoveCookieRow(i)),
+            ),
             RequestSubTab::Auth => text_input("Authorization Headers...", &self.request_auth)
                 .on_input(move |a| wrap_msg(TabMessage::AuthChanged(a)))
                 .padding(10)
@@ -295,7 +316,8 @@ impl Tab {
                     iced::Color::from_rgb(0.0, 0.6, 0.1)
                 } else {
                     iced::Color::from_rgb(0.8, 0.1, 0.1)
-                };
+                }
+                .into();
 
                 let metadata_row = row![
                     text(format!("Status: {}", resp.status))
@@ -378,7 +400,6 @@ impl Tab {
                     ResponseSubTab::Cookies => {
                         let mut cookie_table = column![].spacing(1);
 
-                        // table headers
                         cookie_table = cookie_table.push(
                             container(
                                 row![
@@ -396,7 +417,6 @@ impl Tab {
                             .get("set-cookie")
                             .or_else(|| resp.headers.get("Set-Cookie"))
                         {
-                            // basic parsing split by semicolon for presentation
                             let cookies: Vec<&str> = cookie_header.split(';').collect();
 
                             for (index, cookie_kv) in cookies.iter().enumerate() {
@@ -422,7 +442,7 @@ impl Tab {
                                         )
                                         .style(
                                             if index % 2 == 0 {
-                                                iced::theme::Container::Box // Alternating rows
+                                                iced::theme::Container::Box
                                             } else {
                                                 iced::theme::Container::Transparent
                                             },
@@ -435,7 +455,7 @@ impl Tab {
                                 container(
                                     text("No cookies returned in response headers.").size(13),
                                 )
-                                .padding(10), //  Moved padding to the container
+                                .padding(10),
                             );
                         }
 
@@ -446,7 +466,6 @@ impl Tab {
                     ResponseSubTab::Headers => {
                         let mut headers_table = column![].spacing(1);
 
-                        // Table Headers
                         headers_table = headers_table.push(
                             container(
                                 row![

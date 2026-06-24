@@ -32,5 +32,11 @@ pub enum TabMessage {
     ResponseViewChanged(ResponseView),
     ResponseSubTabSelected(ResponseSubTab),
 
+    // cookies
+    CookieRowChanged(usize, KeyValuePair),
+    AddCookieRow,
+    RemoveCookieRow(usize),
+
+    // cancel
     CancelRequest,
 }

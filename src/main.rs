@@ -135,9 +135,15 @@ impl Application for Rustrest {
                         .map(|kv| (kv.key.trim().to_string(), kv.value.trim().to_string()))
                         .collect();
 
+                    let filtered_cookies: Vec<(String, String)> = tab
+                        .request_cookies
+                        .iter()
+                        .filter(|kv| kv.is_active && !kv.key.trim().is_empty())
+                        .map(|kv| (kv.key.trim().to_string(), kv.value.trim().to_string()))
+                        .collect();
+
                     let body_string = tab.request_body.text();
 
-                    // clone the token out to move ownership safely into the async Command block
                     let token = tab.cancel_token.clone();
                     let method = tab.method;
                     let auth = tab.request_auth.clone();
@@ -148,6 +154,7 @@ impl Application for Rustrest {
                             method,
                             body_string,
                             filtered_headers,
+                            filtered_cookies,
                             auth,
                             token,
                         ),

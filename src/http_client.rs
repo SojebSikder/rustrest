@@ -45,6 +45,7 @@ pub async fn send_request(
     method: HttpMethod,
     body: String,
     headers_list: Vec<(String, String)>,
+    cookies_list: Vec<(String, String)>,
     auth_raw: String,
     cancel_token: CancellationToken,
 ) -> Result<HttpResponse, String> {
@@ -70,6 +71,17 @@ pub async fn send_request(
 
     for (key, val) in headers_list {
         req_builder = req_builder.header(key, val);
+    }
+
+    let formatted_cookies: String = cookies_list
+        .into_iter()
+        .filter(|(key, _)| !key.trim().is_empty())
+        .map(|(key, val)| format!("{}={}", key.trim(), val.trim()))
+        .collect::<Vec<String>>()
+        .join("; ");
+
+    if !formatted_cookies.is_empty() {
+        req_builder = req_builder.header("Cookie", formatted_cookies);
     }
 
     let auth_trimmed = auth_raw.trim();
