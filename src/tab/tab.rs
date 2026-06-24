@@ -45,7 +45,7 @@ impl Tab {
                 KeyValuePair::new("Accept", "application/json"),
             ],
             request_auth: String::from("Bearer your_token_here"),
-            // initialize text_editor content with a default text string
+
             request_body: text_editor::Content::with_text("{\n  \"key\": \"value\"\n}"),
             body_form_data: vec![KeyValuePair::new("form_field", "value")],
             body_urlencoded: vec![KeyValuePair::new("form_key", "form_value")],
