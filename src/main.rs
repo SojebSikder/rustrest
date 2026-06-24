@@ -5,6 +5,7 @@ mod tab;
 
 use http_client::{HttpResponse, send_request};
 use tab::{Tab, TabMessage};
+use tokio_util::sync::CancellationToken;
 
 use iced::widget::{button, column, container, row, text};
 use iced::{Alignment, Application, Command, Element, Length, Settings, Size, Theme};
@@ -70,6 +71,12 @@ impl Application for Rustrest {
             }
             Message::CloseTabPressed(index) => {
                 if self.tabs.len() > 1 {
+                    if let Some(tab) = self.tabs.get(index) {
+                        if tab.is_loading {
+                            tab.cancel_token.cancel();
+                        }
+                    }
+
                     self.tabs.remove(index);
                     if self.active_tab_index >= self.tabs.len() {
                         self.active_tab_index = self.tabs.len() - 1;
@@ -89,6 +96,9 @@ impl Application for Rustrest {
                     if tab.is_loading || tab.url.is_empty() {
                         return Command::none();
                     }
+
+                    // reset and generate a fresh cancellation token for this execution run
+                    tab.cancel_token = CancellationToken::new();
                     tab.is_loading = true;
                     tab.response = None;
 
@@ -125,16 +135,21 @@ impl Application for Rustrest {
                         .map(|kv| (kv.key.trim().to_string(), kv.value.trim().to_string()))
                         .collect();
 
-                    // extract the string out of the multi-line text editor state
                     let body_string = tab.request_body.text();
+
+                    // clone the token out to move ownership safely into the async Command block
+                    let token = tab.cancel_token.clone();
+                    let method = tab.method;
+                    let auth = tab.request_auth.clone();
 
                     return Command::perform(
                         send_request(
                             final_url,
-                            tab.method,
+                            method,
                             body_string,
                             filtered_headers,
-                            tab.request_auth.clone(),
+                            auth,
+                            token,
                         ),
                         move |res| Message::ResponseReceived(tab_idx, res),
                     );

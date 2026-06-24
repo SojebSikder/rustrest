@@ -31,4 +31,6 @@ pub enum TabMessage {
 
     ResponseViewChanged(ResponseView),
     ResponseSubTabSelected(ResponseSubTab),
+
+    CancelRequest,
 }

@@ -2,6 +2,7 @@ use super::components::kv_editor_pane;
 use super::messages::TabMessage;
 use super::types::{BodyType, KeyValuePair, RawType, RequestSubTab, ResponseSubTab, ResponseView}; // Added ResponseSubTab
 use crate::http_client::{HttpMethod, HttpResponse};
+use tokio_util::sync::CancellationToken;
 
 use iced::widget::{
     button, column, container, pick_list, radio, row, scrollable, text, text_editor, text_input,
@@ -26,6 +27,7 @@ pub struct Tab {
     pub body_urlencoded: Vec<KeyValuePair>,
     pub response: Option<Result<HttpResponse, String>>,
     pub is_loading: bool,
+    pub cancel_token: CancellationToken,
 }
 
 impl Tab {
@@ -54,6 +56,7 @@ impl Tab {
             body_urlencoded: vec![KeyValuePair::new("form_key", "form_value")],
             response: None,
             is_loading: false,
+            cancel_token: CancellationToken::new(),
         }
     }
 
@@ -62,7 +65,7 @@ impl Tab {
             TabMessage::UrlChanged(url) => self.url = url,
             TabMessage::MethodChanged(method) => self.method = method,
             TabMessage::SubTabSelected(sub_tab) => self.active_sub_tab = sub_tab,
-            TabMessage::ResponseSubTabSelected(resp_tab) => self.active_response_tab = resp_tab, // Handle state switch
+            TabMessage::ResponseSubTabSelected(resp_tab) => self.active_response_tab = resp_tab,
             TabMessage::AuthChanged(auth) => self.request_auth = auth,
             TabMessage::BodyTypeChanged(body_type) => self.body_type = body_type,
             TabMessage::RawTypeChanged(raw_type) => self.raw_type = raw_type,
@@ -126,6 +129,11 @@ impl Tab {
                     self.body_urlencoded.remove(index);
                 }
             }
+            TabMessage::CancelRequest => {
+                if self.is_loading {
+                    self.cancel_token.cancel();
+                }
+            }
         }
     }
 
@@ -146,13 +154,17 @@ impl Tab {
             .on_input(move |u| wrap_msg(TabMessage::UrlChanged(u)))
             .padding(12);
 
-        let send_btn = button(if self.is_loading {
-            "Sending..."
+        let send_btn = if self.is_loading {
+            button("Cancel")
+                .on_press(wrap_msg(TabMessage::CancelRequest))
+                .style(iced::theme::Button::Destructive)
+                .padding(12)
         } else {
-            "Send"
-        })
-        .on_press_maybe(if self.is_loading { None } else { Some(on_send) })
-        .padding(12);
+            button("Send")
+                .on_press(on_send)
+                .style(iced::theme::Button::Primary)
+                .padding(12)
+        };
 
         let request_bar = row![method_picker, url_input, send_btn]
             .spacing(10)
