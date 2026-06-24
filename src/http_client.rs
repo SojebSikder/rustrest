@@ -9,10 +9,20 @@ pub enum HttpMethod {
     PUT,
     DELETE,
     PATCH,
+    HEAD,
+    OPTIONS,
 }
 
 impl HttpMethod {
-    pub const ALL: [Self; 5] = [Self::GET, Self::POST, Self::PUT, Self::DELETE, Self::PATCH];
+    pub const ALL: [Self; 7] = [
+        Self::GET,
+        Self::POST,
+        Self::PUT,
+        Self::DELETE,
+        Self::PATCH,
+        Self::HEAD,
+        Self::OPTIONS,
+    ];
 }
 
 impl fmt::Display for HttpMethod {
@@ -50,6 +60,8 @@ pub async fn send_request(
         HttpMethod::PUT => reqwest::Method::PUT,
         HttpMethod::DELETE => reqwest::Method::DELETE,
         HttpMethod::PATCH => reqwest::Method::PATCH,
+        HttpMethod::HEAD => reqwest::Method::HEAD,
+        HttpMethod::OPTIONS => reqwest::Method::OPTIONS,
     };
 
     let mut req_builder = client.request(req_method, reqwest_url);

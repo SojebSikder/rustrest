@@ -366,7 +366,7 @@ impl Tab {
                     ResponseSubTab::Cookies => {
                         let mut cookie_table = column![].spacing(1);
 
-                        // Table Headers
+                        // table headers
                         cookie_table = cookie_table.push(
                             container(
                                 row![
@@ -384,7 +384,7 @@ impl Tab {
                             .get("set-cookie")
                             .or_else(|| resp.headers.get("Set-Cookie"))
                         {
-                            // Basic parsing split by semicolon for presentation
+                            // basic parsing split by semicolon for presentation
                             let cookies: Vec<&str> = cookie_header.split(';').collect();
 
                             for (index, cookie_kv) in cookies.iter().enumerate() {
