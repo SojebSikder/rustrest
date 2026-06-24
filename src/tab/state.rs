@@ -38,10 +38,7 @@ impl Tab {
             body_type: BodyType::Raw,
             raw_type: RawType::Json,
             response_view: ResponseView::Json,
-            request_params: vec![
-                KeyValuePair::new("key", "value"),
-                KeyValuePair::new("foo", "bar"),
-            ],
+            request_params: vec![KeyValuePair::new("", "")],
             request_headers: vec![
                 KeyValuePair::new("Content-Type", "application/json"),
                 KeyValuePair::new("Accept", "application/json"),
