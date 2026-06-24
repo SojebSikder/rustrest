@@ -7,7 +7,7 @@ use http_client::{HttpResponse, send_request};
 use tab::{Tab, TabMessage};
 use tokio_util::sync::CancellationToken;
 
-use iced::widget::{button, column, container, row, text};
+use iced::widget::{button, column, container, row, text, text_input};
 use iced::{Alignment, Application, Command, Element, Length, Settings, Size, Theme};
 
 const APP_NAME: &str = "Rustrest";
@@ -19,9 +19,15 @@ pub fn main() -> iced::Result {
 }
 
 struct Rustrest {
-    tabs: Vec<Tab>,
+    tabs: Vec<TabState>,
     active_tab_index: usize,
     next_tab_id: usize,
+}
+
+// hold the underlying tab and UI states like renaming
+struct TabState {
+    tab: Tab,
+    is_editing_name: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -31,8 +37,11 @@ enum Message {
     CloseTabPressed(usize),
     ActiveTabMessage(TabMessage),
     SendPressed,
-    // Changed from tab index to unique tab ID
     ResponseReceived(usize, Result<HttpResponse, String>),
+    // tab renaming
+    TabNameDoubleClick(usize),
+    TabNameChanged(usize, String),
+    TabNameSave(usize),
 }
 
 impl Application for Rustrest {
@@ -44,7 +53,10 @@ impl Application for Rustrest {
     fn new(_flags: Self::Flags) -> (Self, Command<Message>) {
         (
             Self {
-                tabs: vec![Tab::new(1)],
+                tabs: vec![TabState {
+                    tab: Tab::new(1),
+                    is_editing_name: false,
+                }],
                 active_tab_index: 0,
                 next_tab_id: 2,
             },
@@ -65,16 +77,19 @@ impl Application for Rustrest {
                 Command::none()
             }
             Message::NewTabPressed => {
-                self.tabs.push(Tab::new(self.next_tab_id));
+                self.tabs.push(TabState {
+                    tab: Tab::new(self.next_tab_id),
+                    is_editing_name: false,
+                });
                 self.active_tab_index = self.tabs.len() - 1;
                 self.next_tab_id += 1;
                 Command::none()
             }
             Message::CloseTabPressed(index) => {
                 if self.tabs.len() > 1 {
-                    if let Some(tab) = self.tabs.get(index) {
-                        if tab.is_loading {
-                            tab.cancel_token.cancel();
+                    if let Some(tab_state) = self.tabs.get(index) {
+                        if tab_state.tab.is_loading {
+                            tab_state.tab.cancel_token.cancel();
                         }
                     }
 
@@ -86,25 +101,24 @@ impl Application for Rustrest {
                 Command::none()
             }
             Message::ActiveTabMessage(tab_msg) => {
-                if let Some(tab) = self.tabs.get_mut(self.active_tab_index) {
-                    tab.update(tab_msg);
+                if let Some(tab_state) = self.tabs.get_mut(self.active_tab_index) {
+                    tab_state.tab.update(tab_msg);
                 }
                 Command::none()
             }
             Message::SendPressed => {
-                if let Some(tab) = self.tabs.get_mut(self.active_tab_index) {
+                if let Some(tab_state) = self.tabs.get_mut(self.active_tab_index) {
+                    let tab = &mut tab_state.tab;
                     if tab.is_loading || tab.url.is_empty() {
                         return Command::none();
                     }
 
                     let tab_id = tab.id;
 
-                    // reset and generate a fresh cancellation token for this execution run
                     tab.cancel_token = CancellationToken::new();
                     tab.is_loading = true;
                     tab.response = None;
 
-                    // construct dynamic URL by filtering and appending only selected query parameters
                     let mut final_url = tab.url.clone();
                     let active_params: Vec<String> = tab
                         .request_params
@@ -129,7 +143,6 @@ impl Application for Rustrest {
                         final_url.push_str(&query_string);
                     }
 
-                    // filter out and package only selected headers
                     let filtered_headers: Vec<(String, String)> = tab
                         .request_headers
                         .iter()
@@ -145,7 +158,6 @@ impl Application for Rustrest {
                         .collect();
 
                     let body_string = tab.request_body.text();
-
                     let token = tab.cancel_token.clone();
                     let method = tab.method;
                     let auth = tab.request_auth.clone();
@@ -166,9 +178,30 @@ impl Application for Rustrest {
                 Command::none()
             }
             Message::ResponseReceived(tab_id, res) => {
-                if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
-                    tab.is_loading = false;
-                    tab.response = Some(res);
+                if let Some(tab_state) = self.tabs.iter_mut().find(|t| t.tab.id == tab_id) {
+                    tab_state.tab.is_loading = false;
+                    tab_state.tab.response = Some(res);
+                }
+                Command::none()
+            }
+            Message::TabNameDoubleClick(idx) => {
+                if let Some(tab_state) = self.tabs.get_mut(idx) {
+                    tab_state.is_editing_name = true;
+                }
+                Command::none()
+            }
+            Message::TabNameChanged(idx, new_name) => {
+                if let Some(tab_state) = self.tabs.get_mut(idx) {
+                    tab_state.tab.name = new_name;
+                }
+                Command::none()
+            }
+            Message::TabNameSave(idx) => {
+                if let Some(tab_state) = self.tabs.get_mut(idx) {
+                    tab_state.is_editing_name = false;
+                    if tab_state.tab.name.trim().is_empty() {
+                        tab_state.tab.name = "Untitled Request".to_string();
+                    }
                 }
                 Command::none()
             }
@@ -177,11 +210,35 @@ impl Application for Rustrest {
 
     fn view(&self) -> Element<Message> {
         let mut tab_bar = row![].spacing(5).align_items(Alignment::Center);
-        for (idx, tab) in self.tabs.iter().enumerate() {
+
+        for (idx, tab_state) in self.tabs.iter().enumerate() {
             let is_active = idx == self.active_tab_index;
+            let tab = &tab_state.tab;
+
+            // method type indicator (e.g., GET, POST)
+            let method_str = format!("{:?}", tab.method).to_uppercase();
+            let method_badge = text(format!("[{}]", method_str)).size(11);
+
+            // tab title or inline renaming input
+            let tab_content: Element<Message> = if tab_state.is_editing_name {
+                text_input("", &tab.name)
+                    .on_input(move |txt| Message::TabNameChanged(idx, txt))
+                    .on_submit(Message::TabNameSave(idx))
+                    .size(13)
+                    .width(Length::Fixed(120.0))
+                    .into()
+            } else {
+                button(text(&tab.name).size(13))
+                    .on_press(Message::TabNameDoubleClick(idx))
+                    .style(iced::theme::Button::Text)
+                    .padding(0)
+                    .into()
+            };
+
             let mut tab_button = button(
                 row![
-                    text(&tab.name).size(13),
+                    method_badge,
+                    tab_content,
                     button("×")
                         .on_press(Message::CloseTabPressed(idx))
                         .padding(2)
@@ -206,7 +263,7 @@ impl Application for Rustrest {
             .style(iced::theme::Button::Positive);
         tab_bar = tab_bar.push(add_tab_btn);
 
-        let current_tab = &self.tabs[self.active_tab_index];
+        let current_tab = &self.tabs[self.active_tab_index].tab;
         let tab_view = current_tab.view(Message::ActiveTabMessage, Message::SendPressed);
 
         container(column![tab_bar, tab_view].spacing(18))
