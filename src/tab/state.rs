@@ -43,7 +43,7 @@ impl Tab {
                 KeyValuePair::new("Content-Type", "application/json"),
                 KeyValuePair::new("Accept", "application/json"),
             ],
-            request_cookies: vec![KeyValuePair::new("session_id", "xyz123abc")],
+            request_cookies: vec![KeyValuePair::new("", "")],
             request_auth: String::from("Bearer your_token_here"),
             request_body: text_editor::Content::with_text("{\n  \"key\": \"value\"\n}"),
             body_form_data: vec![KeyValuePair::new("form_field", "value")],
@@ -56,7 +56,48 @@ impl Tab {
 
     pub fn update(&mut self, message: TabMessage) {
         match message {
-            TabMessage::UrlChanged(url) => self.url = url,
+            TabMessage::UrlChanged(new_url) => {
+                self.url = new_url.clone();
+
+                // Attempt to parse the URL. We append a dummy base in case it's a relative path.
+                if let Ok(parsed_url) = url::Url::parse(&new_url)
+                    .or_else(|_| url::Url::parse(&format!("http://localhost/{}", new_url)))
+                {
+                    // clear existing and collect new pairs
+                    self.request_params.clear();
+                    for (key, value) in parsed_url.query_pairs() {
+                        self.request_params
+                            .push(KeyValuePair::new(&key.into_owned(), &value.into_owned()));
+                    }
+                    // keep an empty trailing row for typing if the last one isn't empty
+                    if self.request_params.is_empty()
+                        || !self.request_params.last().unwrap().key.is_empty()
+                    {
+                        self.request_params.push(KeyValuePair::new("", ""));
+                    }
+                }
+            }
+
+            TabMessage::ParamRowChanged(index, kv) => {
+                if let Some(row) = self.request_params.get_mut(index) {
+                    *row = kv;
+                }
+                // regenerate URL string based on the new params state
+                self.url = sync_params_to_url(&self.url, &self.request_params);
+            }
+
+            TabMessage::RemoveParamRow(index) => {
+                if index < self.request_params.len() {
+                    self.request_params.remove(index);
+                }
+                // regenerate URL string based on the new params state
+                self.url = sync_params_to_url(&self.url, &self.request_params);
+            }
+
+            TabMessage::AddParamRow => {
+                self.request_params.push(KeyValuePair::new("", ""));
+            }
+
             TabMessage::MethodChanged(method) => self.method = method,
 
             TabMessage::MethodSelected(method_str) => {
@@ -79,18 +120,6 @@ impl Tab {
             TabMessage::RawTypeChanged(raw_type) => self.raw_type = raw_type,
             TabMessage::ResponseViewChanged(view) => self.response_view = view,
             TabMessage::BodyChanged(action) => self.request_body.perform(action),
-
-            TabMessage::ParamRowChanged(index, kv) => {
-                if let Some(row) = self.request_params.get_mut(index) {
-                    *row = kv;
-                }
-            }
-            TabMessage::AddParamRow => self.request_params.push(KeyValuePair::new("", "")),
-            TabMessage::RemoveParamRow(index) => {
-                if index < self.request_params.len() {
-                    self.request_params.remove(index);
-                }
-            }
 
             TabMessage::HeaderRowChanged(index, kv) => {
                 if let Some(row) = self.request_headers.get_mut(index) {
@@ -146,4 +175,24 @@ impl Tab {
             }
         }
     }
+}
+
+fn sync_params_to_url(url_str: &str, params: &[KeyValuePair]) -> String {
+    let mut parsed_url = match url::Url::parse(url_str) {
+        Ok(u) => u,
+        Err(_) => return url_str.to_string(),
+    };
+
+    parsed_url.set_query(None);
+    let mut query_serializer = parsed_url.query_pairs_mut();
+
+    for pair in params {
+        // skip completely empty placeholder rows
+        if !pair.key.is_empty() {
+            query_serializer.append_pair(&pair.key, &pair.value);
+        }
+    }
+
+    drop(query_serializer);
+    parsed_url.to_string()
 }
