@@ -18,9 +18,13 @@ Rustrest is a native API testing platform written in Rust.
 - Request section
   - [ ] params to update url and vice versa
   - [x] add cookies
+  - [ ] custom request method
+  - [ ] add method type indicator in request tab
+  - [ ] rename request tab
 - Response section
   - [ ] support bangla in body response
-  - [ ] add json view in body response
+  - [x] add json view in body response
+  - [ ] json view highlighting
   - [ ] add different views in body response
   - [ ] add preview in body response
   - [ ] add response pages (cookies, headers, )
