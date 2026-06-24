@@ -1,10 +1,37 @@
 pub mod components;
 pub mod messages;
-pub mod tab;
+mod state;
 pub mod types;
+mod views;
 
+pub use state::Tab;
+
+use iced::widget::{column, container};
+use iced::{Element, Length};
 pub use messages::TabMessage;
-pub use tab::Tab;
 
-#[allow(unused_imports)]
-pub use types::{BodyType, KeyValuePair, RequestSubTab};
+impl Tab {
+    pub fn view<Message>(
+        &self,
+        wrap_msg: impl Fn(TabMessage) -> Message + Copy + 'static,
+        on_send: Message,
+    ) -> Element<'_, Message>
+    where
+        Message: Clone + 'static,
+    {
+        let request_bar = views::request::render_request_bar(self, wrap_msg, on_send);
+        let configuration_pane = views::request::render_configuration_pane(self, wrap_msg);
+        let response_content = views::response::render_response_pane(self, wrap_msg);
+
+        column![
+            request_bar,
+            configuration_pane,
+            container(response_content)
+                .width(Length::Fill)
+                .padding(15)
+                .style(iced::theme::Container::Box)
+        ]
+        .spacing(18)
+        .into()
+    }
+}

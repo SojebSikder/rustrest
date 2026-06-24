@@ -31,6 +31,7 @@ enum Message {
     CloseTabPressed(usize),
     ActiveTabMessage(TabMessage),
     SendPressed,
+    // Changed from tab index to unique tab ID
     ResponseReceived(usize, Result<HttpResponse, String>),
 }
 
@@ -91,11 +92,12 @@ impl Application for Rustrest {
                 Command::none()
             }
             Message::SendPressed => {
-                let tab_idx = self.active_tab_index;
-                if let Some(tab) = self.tabs.get_mut(tab_idx) {
+                if let Some(tab) = self.tabs.get_mut(self.active_tab_index) {
                     if tab.is_loading || tab.url.is_empty() {
                         return Command::none();
                     }
+
+                    let tab_id = tab.id;
 
                     // reset and generate a fresh cancellation token for this execution run
                     tab.cancel_token = CancellationToken::new();
@@ -158,13 +160,13 @@ impl Application for Rustrest {
                             auth,
                             token,
                         ),
-                        move |res| Message::ResponseReceived(tab_idx, res),
+                        move |res| Message::ResponseReceived(tab_id, res),
                     );
                 }
                 Command::none()
             }
-            Message::ResponseReceived(tab_idx, res) => {
-                if let Some(tab) = self.tabs.get_mut(tab_idx) {
+            Message::ResponseReceived(tab_id, res) => {
+                if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
                     tab.is_loading = false;
                     tab.response = Some(res);
                 }
