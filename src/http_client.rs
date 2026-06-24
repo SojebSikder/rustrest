@@ -78,8 +78,11 @@ pub async fn send_request(
 
     let mut req_builder = client.request(req_method, reqwest_url);
 
+    // Filter out completely blank header keys (mimicking the cookie optimization)
     for (key, val) in headers_list {
-        req_builder = req_builder.header(key, val);
+        if !key.trim().is_empty() {
+            req_builder = req_builder.header(key.trim(), val);
+        }
     }
 
     let formatted_cookies: String = cookies_list
@@ -98,7 +101,7 @@ pub async fn send_request(
         req_builder = req_builder.header("Authorization", auth_trimmed);
     }
 
-    // allow payloads for custom methods too (typically anything that isn't safe or body-less like GET/HEAD)
+    // Allow payloads for custom methods too (typically anything that isn't safe or body-less like GET/HEAD)
     if method != HttpMethod::GET
         && method != HttpMethod::HEAD
         && method != HttpMethod::DELETE

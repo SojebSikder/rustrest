@@ -63,12 +63,27 @@ impl Tab {
                 if let Ok(parsed_url) = url::Url::parse(&new_url)
                     .or_else(|_| url::Url::parse(&format!("http://localhost/{}", new_url)))
                 {
-                    // clear existing and collect new pairs
+                    // Track explicitly un-checked items so manual typing in the URL bar doesn't override them
+                    let inactive_params: Vec<(String, String)> = self
+                        .request_params
+                        .iter()
+                        .filter(|p| !p.is_active)
+                        .map(|p| (p.key.clone(), p.value.clone()))
+                        .collect();
+
                     self.request_params.clear();
                     for (key, value) in parsed_url.query_pairs() {
-                        self.request_params
-                            .push(KeyValuePair::new(&key.into_owned(), &value.into_owned()));
+                        let k = key.into_owned();
+                        let v = value.into_owned();
+
+                        let is_active =
+                            !inactive_params.iter().any(|(ik, iv)| ik == &k && iv == &v);
+
+                        let mut kv = KeyValuePair::new(&k, &v);
+                        kv.is_active = is_active;
+                        self.request_params.push(kv);
                     }
+
                     // keep an empty trailing row for typing if the last one isn't empty
                     if self.request_params.is_empty()
                         || !self.request_params.last().unwrap().key.is_empty()
@@ -187,8 +202,7 @@ fn sync_params_to_url(url_str: &str, params: &[KeyValuePair]) -> String {
     let mut query_serializer = parsed_url.query_pairs_mut();
 
     for pair in params {
-        // skip completely empty placeholder rows
-        if !pair.key.is_empty() {
+        if pair.is_active && !pair.key.is_empty() {
             query_serializer.append_pair(&pair.key, &pair.value);
         }
     }

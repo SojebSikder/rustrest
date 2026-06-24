@@ -25,7 +25,6 @@ struct Rustrest {
     next_tab_id: usize,
 }
 
-// hold the underlying tab and UI states like renaming
 struct TabState {
     tab: Tab,
     is_editing_name: bool,
@@ -39,7 +38,6 @@ enum Message {
     ActiveTabMessage(TabMessage),
     SendPressed,
     ResponseReceived(usize, Result<HttpResponse, String>),
-    // tab renaming
     TabNameDoubleClick(usize),
     TabNameChanged(usize, String),
     TabNameSave(usize),
@@ -120,29 +118,7 @@ impl Application for Rustrest {
                     tab.is_loading = true;
                     tab.response = None;
 
-                    let mut final_url = tab.url.clone();
-                    let active_params: Vec<String> = tab
-                        .request_params
-                        .iter()
-                        .filter(|kv| kv.is_active && !kv.key.trim().is_empty())
-                        .map(|kv| {
-                            format!(
-                                "{}={}",
-                                urlencoding::encode(kv.key.trim()),
-                                urlencoding::encode(kv.value.trim())
-                            )
-                        })
-                        .collect();
-
-                    if !active_params.is_empty() {
-                        let query_string = active_params.join("&");
-                        if final_url.contains('?') {
-                            final_url.push('&');
-                        } else {
-                            final_url.push('?');
-                        }
-                        final_url.push_str(&query_string);
-                    }
+                    let final_url = tab.url.clone();
 
                     let filtered_headers: Vec<(String, String)> = tab
                         .request_headers
@@ -160,7 +136,7 @@ impl Application for Rustrest {
 
                     let body_string = tab.request_body.text();
                     let token = tab.cancel_token.clone();
-                    let method = tab.method.clone(); // Added .clone() since HttpMethod isn't Copy
+                    let method = tab.method.clone();
                     let auth = tab.request_auth.clone();
 
                     return Command::perform(
@@ -223,7 +199,6 @@ impl Application for Rustrest {
             };
             let method_badge = text(format!("[{}]", method_str)).size(11);
 
-            // tab title or inline renaming input
             let tab_content: Element<Message> = if tab_state.is_editing_name {
                 text_input("", &tab.name)
                     .on_input(move |txt| Message::TabNameChanged(idx, txt))
