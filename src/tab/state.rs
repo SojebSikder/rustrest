@@ -61,6 +61,20 @@ impl Tab {
         match message {
             TabMessage::UrlChanged(url) => self.url = url,
             TabMessage::MethodChanged(method) => self.method = method,
+
+            TabMessage::MethodSelected(method_str) => {
+                self.method = match method_str.to_uppercase().trim() {
+                    "GET" => HttpMethod::GET,
+                    "POST" => HttpMethod::POST,
+                    "PUT" => HttpMethod::PUT,
+                    "DELETE" => HttpMethod::DELETE,
+                    "PATCH" => HttpMethod::PATCH,
+                    "HEAD" => HttpMethod::HEAD,
+                    "OPTIONS" => HttpMethod::OPTIONS,
+                    custom => HttpMethod::Custom(custom.to_string()),
+                };
+            }
+
             TabMessage::SubTabSelected(sub_tab) => self.active_sub_tab = sub_tab,
             TabMessage::ResponseSubTabSelected(resp_tab) => self.active_response_tab = resp_tab,
             TabMessage::AuthChanged(auth) => self.request_auth = auth,

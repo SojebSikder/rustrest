@@ -5,6 +5,7 @@ use iced::widget::text_editor;
 #[derive(Debug, Clone)]
 pub enum TabMessage {
     UrlChanged(String),
+    MethodSelected(String),
     MethodChanged(HttpMethod),
     SubTabSelected(RequestSubTab),
     AuthChanged(String),

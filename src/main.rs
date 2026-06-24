@@ -1,9 +1,10 @@
+// main.rs
 #![windows_subsystem = "windows"]
 
 mod http_client;
 mod tab;
 
-use http_client::{HttpResponse, send_request};
+use http_client::{HttpMethod, HttpResponse, send_request};
 use tab::{Tab, TabMessage};
 use tokio_util::sync::CancellationToken;
 
@@ -159,7 +160,7 @@ impl Application for Rustrest {
 
                     let body_string = tab.request_body.text();
                     let token = tab.cancel_token.clone();
-                    let method = tab.method;
+                    let method = tab.method.clone(); // Added .clone() since HttpMethod isn't Copy
                     let auth = tab.request_auth.clone();
 
                     return Command::perform(
@@ -215,8 +216,11 @@ impl Application for Rustrest {
             let is_active = idx == self.active_tab_index;
             let tab = &tab_state.tab;
 
-            // method type indicator (e.g., GET, POST)
-            let method_str = format!("{:?}", tab.method).to_uppercase();
+            let method_str = match &tab.method {
+                HttpMethod::Custom(custom) if custom.trim().is_empty() => "CUSTOM".to_string(),
+                HttpMethod::Custom(custom) => custom.to_uppercase(),
+                other => format!("{}", other),
+            };
             let method_badge = text(format!("[{}]", method_str)).size(11);
 
             // tab title or inline renaming input

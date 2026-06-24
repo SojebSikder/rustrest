@@ -16,10 +16,60 @@ pub fn render_request_bar<'a, Message>(
 where
     Message: Clone + 'static,
 {
-    let method_picker = pick_list(&HttpMethod::ALL[..], Some(tab.method), move |m| {
-        wrap_msg(TabMessage::MethodChanged(m))
-    })
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    enum MethodChoice {
+        Standard(HttpMethod),
+        CustomOption,
+    }
+
+    impl std::fmt::Display for MethodChoice {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self {
+                MethodChoice::Standard(m) => write!(f, "{}", m),
+                MethodChoice::CustomOption => write!(f, "CUSTOM"),
+            }
+        }
+    }
+
+    let current_choice = match &tab.method {
+        HttpMethod::Custom(_) => MethodChoice::CustomOption,
+        other => MethodChoice::Standard(other.clone()),
+    };
+
+    let method_picker = pick_list(
+        vec![
+            MethodChoice::Standard(HttpMethod::GET),
+            MethodChoice::Standard(HttpMethod::POST),
+            MethodChoice::Standard(HttpMethod::PUT),
+            MethodChoice::Standard(HttpMethod::DELETE),
+            MethodChoice::Standard(HttpMethod::PATCH),
+            MethodChoice::Standard(HttpMethod::HEAD),
+            MethodChoice::Standard(HttpMethod::OPTIONS),
+            MethodChoice::CustomOption,
+        ],
+        Some(current_choice),
+        move |choice| match choice {
+            MethodChoice::Standard(m) => wrap_msg(TabMessage::MethodChanged(m)),
+            MethodChoice::CustomOption => wrap_msg(TabMessage::MethodChanged(HttpMethod::Custom(
+                "".to_string(),
+            ))),
+        },
+    )
     .padding(10);
+
+    let mut request_row = row![method_picker]
+        .spacing(10)
+        .align_items(Alignment::Center);
+
+    // conditionally show a custom text input field if a custom method is selected
+    if let HttpMethod::Custom(custom_val) = &tab.method {
+        let custom_method_input = text_input("PURGE", custom_val)
+            .on_input(move |text| wrap_msg(TabMessage::MethodChanged(HttpMethod::Custom(text))))
+            .width(Length::Fixed(100.0))
+            .padding(12);
+
+        request_row = request_row.push(custom_method_input);
+    }
 
     let url_input = text_input("https://api.example.com/v1/resource", &tab.url)
         .on_input(move |u| wrap_msg(TabMessage::UrlChanged(u)))
@@ -37,10 +87,7 @@ where
             .padding(12)
     };
 
-    row![method_picker, url_input, send_btn]
-        .spacing(10)
-        .align_items(Alignment::Center)
-        .into()
+    request_row.push(url_input).push(send_btn).into()
 }
 
 pub fn render_configuration_pane<'a, Message>(

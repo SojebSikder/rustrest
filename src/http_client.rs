@@ -3,7 +3,7 @@ use std::fmt;
 use std::time::{Duration, Instant};
 use tokio_util::sync::CancellationToken;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum HttpMethod {
     GET,
     POST,
@@ -12,6 +12,15 @@ pub enum HttpMethod {
     PATCH,
     HEAD,
     OPTIONS,
+    Custom(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct HttpResponse {
+    pub status: u16,
+    pub body: String,
+    pub headers: HashMap<String, String>,
+    pub elapsed: Duration,
 }
 
 impl HttpMethod {
@@ -28,16 +37,11 @@ impl HttpMethod {
 
 impl fmt::Display for HttpMethod {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self)
+        match self {
+            HttpMethod::Custom(custom) => write!(f, "{}", custom.to_uppercase()),
+            _ => write!(f, "{:?}", self),
+        }
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct HttpResponse {
-    pub status: u16,
-    pub body: String,
-    pub headers: HashMap<String, String>,
-    pub elapsed: Duration,
 }
 
 pub async fn send_request(
@@ -57,7 +61,7 @@ pub async fn send_request(
         .build()
         .map_err(|e| format!("Failed to initialize client: {}", e))?;
 
-    let req_method = match method {
+    let req_method = match &method {
         HttpMethod::GET => reqwest::Method::GET,
         HttpMethod::POST => reqwest::Method::POST,
         HttpMethod::PUT => reqwest::Method::PUT,
@@ -65,6 +69,11 @@ pub async fn send_request(
         HttpMethod::PATCH => reqwest::Method::PATCH,
         HttpMethod::HEAD => reqwest::Method::HEAD,
         HttpMethod::OPTIONS => reqwest::Method::OPTIONS,
+        HttpMethod::Custom(custom_str) => {
+            let upper = custom_str.trim().to_uppercase();
+            reqwest::Method::from_bytes(upper.as_bytes())
+                .map_err(|_| format!("Invalid custom HTTP method: '{}'", custom_str))?
+        }
     };
 
     let mut req_builder = client.request(req_method, reqwest_url);
@@ -89,7 +98,12 @@ pub async fn send_request(
         req_builder = req_builder.header("Authorization", auth_trimmed);
     }
 
-    if method != HttpMethod::GET && method != HttpMethod::DELETE && !body.trim().is_empty() {
+    // allow payloads for custom methods too (typically anything that isn't safe or body-less like GET/HEAD)
+    if method != HttpMethod::GET
+        && method != HttpMethod::HEAD
+        && method != HttpMethod::DELETE
+        && !body.trim().is_empty()
+    {
         req_builder = req_builder.body(body);
     }
 
