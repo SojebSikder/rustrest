@@ -1,3 +1,5 @@
+use std::fmt;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RequestSubTab {
     Params,
@@ -113,5 +115,11 @@ impl ResponseView {
             ResponseView::Raw => "Raw",
             ResponseView::Json => "JSON",
         }
+    }
+}
+
+impl fmt::Display for ResponseView {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.label())
     }
 }

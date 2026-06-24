@@ -289,18 +289,15 @@ impl Tab {
                 ]
                 .spacing(10);
 
-                let mut view_toggle_bar = row![text("Response Payload:").size(14)]
-                    .spacing(20)
-                    .align_items(Alignment::Center);
+                let view_dropdown =
+                    pick_list(&ResponseView::ALL[..], Some(self.response_view), move |v| {
+                        wrap_msg(TabMessage::ResponseViewChanged(v))
+                    })
+                    .padding(5);
 
-                for mode in ResponseView::ALL.iter() {
-                    let radio_btn =
-                        radio(mode.label(), *mode, Some(self.response_view), move |v| {
-                            wrap_msg(TabMessage::ResponseViewChanged(v))
-                        })
-                        .size(14);
-                    view_toggle_bar = view_toggle_bar.push(radio_btn);
-                }
+                let view_toggle_bar = row![text("Response Format:").size(14), view_dropdown]
+                    .spacing(10)
+                    .align_items(Alignment::Center);
 
                 let processed_body = match self.response_view {
                     ResponseView::Json => {
