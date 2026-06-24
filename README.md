@@ -26,3 +26,4 @@ Rustrest is a native API testing platform written in Rust.
   - [ ] show response size
   - [ ] show response network info including ssl
   - [ ] add wrap lines, filter, search, copy in body response
+  - [ ] add context menu with copy

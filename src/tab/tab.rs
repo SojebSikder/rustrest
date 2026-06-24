@@ -319,7 +319,6 @@ impl Tab {
                     resp_tab_bar = resp_tab_bar.push(resp_btn);
                 }
 
-                // --- 2. SWITCH RESPONSE CONTENT ACCORDING TO ACTIVE SUB-TAB ---
                 let dynamic_response_pane: Element<Message> = match self.active_response_tab {
                     ResponseSubTab::Body => {
                         let view_dropdown =
@@ -363,30 +362,60 @@ impl Tab {
                         .spacing(10)
                         .into()
                     }
-                    ResponseSubTab::Cookies => scrollable(
-                        container(
-                            text("No cookies returned or parsing not implemented.")
-                                .font(Font::MONOSPACE)
-                                .size(13),
+
+                    ResponseSubTab::Cookies => {
+                        let cookie_text = resp
+                            .headers
+                            .get("set-cookie")
+                            .or_else(|| resp.headers.get("Set-Cookie"))
+                            .cloned()
+                            .unwrap_or_else(|| {
+                                "No cookies returned in response headers.".to_string()
+                            });
+
+                        scrollable(
+                            container(text(cookie_text).font(Font::MONOSPACE).size(13))
+                                .padding(10)
+                                .style(iced::theme::Container::Box)
+                                .width(Length::Fill),
                         )
-                        .padding(10)
-                        .style(iced::theme::Container::Box)
-                        .width(Length::Fill),
-                    )
-                    .height(Length::Fixed(220.0))
-                    .into(),
-                    ResponseSubTab::Headers => scrollable(
-                        container(
-                            text("Response Headers feature preview placeholder.")
-                                .font(Font::MONOSPACE)
-                                .size(13),
+                        .height(Length::Fixed(220.0))
+                        .into()
+                    }
+                    ResponseSubTab::Headers => {
+                        let mut headers_column = column![].spacing(6);
+
+                        if resp.headers.is_empty() {
+                            headers_column = headers_column.push(text("No headers returned."));
+                        } else {
+                            let mut sorted_headers: Vec<(&String, &String)> =
+                                resp.headers.iter().collect();
+                            sorted_headers.sort_by(|a, b| a.0.cmp(b.0));
+
+                            for (key, val) in sorted_headers {
+                                let header_row = row![
+                                    text(format!("{}: ", key))
+                                        .font(Font {
+                                            weight: iced::font::Weight::Bold,
+                                            ..Font::DEFAULT
+                                        })
+                                        .size(13),
+                                    text(val).font(Font::MONOSPACE).size(13)
+                                ]
+                                .spacing(5);
+                                headers_column = headers_column.push(header_row);
+                            }
+                        }
+
+                        scrollable(
+                            container(headers_column)
+                                .padding(10)
+                                .style(iced::theme::Container::Box)
+                                .width(Length::Fill),
                         )
-                        .padding(10)
-                        .style(iced::theme::Container::Box)
-                        .width(Length::Fill),
-                    )
-                    .height(Length::Fixed(220.0))
-                    .into(),
+                        .height(Length::Fixed(220.0))
+                        .into()
+                    }
                 };
 
                 column![metadata_row, resp_tab_bar, dynamic_response_pane]
