@@ -1,6 +1,6 @@
 use super::components::kv_editor_pane;
 use super::messages::TabMessage;
-use super::types::{BodyType, KeyValuePair, RawType, RequestSubTab};
+use super::types::{BodyType, KeyValuePair, RawType, RequestSubTab, ResponseView};
 use crate::http_client::{HttpMethod, HttpResponse};
 
 use iced::widget::{
@@ -16,6 +16,7 @@ pub struct Tab {
     pub active_sub_tab: RequestSubTab,
     pub body_type: BodyType,
     pub raw_type: RawType,
+    pub response_view: ResponseView,
     pub request_params: Vec<KeyValuePair>,
     pub request_headers: Vec<KeyValuePair>,
     pub request_auth: String,
@@ -35,7 +36,8 @@ impl Tab {
             method: HttpMethod::GET,
             active_sub_tab: RequestSubTab::Params,
             body_type: BodyType::Raw,
-            raw_type: RawType::Json, // default option
+            raw_type: RawType::Json,
+            response_view: ResponseView::Json,
             request_params: vec![
                 KeyValuePair::new("key", "value"),
                 KeyValuePair::new("foo", "bar"),
@@ -45,7 +47,6 @@ impl Tab {
                 KeyValuePair::new("Accept", "application/json"),
             ],
             request_auth: String::from("Bearer your_token_here"),
-
             request_body: text_editor::Content::with_text("{\n  \"key\": \"value\"\n}"),
             body_form_data: vec![KeyValuePair::new("form_field", "value")],
             body_urlencoded: vec![KeyValuePair::new("form_key", "form_value")],
@@ -61,11 +62,10 @@ impl Tab {
             TabMessage::SubTabSelected(sub_tab) => self.active_sub_tab = sub_tab,
             TabMessage::AuthChanged(auth) => self.request_auth = auth,
             TabMessage::BodyTypeChanged(body_type) => self.body_type = body_type,
-
-            // updates tracking the text dropdown selection
             TabMessage::RawTypeChanged(raw_type) => self.raw_type = raw_type,
 
-            // updates tracking internal multiline keystrokes/actions
+            TabMessage::ResponseViewChanged(view) => self.response_view = view,
+
             TabMessage::BodyChanged(action) => self.request_body.perform(action),
 
             TabMessage::ParamRowChanged(index, kv) => {
@@ -225,14 +225,12 @@ impl Tab {
                     ),
 
                     BodyType::Raw => {
-                        // dropdown selection for the "Raw" view mode
                         let raw_dropdown =
                             pick_list(&RawType::ALL[..], Some(self.raw_type), move |t| {
                                 wrap_msg(TabMessage::RawTypeChanged(t))
                             })
                             .padding(5);
 
-                        // multiline text editor configuration block
                         let editor = text_editor(&self.request_body)
                             .on_action(move |action| wrap_msg(TabMessage::BodyChanged(action)))
                             .height(Length::Fixed(300.0))
@@ -249,7 +247,6 @@ impl Tab {
                     }
 
                     _ => {
-                        // safe fallback configuration handler for other variant states
                         let editor = text_editor(&self.request_body)
                             .on_action(move |action| wrap_msg(TabMessage::BodyChanged(action)))
                             .height(Length::Fixed(300.0))
@@ -292,13 +289,44 @@ impl Tab {
                 ]
                 .spacing(10);
 
+                let mut view_toggle_bar = row![text("Response Payload:").size(14)]
+                    .spacing(20)
+                    .align_items(Alignment::Center);
+
+                for mode in ResponseView::ALL.iter() {
+                    let radio_btn =
+                        radio(mode.label(), *mode, Some(self.response_view), move |v| {
+                            wrap_msg(TabMessage::ResponseViewChanged(v))
+                        })
+                        .size(14);
+                    view_toggle_bar = view_toggle_bar.push(radio_btn);
+                }
+
+                let processed_body = match self.response_view {
+                    ResponseView::Json => {
+                        if let Ok(json_value) =
+                            serde_json::from_str::<serde_json::Value>(&resp.body)
+                        {
+                            serde_json::to_string_pretty(&json_value)
+                                .unwrap_or_else(|_| resp.body.clone())
+                        } else {
+                            format!(
+                                "// Invalid JSON (Showing Raw Payload instead):\n\n{}",
+                                resp.body
+                            )
+                        }
+                    }
+                    ResponseView::Raw => resp.body.clone(),
+                };
+
                 column![
                     metadata_row,
-                    text("Response Payload:").size(14),
+                    view_toggle_bar,
                     scrollable(
-                        container(text(&resp.body).font(Font::MONOSPACE).size(13))
+                        container(text(processed_body).font(Font::MONOSPACE).size(13))
                             .padding(10)
                             .style(iced::theme::Container::Box)
+                            .width(Length::Fill)
                     )
                     .height(Length::Fixed(250.0))
                 ]

@@ -97,3 +97,21 @@ impl std::fmt::Display for RawType {
         }
     }
 }
+
+// response view type
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResponseView {
+    Raw,
+    Json,
+}
+
+impl ResponseView {
+    pub const ALL: [ResponseView; 2] = [ResponseView::Raw, ResponseView::Json];
+
+    pub fn label(&self) -> &str {
+        match self {
+            ResponseView::Raw => "Raw",
+            ResponseView::Json => "JSON",
+        }
+    }
+}

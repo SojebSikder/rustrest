@@ -1,4 +1,4 @@
-use super::types::{BodyType, KeyValuePair, RawType, RequestSubTab};
+use super::types::{BodyType, KeyValuePair, RawType, RequestSubTab, ResponseView};
 use crate::http_client::HttpMethod;
 use iced::widget::text_editor;
 
@@ -28,4 +28,6 @@ pub enum TabMessage {
     UrlencodedRowChanged(usize, KeyValuePair),
     AddUrlencodedRow,
     RemoveUrlencodedRow(usize),
+
+    ResponseViewChanged(ResponseView),
 }
