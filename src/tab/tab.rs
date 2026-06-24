@@ -364,57 +364,128 @@ impl Tab {
                     }
 
                     ResponseSubTab::Cookies => {
-                        let cookie_text = resp
+                        let mut cookie_table = column![].spacing(1);
+
+                        // Table Headers
+                        cookie_table = cookie_table.push(
+                            container(
+                                row![
+                                    text("Name").width(Length::FillPortion(2)).size(12),
+                                    text("Value").width(Length::FillPortion(4)).size(12),
+                                ]
+                                .padding(8)
+                                .align_items(Alignment::Center),
+                            )
+                            .style(iced::theme::Container::Box),
+                        );
+
+                        if let Some(cookie_header) = resp
                             .headers
                             .get("set-cookie")
                             .or_else(|| resp.headers.get("Set-Cookie"))
-                            .cloned()
-                            .unwrap_or_else(|| {
-                                "No cookies returned in response headers.".to_string()
-                            });
+                        {
+                            // Basic parsing split by semicolon for presentation
+                            let cookies: Vec<&str> = cookie_header.split(';').collect();
 
-                        scrollable(
-                            container(text(cookie_text).font(Font::MONOSPACE).size(13))
-                                .padding(10)
-                                .style(iced::theme::Container::Box)
-                                .width(Length::Fill),
-                        )
-                        .height(Length::Fixed(220.0))
-                        .into()
+                            for (index, cookie_kv) in cookies.iter().enumerate() {
+                                let parts: Vec<&str> = cookie_kv.splitn(2, '=').collect();
+                                let key = parts.get(0).unwrap_or(&"").trim();
+                                let val = parts.get(1).unwrap_or(&"").trim();
+
+                                if !key.is_empty() {
+                                    cookie_table = cookie_table.push(
+                                        container(
+                                            row![
+                                                text(key)
+                                                    .font(Font::MONOSPACE)
+                                                    .size(13)
+                                                    .width(Length::FillPortion(2)),
+                                                text(val)
+                                                    .font(Font::MONOSPACE)
+                                                    .size(13)
+                                                    .width(Length::FillPortion(4)),
+                                            ]
+                                            .padding(8)
+                                            .align_items(Alignment::Center),
+                                        )
+                                        .style(
+                                            if index % 2 == 0 {
+                                                iced::theme::Container::Box // Alternating rows
+                                            } else {
+                                                iced::theme::Container::Transparent
+                                            },
+                                        ),
+                                    );
+                                }
+                            }
+                        } else {
+                            cookie_table = cookie_table.push(
+                                container(
+                                    text("No cookies returned in response headers.").size(13),
+                                )
+                                .padding(10), //  Moved padding to the container
+                            );
+                        }
+
+                        scrollable(container(cookie_table).width(Length::Fill))
+                            .height(Length::Fixed(220.0))
+                            .into()
                     }
                     ResponseSubTab::Headers => {
-                        let mut headers_column = column![].spacing(6);
+                        let mut headers_table = column![].spacing(1);
+
+                        // Table Headers
+                        headers_table = headers_table.push(
+                            container(
+                                row![
+                                    text("Header Key").width(Length::FillPortion(1)).size(12),
+                                    text("Value").width(Length::FillPortion(2)).size(12),
+                                ]
+                                .padding(8)
+                                .align_items(Alignment::Center),
+                            )
+                            .style(iced::theme::Container::Box),
+                        );
 
                         if resp.headers.is_empty() {
-                            headers_column = headers_column.push(text("No headers returned."));
+                            headers_table = headers_table
+                                .push(container(text("No headers returned.").size(13)).padding(10));
                         } else {
                             let mut sorted_headers: Vec<(&String, &String)> =
                                 resp.headers.iter().collect();
                             sorted_headers.sort_by(|a, b| a.0.cmp(b.0));
 
-                            for (key, val) in sorted_headers {
-                                let header_row = row![
-                                    text(format!("{}: ", key))
-                                        .font(Font {
-                                            weight: iced::font::Weight::Bold,
-                                            ..Font::DEFAULT
-                                        })
-                                        .size(13),
-                                    text(val).font(Font::MONOSPACE).size(13)
-                                ]
-                                .spacing(5);
-                                headers_column = headers_column.push(header_row);
+                            for (index, (key, val)) in sorted_headers.into_iter().enumerate() {
+                                headers_table = headers_table.push(
+                                    container(
+                                        row![
+                                            text(key)
+                                                .font(Font {
+                                                    weight: iced::font::Weight::Bold,
+                                                    ..Font::DEFAULT
+                                                })
+                                                .size(13)
+                                                .width(Length::FillPortion(1)),
+                                            text(val)
+                                                .font(Font::MONOSPACE)
+                                                .size(13)
+                                                .width(Length::FillPortion(2))
+                                        ]
+                                        .padding(8)
+                                        .align_items(Alignment::Center),
+                                    )
+                                    .style(if index % 2 == 0 {
+                                        iced::theme::Container::Box
+                                    } else {
+                                        iced::theme::Container::Transparent
+                                    }),
+                                );
                             }
                         }
 
-                        scrollable(
-                            container(headers_column)
-                                .padding(10)
-                                .style(iced::theme::Container::Box)
-                                .width(Length::Fill),
-                        )
-                        .height(Length::Fixed(220.0))
-                        .into()
+                        scrollable(container(headers_table).width(Length::Fill))
+                            .height(Length::Fixed(220.0))
+                            .into()
                     }
                 };
 
