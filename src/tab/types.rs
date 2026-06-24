@@ -123,3 +123,10 @@ impl fmt::Display for ResponseView {
         write!(f, "{}", self.label())
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResponseSubTab {
+    Body,
+    Cookies,
+    Headers,
+}

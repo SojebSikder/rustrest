@@ -1,6 +1,6 @@
 use super::components::kv_editor_pane;
 use super::messages::TabMessage;
-use super::types::{BodyType, KeyValuePair, RawType, RequestSubTab, ResponseView};
+use super::types::{BodyType, KeyValuePair, RawType, RequestSubTab, ResponseSubTab, ResponseView}; // Added ResponseSubTab
 use crate::http_client::{HttpMethod, HttpResponse};
 
 use iced::widget::{
@@ -14,6 +14,7 @@ pub struct Tab {
     pub url: String,
     pub method: HttpMethod,
     pub active_sub_tab: RequestSubTab,
+    pub active_response_tab: ResponseSubTab,
     pub body_type: BodyType,
     pub raw_type: RawType,
     pub response_view: ResponseView,
@@ -35,6 +36,7 @@ impl Tab {
             url: String::from("https://httpbin.org/json"),
             method: HttpMethod::GET,
             active_sub_tab: RequestSubTab::Params,
+            active_response_tab: ResponseSubTab::Body,
             body_type: BodyType::Raw,
             raw_type: RawType::Json,
             response_view: ResponseView::Json,
@@ -60,6 +62,7 @@ impl Tab {
             TabMessage::UrlChanged(url) => self.url = url,
             TabMessage::MethodChanged(method) => self.method = method,
             TabMessage::SubTabSelected(sub_tab) => self.active_sub_tab = sub_tab,
+            TabMessage::ResponseSubTabSelected(resp_tab) => self.active_response_tab = resp_tab, // Handle state switch
             TabMessage::AuthChanged(auth) => self.request_auth = auth,
             TabMessage::BodyTypeChanged(body_type) => self.body_type = body_type,
             TabMessage::RawTypeChanged(raw_type) => self.raw_type = raw_type,
@@ -289,46 +292,106 @@ impl Tab {
                 ]
                 .spacing(10);
 
-                let view_dropdown =
-                    pick_list(&ResponseView::ALL[..], Some(self.response_view), move |v| {
-                        wrap_msg(TabMessage::ResponseViewChanged(v))
-                    })
-                    .padding(5);
+                let response_tabs = [
+                    ResponseSubTab::Body,
+                    ResponseSubTab::Cookies,
+                    ResponseSubTab::Headers,
+                ];
+                let mut resp_tab_bar = row![].spacing(10);
 
-                let view_toggle_bar = row![text("Response Format:").size(14), view_dropdown]
-                    .spacing(10)
-                    .align_items(Alignment::Center);
+                for variant in response_tabs.iter() {
+                    let is_resp_active = self.active_response_tab == *variant;
+                    let tab_label = match variant {
+                        ResponseSubTab::Body => "Body",
+                        ResponseSubTab::Cookies => "Cookies",
+                        ResponseSubTab::Headers => "Headers",
+                    };
+                    let mut resp_btn = button(text(tab_label).size(12)).padding(6);
 
-                let processed_body = match self.response_view {
-                    ResponseView::Json => {
-                        if let Ok(json_value) =
-                            serde_json::from_str::<serde_json::Value>(&resp.body)
-                        {
-                            serde_json::to_string_pretty(&json_value)
-                                .unwrap_or_else(|_| resp.body.clone())
-                        } else {
-                            format!(
-                                "// Invalid JSON (Showing Raw Payload instead):\n\n{}",
-                                resp.body
-                            )
-                        }
+                    if is_resp_active {
+                        resp_btn = resp_btn.style(iced::theme::Button::Primary);
+                    } else {
+                        let variant_clone = *variant;
+                        resp_btn = resp_btn
+                            .style(iced::theme::Button::Text)
+                            .on_press(wrap_msg(TabMessage::ResponseSubTabSelected(variant_clone)));
                     }
-                    ResponseView::Raw => resp.body.clone(),
+                    resp_tab_bar = resp_tab_bar.push(resp_btn);
+                }
+
+                // --- 2. SWITCH RESPONSE CONTENT ACCORDING TO ACTIVE SUB-TAB ---
+                let dynamic_response_pane: Element<Message> = match self.active_response_tab {
+                    ResponseSubTab::Body => {
+                        let view_dropdown =
+                            pick_list(&ResponseView::ALL[..], Some(self.response_view), move |v| {
+                                wrap_msg(TabMessage::ResponseViewChanged(v))
+                            })
+                            .padding(5);
+
+                        let view_toggle_bar =
+                            row![text("Response Format:").size(14), view_dropdown]
+                                .spacing(10)
+                                .align_items(Alignment::Center);
+
+                        let processed_body = match self.response_view {
+                            ResponseView::Json => {
+                                if let Ok(json_value) =
+                                    serde_json::from_str::<serde_json::Value>(&resp.body)
+                                {
+                                    serde_json::to_string_pretty(&json_value)
+                                        .unwrap_or_else(|_| resp.body.clone())
+                                } else {
+                                    format!(
+                                        "// Invalid JSON (Showing Raw Payload instead):\n\n{}",
+                                        resp.body
+                                    )
+                                }
+                            }
+                            ResponseView::Raw => resp.body.clone(),
+                        };
+
+                        column![
+                            view_toggle_bar,
+                            scrollable(
+                                container(text(processed_body).font(Font::MONOSPACE).size(13))
+                                    .padding(10)
+                                    .style(iced::theme::Container::Box)
+                                    .width(Length::Fill)
+                            )
+                            .height(Length::Fixed(220.0))
+                        ]
+                        .spacing(10)
+                        .into()
+                    }
+                    ResponseSubTab::Cookies => scrollable(
+                        container(
+                            text("No cookies returned or parsing not implemented.")
+                                .font(Font::MONOSPACE)
+                                .size(13),
+                        )
+                        .padding(10)
+                        .style(iced::theme::Container::Box)
+                        .width(Length::Fill),
+                    )
+                    .height(Length::Fixed(220.0))
+                    .into(),
+                    ResponseSubTab::Headers => scrollable(
+                        container(
+                            text("Response Headers feature preview placeholder.")
+                                .font(Font::MONOSPACE)
+                                .size(13),
+                        )
+                        .padding(10)
+                        .style(iced::theme::Container::Box)
+                        .width(Length::Fill),
+                    )
+                    .height(Length::Fixed(220.0))
+                    .into(),
                 };
 
-                column![
-                    metadata_row,
-                    view_toggle_bar,
-                    scrollable(
-                        container(text(processed_body).font(Font::MONOSPACE).size(13))
-                            .padding(10)
-                            .style(iced::theme::Container::Box)
-                            .width(Length::Fill)
-                    )
-                    .height(Length::Fixed(250.0))
-                ]
-                .spacing(10)
-                .into()
+                column![metadata_row, resp_tab_bar, dynamic_response_pane]
+                    .spacing(10)
+                    .into()
             }
             Some(Err(err_msg)) => column![
                 text("Transaction Failure").style(iced::theme::Text::Color(iced::Color::from_rgb(
