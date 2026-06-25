@@ -1,4 +1,3 @@
-// main.rs
 #![windows_subsystem = "windows"]
 
 mod http_client;
@@ -134,7 +133,11 @@ impl Application for Rustrest {
                         .map(|kv| (kv.key.trim().to_string(), kv.value.trim().to_string()))
                         .collect();
 
+                    let body_type = tab.body_type;
                     let body_string = tab.request_body.text();
+                    let form_data = tab.body_form_data.clone();
+                    let binary_path = tab.binary_file_path.clone();
+
                     let token = tab.cancel_token.clone();
                     let method = tab.method.clone();
                     let auth = tab.request_auth.clone();
@@ -143,7 +146,10 @@ impl Application for Rustrest {
                         send_request(
                             final_url,
                             method,
+                            body_type,
                             body_string,
+                            form_data,
+                            binary_path,
                             filtered_headers,
                             filtered_cookies,
                             auth,

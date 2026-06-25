@@ -1,5 +1,7 @@
+use crate::tab::types::{FormDataRow, FormDataType};
 use std::collections::HashMap;
 use std::fmt;
+use std::path::Path;
 use std::time::{Duration, Instant};
 use tokio_util::sync::CancellationToken;
 
@@ -47,7 +49,10 @@ impl fmt::Display for HttpMethod {
 pub async fn send_request(
     url: String,
     method: HttpMethod,
-    body: String,
+    body_type: crate::tab::types::BodyType,
+    raw_body: String,
+    form_data_list: Vec<FormDataRow>,
+    binary_file_path: Option<String>,
     headers_list: Vec<(String, String)>,
     cookies_list: Vec<(String, String)>,
     auth_raw: String,
@@ -78,7 +83,7 @@ pub async fn send_request(
 
     let mut req_builder = client.request(req_method, reqwest_url);
 
-    // Filter out completely blank header keys (mimicking the cookie optimization)
+    // filter out completely blank header keys
     for (key, val) in headers_list {
         if !key.trim().is_empty() {
             req_builder = req_builder.header(key.trim(), val);
@@ -101,13 +106,71 @@ pub async fn send_request(
         req_builder = req_builder.header("Authorization", auth_trimmed);
     }
 
-    // Allow payloads for custom methods too (typically anything that isn't safe or body-less like GET/HEAD)
-    if method != HttpMethod::GET
-        && method != HttpMethod::HEAD
-        && method != HttpMethod::DELETE
-        && !body.trim().is_empty()
-    {
-        req_builder = req_builder.body(body);
+    if method != HttpMethod::GET && method != HttpMethod::HEAD {
+        match body_type {
+            // handling files/fields matching multipart/form-data rules
+            crate::tab::types::BodyType::FormData => {
+                let mut form = reqwest::multipart::Form::new();
+                let mut has_fields = false;
+
+                for row in form_data_list {
+                    if !row.is_active || row.key.trim().is_empty() {
+                        continue;
+                    }
+                    has_fields = true;
+
+                    match row.field_type {
+                        FormDataType::Text => {
+                            form = form.text(row.key, row.value);
+                        }
+                        FormDataType::File => {
+                            if !row.value.trim().is_empty() {
+                                let path = Path::new(&row.value);
+                                if path.exists() {
+                                    let file_bytes = tokio::fs::read(path)
+                                        .await
+                                        .map_err(|e| format!("Form File Read Failure: {}", e))?;
+
+                                    let file_name = path
+                                        .file_name()
+                                        .and_then(|n| n.to_str())
+                                        .unwrap_or("file")
+                                        .to_string();
+
+                                    let part = reqwest::multipart::Part::bytes(file_bytes)
+                                        .file_name(file_name);
+
+                                    form = form.part(row.key, part);
+                                }
+                            }
+                        }
+                    }
+                }
+                if has_fields {
+                    req_builder = req_builder.multipart(form);
+                }
+            }
+
+            // handling raw stream binary uploads
+            crate::tab::types::BodyType::Binary => {
+                if let Some(ref path_str) = binary_file_path {
+                    let path = Path::new(path_str);
+                    if path.exists() {
+                        let file_bytes = tokio::fs::read(path)
+                            .await
+                            .map_err(|e| format!("Binary File Read Failure: {}", e))?;
+                        req_builder = req_builder.body(file_bytes);
+                    }
+                }
+            }
+
+            // fallback text states (raw JSON, URLencoded forms, etc.)
+            _ => {
+                if !raw_body.trim().is_empty() {
+                    req_builder = req_builder.body(raw_body);
+                }
+            }
+        }
     }
 
     let start_time = Instant::now();
