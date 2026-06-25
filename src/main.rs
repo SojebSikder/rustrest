@@ -11,6 +11,7 @@ use iced::widget::{button, column, container, row, text, text_input};
 use iced::{Alignment, Element, Length, Size, Task};
 
 const APP_NAME: &str = "Rustrest";
+const APP_VERSION: &str = "0.1.0";
 
 pub fn main() -> iced::Result {
     iced::application(init, update, view)

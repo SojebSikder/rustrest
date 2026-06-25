@@ -4,6 +4,7 @@ use super::types::{
     ResponseView,
 };
 use crate::http_client::{HttpMethod, HttpResponse};
+use crate::{APP_NAME, APP_VERSION};
 use iced::widget::text_editor;
 use tokio_util::sync::CancellationToken;
 
@@ -44,8 +45,10 @@ impl Tab {
             response_view: ResponseView::Json,
             request_params: vec![KeyValuePair::new("", "")],
             request_headers: vec![
-                KeyValuePair::new("Content-Type", "application/json"),
-                KeyValuePair::new("Accept", "application/json"),
+                KeyValuePair::new("User-Agent", &format!("{}/{}", APP_NAME, APP_VERSION)),
+                KeyValuePair::new("Accept", "*/*"),
+                KeyValuePair::new("Accept-Encoding", "gzip, deflate, br"),
+                KeyValuePair::new("Connection", "keep-alive"),
             ],
             request_cookies: vec![KeyValuePair::new("", "")],
             request_auth: String::from("Bearer your_token_here"),

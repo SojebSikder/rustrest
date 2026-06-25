@@ -24,7 +24,6 @@ Rustrest is a native API testing platform written in Rust.
   - [x] form data type text and file
   - [x] request body binary data: file upload
 - [ ] Response section
-  - [ ] support bangla in body response
   - [x] add json view in body response
   - [ ] json view highlighting
   - [ ] add different views in body response
