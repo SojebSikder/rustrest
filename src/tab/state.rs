@@ -1,5 +1,8 @@
 use super::messages::TabMessage;
-use super::types::{BodyType, KeyValuePair, RawType, RequestSubTab, ResponseSubTab, ResponseView};
+use super::types::{
+    BodyType, FormDataRow, FormDataType, KeyValuePair, RawType, RequestSubTab, ResponseSubTab,
+    ResponseView,
+};
 use crate::http_client::{HttpMethod, HttpResponse};
 use iced::widget::text_editor;
 use tokio_util::sync::CancellationToken;
@@ -19,8 +22,9 @@ pub struct Tab {
     pub request_cookies: Vec<KeyValuePair>,
     pub request_auth: String,
     pub request_body: text_editor::Content,
-    pub body_form_data: Vec<KeyValuePair>,
+    pub body_form_data: Vec<FormDataRow>,
     pub body_urlencoded: Vec<KeyValuePair>,
+    pub binary_file_path: Option<String>,
     pub response: Option<Result<HttpResponse, String>>,
     pub is_loading: bool,
     pub cancel_token: CancellationToken,
@@ -46,8 +50,9 @@ impl Tab {
             request_cookies: vec![KeyValuePair::new("", "")],
             request_auth: String::from("Bearer your_token_here"),
             request_body: text_editor::Content::with_text("{\n  \"key\": \"value\"\n}"),
-            body_form_data: vec![KeyValuePair::new("form_field", "value")],
+            body_form_data: vec![FormDataRow::new("form_field", "value", FormDataType::Text)],
             body_urlencoded: vec![KeyValuePair::new("form_key", "form_value")],
+            binary_file_path: None,
             response: None,
             is_loading: false,
             cancel_token: CancellationToken::new(),
@@ -59,11 +64,9 @@ impl Tab {
             TabMessage::UrlChanged(new_url) => {
                 self.url = new_url.clone();
 
-                // Attempt to parse the URL. We append a dummy base in case it's a relative path.
                 if let Ok(parsed_url) = url::Url::parse(&new_url)
                     .or_else(|_| url::Url::parse(&format!("http://localhost/{}", new_url)))
                 {
-                    // Track explicitly un-checked items so manual typing in the URL bar doesn't override them
                     let inactive_params: Vec<(String, String)> = self
                         .request_params
                         .iter()
@@ -84,7 +87,6 @@ impl Tab {
                         self.request_params.push(kv);
                     }
 
-                    // keep an empty trailing row for typing if the last one isn't empty
                     if self.request_params.is_empty()
                         || !self.request_params.last().unwrap().key.is_empty()
                     {
@@ -97,7 +99,6 @@ impl Tab {
                 if let Some(row) = self.request_params.get_mut(index) {
                     *row = kv;
                 }
-                // regenerate URL string based on the new params state
                 self.url = sync_params_to_url(&self.url, &self.request_params);
             }
 
@@ -105,7 +106,6 @@ impl Tab {
                 if index < self.request_params.len() {
                     self.request_params.remove(index);
                 }
-                // regenerate URL string based on the new params state
                 self.url = sync_params_to_url(&self.url, &self.request_params);
             }
 
@@ -160,15 +160,24 @@ impl Tab {
                 }
             }
 
-            TabMessage::FormDataRowChanged(index, kv) => {
+            TabMessage::FormDataRowChanged(index, updated_row) => {
                 if let Some(row) = self.body_form_data.get_mut(index) {
-                    *row = kv;
+                    *row = updated_row;
                 }
             }
-            TabMessage::AddFormDataRow => self.body_form_data.push(KeyValuePair::new("", "")),
+            TabMessage::AddFormDataRow => {
+                self.body_form_data
+                    .push(FormDataRow::new("", "", FormDataType::Text));
+            }
             TabMessage::RemoveFormDataRow(index) => {
                 if index < self.body_form_data.len() {
                     self.body_form_data.remove(index);
+                }
+            }
+            TabMessage::FormDataRowTypeChanged(index, new_type) => {
+                if let Some(row) = self.body_form_data.get_mut(index) {
+                    row.field_type = new_type;
+                    row.value.clear();
                 }
             }
 
@@ -183,6 +192,23 @@ impl Tab {
                     self.body_urlencoded.remove(index);
                 }
             }
+
+            TabMessage::SelectBinaryFile => {
+                if let Some(path) = rfd::FileDialog::new().pick_file() {
+                    self.binary_file_path = Some(path.display().to_string());
+                }
+            }
+            TabMessage::BinaryFileSelected(path) => {
+                self.binary_file_path = Some(path);
+            }
+            TabMessage::SelectFormDataFile(index) => {
+                if let Some(path) = rfd::FileDialog::new().pick_file() {
+                    if let Some(row) = self.body_form_data.get_mut(index) {
+                        row.value = path.display().to_string();
+                    }
+                }
+            }
+
             TabMessage::CancelRequest => {
                 if self.is_loading {
                     self.cancel_token.cancel();

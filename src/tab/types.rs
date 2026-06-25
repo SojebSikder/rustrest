@@ -58,6 +58,44 @@ impl BodyType {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FormDataType {
+    Text,
+    File,
+}
+
+impl FormDataType {
+    pub const ALL: [Self; 2] = [Self::Text, Self::File];
+}
+
+impl fmt::Display for FormDataType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Text => write!(f, "Text"),
+            Self::File => write!(f, "File"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FormDataRow {
+    pub is_active: bool,
+    pub key: String,
+    pub value: String,
+    pub field_type: FormDataType,
+}
+
+impl FormDataRow {
+    pub fn new(key: &str, value: &str, field_type: FormDataType) -> Self {
+        Self {
+            is_active: true,
+            key: String::from(key),
+            value: String::from(value),
+            field_type,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeyValuePair {
     pub is_active: bool,
@@ -74,8 +112,6 @@ impl KeyValuePair {
         }
     }
 }
-
-// body type
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RawType {
@@ -108,7 +144,6 @@ impl std::fmt::Display for RawType {
     }
 }
 
-// response view type
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResponseView {
     Raw,

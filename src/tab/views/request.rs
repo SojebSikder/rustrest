@@ -61,7 +61,6 @@ where
         .spacing(10)
         .align_items(Alignment::Center);
 
-    // conditionally show a custom text input field if a custom method is selected
     if let HttpMethod::Custom(custom_val) = &tab.method {
         let custom_method_input = text_input("PURGE", custom_val)
             .on_input(move |text| wrap_msg(TabMessage::MethodChanged(HttpMethod::Custom(text))))
@@ -156,10 +155,11 @@ where
                     )))
                     .into(),
 
-                BodyType::FormData => kv_editor_pane(
+                BodyType::FormData => super::super::components::form_data_editor_pane(
                     &tab.body_form_data,
-                    "Add Form Field",
-                    move |i, kv| wrap_msg(TabMessage::FormDataRowChanged(i, kv)),
+                    move |i, row| wrap_msg(TabMessage::FormDataRowChanged(i, row)),
+                    move |i, t| wrap_msg(TabMessage::FormDataRowTypeChanged(i, t)),
+                    move |i| wrap_msg(TabMessage::SelectFormDataFile(i)),
                     wrap_msg(TabMessage::AddFormDataRow),
                     move |i| wrap_msg(TabMessage::RemoveFormDataRow(i)),
                 ),
@@ -192,16 +192,29 @@ where
                     .spacing(10)
                     .into()
                 }
-                _ => {
-                    let editor = text_editor(&tab.request_body)
-                        .on_action(move |action| wrap_msg(TabMessage::BodyChanged(action)))
-                        .height(Length::Fixed(300.0))
-                        .padding(10);
 
-                    container(editor)
-                        .height(Length::Fixed(150.0))
-                        .style(iced::theme::Container::Box)
-                        .into()
+                BodyType::Binary => {
+                    let select_file_btn = button(text("Select File"))
+                        .padding(10)
+                        .on_press(wrap_msg(TabMessage::SelectBinaryFile));
+
+                    let file_info = if let Some(path) = &tab.binary_file_path {
+                        text(format!("Selected file: {}", path))
+                    } else {
+                        text("No file selected").style(iced::theme::Text::Color(
+                            iced::Color::from_rgb(0.6, 0.6, 0.6),
+                        ))
+                    };
+
+                    container(
+                        row![select_file_btn, file_info]
+                            .spacing(15)
+                            .align_items(Alignment::Center),
+                    )
+                    .padding(20)
+                    .style(iced::theme::Container::Box)
+                    .width(Length::Fill)
+                    .into()
                 }
             };
 

@@ -1,4 +1,7 @@
-use super::types::{BodyType, KeyValuePair, RawType, RequestSubTab, ResponseSubTab, ResponseView};
+use super::types::{
+    BodyType, FormDataRow, FormDataType, KeyValuePair, RawType, RequestSubTab, ResponseSubTab,
+    ResponseView,
+};
 use crate::http_client::HttpMethod;
 use iced::widget::text_editor;
 
@@ -11,6 +14,11 @@ pub enum TabMessage {
     AuthChanged(String),
     BodyTypeChanged(BodyType),
 
+    SelectBinaryFile,
+    BinaryFileSelected(String),
+    SelectFormDataFile(usize),
+    FormDataRowTypeChanged(usize, FormDataType),
+
     BodyChanged(text_editor::Action),
     RawTypeChanged(RawType),
 
@@ -22,7 +30,7 @@ pub enum TabMessage {
     AddHeaderRow,
     RemoveHeaderRow(usize),
 
-    FormDataRowChanged(usize, KeyValuePair),
+    FormDataRowChanged(usize, FormDataRow),
     AddFormDataRow,
     RemoveFormDataRow(usize),
 
@@ -33,11 +41,9 @@ pub enum TabMessage {
     ResponseViewChanged(ResponseView),
     ResponseSubTabSelected(ResponseSubTab),
 
-    // cookies
     CookieRowChanged(usize, KeyValuePair),
     AddCookieRow,
     RemoveCookieRow(usize),
 
-    // cancel
     CancelRequest,
 }
