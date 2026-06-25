@@ -17,9 +17,7 @@ where
         } else {
             "Enter a request and click 'Send' to see the response."
         })
-        .style(iced::theme::Text::Color(iced::Color::from_rgb(
-            0.4, 0.4, 0.4,
-        )))
+        .color(iced::Color::from_rgb(0.4, 0.4, 0.4))
         .into(),
 
         Some(Ok(resp)) => {
@@ -30,8 +28,7 @@ where
             };
 
             let metadata_row = row![
-                text(format!("Status: {}", resp.status))
-                    .style(iced::theme::Text::Color(status_color)),
+                text(format!("Status: {}", resp.status)).color(status_color),
                 text(format!(" | Latency: {}ms", resp.elapsed.as_millis())).size(14),
             ]
             .spacing(10);
@@ -53,11 +50,11 @@ where
                 let mut resp_btn = button(text(tab_label).size(12)).padding(6);
 
                 if is_resp_active {
-                    resp_btn = resp_btn.style(iced::theme::Button::Primary);
+                    resp_btn = resp_btn.style(button::primary);
                 } else {
                     let variant_clone = *variant;
                     resp_btn = resp_btn
-                        .style(iced::theme::Button::Text)
+                        .style(button::text)
                         .on_press(wrap_msg(TabMessage::ResponseSubTabSelected(variant_clone)));
                 }
                 resp_tab_bar = resp_tab_bar.push(resp_btn);
@@ -73,7 +70,7 @@ where
 
                     let view_toggle_bar = row![text("Response Format:").size(14), view_dropdown]
                         .spacing(10)
-                        .align_items(Alignment::Center);
+                        .align_y(Alignment::Center);
 
                     let processed_body = match tab.response_view {
                         ResponseView::Json => {
@@ -97,7 +94,7 @@ where
                         scrollable(
                             container(text(processed_body).font(Font::MONOSPACE).size(13))
                                 .padding(10)
-                                .style(iced::theme::Container::Box)
+                                .style(container::bordered_box)
                                 .width(Length::Fill)
                         )
                         .height(Length::Fixed(220.0))
@@ -115,9 +112,9 @@ where
                                 text("Value").width(Length::FillPortion(4)).size(12),
                             ]
                             .padding(8)
-                            .align_items(Alignment::Center),
+                            .align_y(Alignment::Center),
                         )
-                        .style(iced::theme::Container::Box),
+                        .style(container::bordered_box),
                     );
 
                     if let Some(cookie_header) = resp
@@ -146,12 +143,12 @@ where
                                                 .width(Length::FillPortion(4)),
                                         ]
                                         .padding(8)
-                                        .align_items(Alignment::Center),
+                                        .align_y(Alignment::Center),
                                     )
                                     .style(if index % 2 == 0 {
-                                        iced::theme::Container::Box
+                                        container::bordered_box
                                     } else {
-                                        iced::theme::Container::Transparent
+                                        container::transparent
                                     }),
                                 );
                             }
@@ -177,9 +174,9 @@ where
                                 text("Value").width(Length::FillPortion(2)).size(12),
                             ]
                             .padding(8)
-                            .align_items(Alignment::Center),
+                            .align_y(Alignment::Center),
                         )
-                        .style(iced::theme::Container::Box),
+                        .style(container::bordered_box),
                     );
 
                     if resp.headers.is_empty() {
@@ -207,12 +204,12 @@ where
                                             .width(Length::FillPortion(2)),
                                     ]
                                     .padding(8)
-                                    .align_items(Alignment::Center),
+                                    .align_y(Alignment::Center),
                                 )
                                 .style(if index % 2 == 0 {
-                                    iced::theme::Container::Box
+                                    container::bordered_box
                                 } else {
-                                    iced::theme::Container::Transparent
+                                    container::transparent
                                 }),
                             );
                         }
@@ -229,14 +226,14 @@ where
                 .into()
         }
 
-        Some(Ok(resp)) => unreachable!(),
         Some(Err(err_msg)) => column![
-            text("Transaction Failure").style(iced::theme::Text::Color(iced::Color::from_rgb(
-                0.9, 0.0, 0.0
-            ))),
-            scrollable(text(err_msg).font(Font::MONOSPACE).size(13).style(
-                iced::theme::Text::Color(iced::Color::from_rgb(0.7, 0.2, 0.2))
-            ))
+            text("Transaction Failure").color(iced::Color::from_rgb(0.9, 0.0, 0.0)),
+            scrollable(
+                text(err_msg)
+                    .font(Font::MONOSPACE)
+                    .size(13)
+                    .color(iced::Color::from_rgb(0.7, 0.2, 0.2))
+            )
             .height(Length::Fixed(150.0))
         ]
         .spacing(10)

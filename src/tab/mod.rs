@@ -29,7 +29,7 @@ impl Tab {
             container(response_content)
                 .width(Length::Fill)
                 .padding(15)
-                .style(iced::theme::Container::Box)
+                .style(container::bordered_box)
         ]
         .spacing(18)
         .into()

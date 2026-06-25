@@ -57,9 +57,7 @@ where
     )
     .padding(10);
 
-    let mut request_row = row![method_picker]
-        .spacing(10)
-        .align_items(Alignment::Center);
+    let mut request_row = row![method_picker].spacing(10).align_y(Alignment::Center);
 
     if let HttpMethod::Custom(custom_val) = &tab.method {
         let custom_method_input = text_input("PURGE", custom_val)
@@ -77,12 +75,12 @@ where
     let send_btn = if tab.is_loading {
         button("Cancel")
             .on_press(wrap_msg(TabMessage::CancelRequest))
-            .style(iced::theme::Button::Destructive)
+            .style(button::danger)
             .padding(12)
     } else {
         button("Send")
             .on_press(on_send)
-            .style(iced::theme::Button::Primary)
+            .style(button::primary)
             .padding(12)
     };
 
@@ -102,11 +100,11 @@ where
         let mut sub_btn = button(text(variant.name()).size(12)).padding(6);
 
         if is_sub_active {
-            sub_btn = sub_btn.style(iced::theme::Button::Primary);
+            sub_btn = sub_btn.style(button::primary);
         } else {
             let variant_clone = *variant;
             sub_btn = sub_btn
-                .style(iced::theme::Button::Text)
+                .style(button::text)
                 .on_press(wrap_msg(TabMessage::SubTabSelected(variant_clone)));
         }
         sub_tab_bar = sub_tab_bar.push(sub_btn);
@@ -140,7 +138,7 @@ where
             .into(),
 
         RequestSubTab::Body => {
-            let mut radio_bar = row![].spacing(15).align_items(Alignment::Center);
+            let mut radio_bar = row![].spacing(15).align_y(Alignment::Center);
             for variant in BodyType::ALL.iter() {
                 let radio_btn = radio(variant.label(), *variant, Some(tab.body_type), move |b| {
                     wrap_msg(TabMessage::BodyTypeChanged(b))
@@ -150,9 +148,7 @@ where
 
             let body_input: Element<Message> = match tab.body_type {
                 BodyType::None => text("This request does not have a body payload.")
-                    .style(iced::theme::Text::Color(iced::Color::from_rgb(
-                        0.5, 0.5, 0.5,
-                    )))
+                    .color(iced::Color::from_rgb(0.5, 0.5, 0.5))
                     .into(),
 
                 BodyType::FormData => super::super::components::form_data_editor_pane(
@@ -187,7 +183,7 @@ where
                         raw_dropdown,
                         container(editor)
                             .height(Length::Fixed(150.0))
-                            .style(iced::theme::Container::Box)
+                            .style(container::bordered_box)
                     ]
                     .spacing(10)
                     .into()
@@ -201,18 +197,16 @@ where
                     let file_info = if let Some(path) = &tab.binary_file_path {
                         text(format!("Selected file: {}", path))
                     } else {
-                        text("No file selected").style(iced::theme::Text::Color(
-                            iced::Color::from_rgb(0.6, 0.6, 0.6),
-                        ))
+                        text("No file selected").color(iced::Color::from_rgb(0.6, 0.6, 0.6))
                     };
 
                     container(
                         row![select_file_btn, file_info]
                             .spacing(15)
-                            .align_items(Alignment::Center),
+                            .align_y(Alignment::Center),
                     )
                     .padding(20)
-                    .style(iced::theme::Container::Box)
+                    .style(container::bordered_box)
                     .width(Length::Fill)
                     .into()
                 }
