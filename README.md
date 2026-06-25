@@ -29,7 +29,7 @@ Rustrest is a native API testing platform written in Rust.
   - [ ] json view highlighting
   - [ ] add different views in body response
   - [ ] add preview in body response
-  - [ ] add response pages (cookies, headers, )
+  - [x] add response pages (cookies, headers, )
   - [ ] show response time breakdown
   - [ ] show response size
   - [ ] show response network info including ssl

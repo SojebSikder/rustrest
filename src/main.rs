@@ -8,12 +8,13 @@ use tab::{Tab, TabMessage};
 use tokio_util::sync::CancellationToken;
 
 use iced::widget::{button, column, container, row, text, text_input};
-use iced::{Alignment, Element, Length, Size, Task, Theme};
+use iced::{Alignment, Element, Length, Size, Task};
 
 const APP_NAME: &str = "Rustrest";
 
 pub fn main() -> iced::Result {
     iced::application(init, update, view)
+        .title(|app: &Rustrest| format!("{} - API Testing Platform", APP_NAME))
         .window(iced::window::Settings {
             size: Size::new(1100.0, 800.0),
             ..Default::default()
@@ -184,9 +185,7 @@ fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
     }
 }
 
-// 3. Standalone view function acting on an immutable reference to the state
 fn view(app: &Rustrest) -> Element<Message> {
-    // let mut tab_bar = row![].spacing(5).align_items(Alignment::Center);
     let mut tab_bar = row![].spacing(5).align_y(Alignment::Center);
 
     for (idx, tab_state) in app.tabs.iter().enumerate() {
@@ -225,7 +224,6 @@ fn view(app: &Rustrest) -> Element<Message> {
                     .style(button::text)
             ]
             .spacing(8)
-            // .align_items(Alignment::Center),
             .align_y(Alignment::Center),
         )
         .padding(8);
