@@ -1,14 +1,16 @@
 #![windows_subsystem = "windows"]
 
+mod collection;
 mod http_client;
 mod tab;
 
+use collection::{CollectionItem, PostmanCollection, PostmanRequestNode, create_tab_from_request};
 use http_client::{HttpMethod, HttpResponse, send_request};
 use tab::{Tab, TabMessage};
 use tokio_util::sync::CancellationToken;
 
-use iced::widget::{button, column, container, row, text, text_editor, text_input};
-use iced::{Alignment, Element, Length, Size, Task};
+use iced::widget::{button, column, container, row, scrollable, text, text_editor, text_input};
+use iced::{Alignment, Element, Font, Length, Padding, Size, Task};
 
 const APP_NAME: &str = "Rustrest";
 const APP_VERSION: &str = "0.1.0";
@@ -17,13 +19,14 @@ pub fn main() -> iced::Result {
     iced::application(init, update, view)
         .title(|app: &Rustrest| format!("{} - API Testing Platform", APP_NAME))
         .window(iced::window::Settings {
-            size: Size::new(1100.0, 800.0),
+            size: Size::new(1250.0, 850.0),
             ..Default::default()
         })
         .run()
 }
 
 struct Rustrest {
+    collections: Vec<PostmanCollection>,
     tabs: Vec<TabState>,
     active_tab_index: usize,
     next_tab_id: usize,
@@ -45,11 +48,14 @@ enum Message {
     TabNameDoubleClick(usize),
     TabNameChanged(usize, String),
     TabNameSave(usize),
+    ImportCollectionPressed,
+    SidebarRequestClicked(PostmanRequestNode),
 }
 
 fn init() -> (Rustrest, Task<Message>) {
     (
         Rustrest {
+            collections: Vec::new(),
             tabs: vec![TabState {
                 tab: Tab::new(1),
                 is_editing_name: false,
@@ -63,6 +69,32 @@ fn init() -> (Rustrest, Task<Message>) {
 
 fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
     match message {
+        Message::ImportCollectionPressed => {
+            if let Some(path) = rfd::FileDialog::new()
+                .add_filter("Postman Collection", &["json"])
+                .pick_file()
+            {
+                if let Ok(file_content) = std::fs::read_to_string(path) {
+                    if let Ok(collection) = serde_json::from_str::<PostmanCollection>(&file_content)
+                    {
+                        app.collections.push(collection);
+                    }
+                }
+            }
+            Task::none()
+        }
+
+        Message::SidebarRequestClicked(req_node) => {
+            let new_tab = create_tab_from_request(app.next_tab_id, &req_node);
+            app.tabs.push(TabState {
+                tab: new_tab,
+                is_editing_name: false,
+            });
+            app.next_tab_id += 1;
+            app.active_tab_index = app.tabs.len() - 1;
+            Task::none()
+        }
+
         Message::TabSelected(index) => {
             if index < app.tabs.len() {
                 app.active_tab_index = index;
@@ -85,7 +117,6 @@ fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                         tab_state.tab.cancel_token.cancel();
                     }
                 }
-
                 app.tabs.remove(index);
                 if app.active_tab_index >= app.tabs.len() {
                     app.active_tab_index = app.tabs.len() - 1;
@@ -93,7 +124,6 @@ fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             }
             Task::none()
         }
-
         Message::ActiveTabMessage(tab_msg) => {
             if let Some(tab_state) = app.tabs.get_mut(app.active_tab_index) {
                 if let TabMessage::ResponseViewChanged(view) = tab_msg {
@@ -118,22 +148,18 @@ fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 if tab.is_loading || tab.url.is_empty() {
                     return Task::none();
                 }
-
                 let tab_id = tab.id;
-
                 tab.cancel_token = CancellationToken::new();
                 tab.is_loading = true;
                 tab.response = None;
 
                 let final_url = tab.url.clone();
-
                 let filtered_headers: Vec<(String, String)> = tab
                     .request_headers
                     .iter()
                     .filter(|kv| kv.is_active && !kv.key.trim().is_empty())
                     .map(|kv| (kv.key.trim().to_string(), kv.value.trim().to_string()))
                     .collect();
-
                 let filtered_cookies: Vec<(String, String)> = tab
                     .request_cookies
                     .iter()
@@ -141,27 +167,18 @@ fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     .map(|kv| (kv.key.trim().to_string(), kv.value.trim().to_string()))
                     .collect();
 
-                let body_type = tab.body_type;
-                let body_string = tab.request_body.text();
-                let form_data = tab.body_form_data.clone();
-                let binary_path = tab.binary_file_path.clone();
-
-                let token = tab.cancel_token.clone();
-                let method = tab.method.clone();
-                let auth = tab.request_auth.clone();
-
                 return Task::perform(
                     send_request(
                         final_url,
-                        method,
-                        body_type,
-                        body_string,
-                        form_data,
-                        binary_path,
+                        tab.method.clone(),
+                        tab.body_type,
+                        tab.request_body.text(),
+                        tab.body_form_data.clone(),
+                        tab.binary_file_path.clone(),
                         filtered_headers,
                         filtered_cookies,
-                        auth,
-                        token,
+                        tab.request_auth.clone(),
+                        tab.cancel_token.clone(),
                     ),
                     move |res| Message::ResponseReceived(tab_id, res),
                 );
@@ -172,7 +189,6 @@ fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             if let Some(tab_state) = app.tabs.iter_mut().find(|t| t.tab.id == tab_id) {
                 let tab = &mut tab_state.tab;
                 tab.is_loading = false;
-
                 match &res {
                     Ok(resp) => {
                         let initial_body = match tab.response_view {
@@ -185,7 +201,6 @@ fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                         tab.response_body_editor = text_editor::Content::with_text(err_msg);
                     }
                 }
-
                 tab.response = Some(res);
             }
             Task::none()
@@ -215,15 +230,60 @@ fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
 }
 
 fn view(app: &Rustrest) -> Element<Message> {
-    let mut tab_bar = row![].spacing(5).align_y(Alignment::Center);
+    // side bar element
+    let mut sidebar_contents = column![
+        button("Import Collection")
+            .on_press(Message::ImportCollectionPressed)
+            .padding(8)
+            .width(Length::Fill),
+        text("Collections").size(14).font(Font {
+            weight: iced::font::Weight::Bold,
+            ..Font::DEFAULT
+        }),
+    ]
+    .spacing(10);
 
+    if app.collections.is_empty() {
+        sidebar_contents = sidebar_contents.push(
+            text("No collections imported yet.")
+                .size(11)
+                .style(text::secondary),
+        );
+    } else {
+        for col in &app.collections {
+            let mut col_tree = column![
+                text(&col.info.name)
+                    .font(Font {
+                        weight: iced::font::Weight::Bold,
+                        ..Font::DEFAULT
+                    })
+                    .size(13)
+            ]
+            .spacing(4);
+
+            // render subitems recursively
+            for item in &col.item {
+                col_tree = render_sidebar_item(col_tree, item);
+            }
+            sidebar_contents = sidebar_contents.push(col_tree);
+        }
+    }
+
+    let sidebar = container(scrollable(sidebar_contents))
+        .width(Length::Fixed(260.0))
+        .height(Length::Fill)
+        .padding(10)
+        .style(container::bordered_box);
+
+    // main tabs view
+    let mut tab_bar = row![].spacing(5).align_y(Alignment::Center);
     for (idx, tab_state) in app.tabs.iter().enumerate() {
         let is_active = idx == app.active_tab_index;
         let tab = &tab_state.tab;
 
         let method_str = match &tab.method {
-            HttpMethod::Custom(custom) if custom.trim().is_empty() => "CUSTOM".to_string(),
-            HttpMethod::Custom(custom) => custom.to_uppercase(),
+            HttpMethod::Custom(c) if c.trim().is_empty() => "CUSTOM".to_string(),
+            HttpMethod::Custom(c) => c.to_uppercase(),
             other => format!("{}", other),
         };
         let method_badge = text(format!("[{}]", method_str)).size(11);
@@ -233,7 +293,7 @@ fn view(app: &Rustrest) -> Element<Message> {
                 .on_input(move |txt| Message::TabNameChanged(idx, txt))
                 .on_submit(Message::TabNameSave(idx))
                 .size(13)
-                .width(Length::Fixed(120.0))
+                .width(Length::Fixed(100.0))
                 .into()
         } else {
             button(text(&tab.name).size(13))
@@ -252,10 +312,10 @@ fn view(app: &Rustrest) -> Element<Message> {
                     .padding(2)
                     .style(button::text)
             ]
-            .spacing(8)
+            .spacing(6)
             .align_y(Alignment::Center),
         )
-        .padding(8);
+        .padding(6);
 
         if !is_active {
             tab_button = tab_button
@@ -267,7 +327,7 @@ fn view(app: &Rustrest) -> Element<Message> {
 
     let add_tab_btn = button("+")
         .on_press(Message::NewTabPressed)
-        .padding(8)
+        .padding(6)
         .style(button::success);
 
     tab_bar = tab_bar.push(add_tab_btn);
@@ -275,20 +335,56 @@ fn view(app: &Rustrest) -> Element<Message> {
     let current_tab = &app.tabs[app.active_tab_index].tab;
     let tab_view = current_tab.view(Message::ActiveTabMessage, Message::SendPressed);
 
-    container(column![tab_bar, tab_view].spacing(18))
+    let workbench = column![tab_bar, tab_view].spacing(15);
+
+    // join sidebar and workbench into a side by side grid viewport layout
+    row![sidebar, workbench]
+        .spacing(15)
+        .padding(15)
         .width(Length::Fill)
         .height(Length::Fill)
-        .padding(25)
         .into()
+}
+
+fn render_sidebar_item<'a>(
+    mut layout: iced::widget::Column<'a, Message>,
+    item: &'a CollectionItem,
+) -> iced::widget::Column<'a, Message> {
+    match item {
+        CollectionItem::Folder {
+            name,
+            item: sub_items,
+        } => {
+            let mut folder_layout = column![text(format!("📁 {}", name)).size(12)]
+                .spacing(3)
+                .padding(Padding {
+                    top: 0.0,
+                    right: 0.0,
+                    bottom: 0.0,
+                    left: 10.0,
+                });
+            for sub in sub_items {
+                folder_layout = render_sidebar_item(folder_layout, sub);
+            }
+            layout.push(folder_layout)
+        }
+        CollectionItem::Request(req_node) => {
+            let req_clone = req_node.clone();
+            let label = format!("{} - {}", req_node.request.method, req_node.name);
+            layout.push(
+                button(text(label).size(11))
+                    .on_press(Message::SidebarRequestClicked(req_clone))
+                    .style(button::text)
+                    .padding([2, 5]),
+            )
+        }
+    }
 }
 
 fn format_json_or_fallback(raw_body: &str) -> String {
     if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(raw_body) {
         serde_json::to_string_pretty(&json_value).unwrap_or_else(|_| raw_body.to_string())
     } else {
-        format!(
-            "// Invalid JSON (Showing Raw Payload instead):\n\n{}",
-            raw_body
-        )
+        format!("// Invalid JSON:\n{}", raw_body)
     }
 }
