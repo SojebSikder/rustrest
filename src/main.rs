@@ -236,10 +236,6 @@ fn view(app: &Rustrest) -> Element<Message> {
             .on_press(Message::ImportCollectionPressed)
             .padding(8)
             .width(Length::Fill),
-        text("Collections").size(14).font(Font {
-            weight: iced::font::Weight::Bold,
-            ..Font::DEFAULT
-        }),
     ]
     .spacing(10);
 
@@ -257,7 +253,7 @@ fn view(app: &Rustrest) -> Element<Message> {
                         weight: iced::font::Weight::Bold,
                         ..Font::DEFAULT
                     })
-                    .size(13)
+                    .size(15)
             ]
             .spacing(4);
 
@@ -355,7 +351,7 @@ fn render_sidebar_item<'a>(
             name,
             item: sub_items,
         } => {
-            let mut folder_layout = column![text(format!("📁 {}", name)).size(12)]
+            let mut folder_layout = column![text(format!("📁 {}", name)).size(15)]
                 .spacing(3)
                 .padding(Padding {
                     top: 0.0,
@@ -372,7 +368,7 @@ fn render_sidebar_item<'a>(
             let req_clone = req_node.clone();
             let label = format!("{} - {}", req_node.request.method, req_node.name);
             layout.push(
-                button(text(label).size(11))
+                button(text(label).size(15))
                     .on_press(Message::SidebarRequestClicked(req_clone))
                     .style(button::text)
                     .padding([2, 5]),
