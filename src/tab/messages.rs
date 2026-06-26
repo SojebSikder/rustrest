@@ -44,6 +44,7 @@ pub enum TabMessage {
     CookieRowChanged(usize, KeyValuePair),
     AddCookieRow,
     RemoveCookieRow(usize),
+    ResponseBodyEditorAction(iced::widget::text_editor::Action),
 
     CancelRequest,
 }

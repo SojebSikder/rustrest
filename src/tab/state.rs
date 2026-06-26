@@ -27,6 +27,7 @@ pub struct Tab {
     pub body_urlencoded: Vec<KeyValuePair>,
     pub binary_file_path: Option<String>,
     pub response: Option<Result<HttpResponse, String>>,
+    pub response_body_editor: text_editor::Content,
     pub is_loading: bool,
     pub cancel_token: CancellationToken,
 }
@@ -59,6 +60,7 @@ impl Tab {
             response: None,
             is_loading: false,
             cancel_token: CancellationToken::new(),
+            response_body_editor: text_editor::Content::with_text(""),
         }
     }
 
@@ -160,6 +162,12 @@ impl Tab {
             TabMessage::RemoveCookieRow(index) => {
                 if index < self.request_cookies.len() {
                     self.request_cookies.remove(index);
+                }
+            }
+            TabMessage::ResponseBodyEditorAction(action) => {
+                if let iced::widget::text_editor::Action::Edit(_) = action {
+                } else {
+                    self.response_body_editor.perform(action);
                 }
             }
 

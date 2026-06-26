@@ -1,7 +1,7 @@
 use super::super::Tab;
 use super::super::messages::TabMessage;
 use super::super::types::{ResponseSubTab, ResponseView};
-use iced::widget::{button, column, container, pick_list, row, scrollable, text};
+use iced::widget::{button, column, container, pick_list, row, scrollable, text, text_editor};
 use iced::{Alignment, Element, Font, Length};
 
 pub fn render_response_pane<'a, Message>(
@@ -72,32 +72,20 @@ where
                         .spacing(10)
                         .align_y(Alignment::Center);
 
-                    let processed_body = match tab.response_view {
-                        ResponseView::Json => {
-                            if let Ok(json_value) =
-                                serde_json::from_str::<serde_json::Value>(&resp.body)
-                            {
-                                serde_json::to_string_pretty(&json_value)
-                                    .unwrap_or_else(|_| resp.body.clone())
-                            } else {
-                                format!(
-                                    "// Invalid JSON (Showing Raw Payload instead):\n\n{}",
-                                    resp.body
-                                )
-                            }
-                        }
-                        ResponseView::Raw => resp.body.clone(),
-                    };
-
                     column![
                         view_toggle_bar,
                         scrollable(
-                            container(text(processed_body).font(Font::MONOSPACE).size(13))
-                                .padding(10)
-                                .style(container::bordered_box)
-                                .width(Length::Fill)
+                            container(
+                                text_editor(&tab.response_body_editor)
+                                    .font(Font::MONOSPACE)
+                                    .size(13)
+                                    .on_action(move |act| wrap_msg(
+                                        TabMessage::ResponseBodyEditorAction(act)
+                                    ))
+                            )
+                            .style(container::bordered_box)
+                            .width(Length::Fill)
                         )
-                        .height(Length::Fixed(220.0))
                     ]
                     .spacing(10)
                     .into()

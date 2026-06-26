@@ -7,7 +7,7 @@ use http_client::{HttpMethod, HttpResponse, send_request};
 use tab::{Tab, TabMessage};
 use tokio_util::sync::CancellationToken;
 
-use iced::widget::{button, column, container, row, text, text_input};
+use iced::widget::{button, column, container, row, text, text_editor, text_input};
 use iced::{Alignment, Element, Length, Size, Task};
 
 const APP_NAME: &str = "Rustrest";
@@ -93,9 +93,22 @@ fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             }
             Task::none()
         }
+
         Message::ActiveTabMessage(tab_msg) => {
             if let Some(tab_state) = app.tabs.get_mut(app.active_tab_index) {
-                tab_state.tab.update(tab_msg);
+                if let TabMessage::ResponseViewChanged(view) = tab_msg {
+                    tab_state.tab.response_view = view;
+                    if let Some(Ok(resp)) = &tab_state.tab.response {
+                        let body_text = match view {
+                            tab::types::ResponseView::Json => format_json_or_fallback(&resp.body),
+                            tab::types::ResponseView::Raw => resp.body.clone(),
+                        };
+                        tab_state.tab.response_body_editor =
+                            text_editor::Content::with_text(&body_text);
+                    }
+                } else {
+                    tab_state.tab.update(tab_msg);
+                }
             }
             Task::none()
         }
@@ -157,8 +170,23 @@ fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         }
         Message::ResponseReceived(tab_id, res) => {
             if let Some(tab_state) = app.tabs.iter_mut().find(|t| t.tab.id == tab_id) {
-                tab_state.tab.is_loading = false;
-                tab_state.tab.response = Some(res);
+                let tab = &mut tab_state.tab;
+                tab.is_loading = false;
+
+                match &res {
+                    Ok(resp) => {
+                        let initial_body = match tab.response_view {
+                            tab::types::ResponseView::Json => format_json_or_fallback(&resp.body),
+                            tab::types::ResponseView::Raw => resp.body.clone(),
+                        };
+                        tab.response_body_editor = text_editor::Content::with_text(&initial_body);
+                    }
+                    Err(err_msg) => {
+                        tab.response_body_editor = text_editor::Content::with_text(err_msg);
+                    }
+                }
+
+                tab.response = Some(res);
             }
             Task::none()
         }
@@ -252,4 +280,15 @@ fn view(app: &Rustrest) -> Element<Message> {
         .height(Length::Fill)
         .padding(25)
         .into()
+}
+
+fn format_json_or_fallback(raw_body: &str) -> String {
+    if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(raw_body) {
+        serde_json::to_string_pretty(&json_value).unwrap_or_else(|_| raw_body.to_string())
+    } else {
+        format!(
+            "// Invalid JSON (Showing Raw Payload instead):\n\n{}",
+            raw_body
+        )
+    }
 }
