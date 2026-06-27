@@ -96,7 +96,7 @@ impl FormDataRow {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct KeyValuePair {
     pub is_active: bool,
     pub key: String,

@@ -227,6 +227,64 @@ impl Tab {
             }
         }
     }
+
+    pub fn compile_request_fields(
+        &self,
+        env: &Option<crate::Environment>,
+    ) -> (
+        String,                              // URL
+        String,                              // Raw Body
+        Vec<crate::tab::types::FormDataRow>, // Form Data
+        Vec<(String, String)>,               // Headers
+        Vec<(String, String)>,               // Cookies
+        String,                              // Auth
+    ) {
+        let resolve = |val: &str| -> String {
+            if let Some(e) = env {
+                e.replace_vars(val)
+            } else {
+                val.to_string()
+            }
+        };
+
+        let resolved_url = resolve(&self.url);
+        let resolved_body = resolve(&self.request_body.text());
+        let resolved_auth = resolve(&self.request_auth);
+
+        let resolved_headers = self
+            .request_headers
+            .iter()
+            .filter(|h| h.is_active)
+            .map(|h| (resolve(&h.key), resolve(&h.value)))
+            .collect();
+
+        let resolved_cookies = self
+            .request_cookies
+            .iter()
+            .filter(|c| c.is_active)
+            .map(|c| (resolve(&c.key), resolve(&c.value)))
+            .collect();
+
+        let resolved_form_data = self
+            .body_form_data
+            .iter()
+            .map(|row| crate::tab::types::FormDataRow {
+                is_active: row.is_active,
+                key: resolve(&row.key),
+                value: resolve(&row.value),
+                field_type: row.field_type,
+            })
+            .collect();
+
+        (
+            resolved_url,
+            resolved_body,
+            resolved_form_data,
+            resolved_headers,
+            resolved_cookies,
+            resolved_auth,
+        )
+    }
 }
 
 fn sync_params_to_url(url_str: &str, params: &[KeyValuePair]) -> String {

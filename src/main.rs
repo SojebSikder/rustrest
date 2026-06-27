@@ -6,10 +6,13 @@ mod tab;
 
 use collection::{CollectionItem, PostmanCollection, PostmanRequestNode, create_tab_from_request};
 use http_client::{HttpMethod, HttpResponse, send_request};
+use tab::types::{FormDataRow, KeyValuePair};
 use tab::{Tab, TabMessage};
 use tokio_util::sync::CancellationToken;
 
-use iced::widget::{button, column, container, row, scrollable, text, text_editor, text_input};
+use iced::widget::{
+    button, column, container, pick_list, row, scrollable, text, text_editor, text_input,
+};
 use iced::{Alignment, Element, Font, Length, Padding, Size, Task};
 
 const APP_NAME: &str = "Rustrest";
@@ -17,7 +20,7 @@ const APP_VERSION: &str = "0.1.0";
 
 pub fn main() -> iced::Result {
     iced::application(init, update, view)
-        .title(|app: &Rustrest| format!("{} - API Testing Platform", APP_NAME))
+        .title(|_: &Rustrest| format!("{} - API Testing Platform", APP_NAME))
         .window(iced::window::Settings {
             size: Size::new(1250.0, 850.0),
             ..Default::default()
@@ -25,8 +28,30 @@ pub fn main() -> iced::Result {
         .run()
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct Environment {
+    pub name: String,
+    pub variables: Vec<KeyValuePair>,
+}
+
+impl Environment {
+    /// Replaces occurrences of {{variable_key}} with its corresponding active value
+    pub fn replace_vars(&self, input: &str) -> String {
+        let mut output = input.to_string();
+        for var in &self.variables {
+            if var.is_active && !var.key.trim().is_empty() {
+                let placeholder = format!("{{{{{}}}}}", var.key.trim());
+                output = output.replace(&placeholder, &var.value);
+            }
+        }
+        output
+    }
+}
+
 struct Rustrest {
     collections: Vec<PostmanCollection>,
+    environments: Vec<Environment>,
+    active_env_index: Option<usize>,
     tabs: Vec<TabState>,
     active_tab_index: usize,
     next_tab_id: usize,
@@ -50,12 +75,28 @@ enum Message {
     TabNameSave(usize),
     ImportCollectionPressed,
     SidebarRequestClicked(PostmanRequestNode),
+
+    // Environment Actions
+    EnvSelected(Option<String>),
 }
 
 fn init() -> (Rustrest, Task<Message>) {
+    // seed an example environment workspace for context demonstration
+    let mut demo_env = Environment {
+        name: "Production API".to_string(),
+        variables: vec![
+            KeyValuePair::new("base_url", "https://jsonplaceholder.typicode.com"),
+            KeyValuePair::new("bearer_token", "secret_token_abc123"),
+        ],
+    };
+    demo_env.variables[0].is_active = true;
+    demo_env.variables[1].is_active = true;
+
     (
         Rustrest {
             collections: Vec::new(),
+            environments: vec![demo_env],
+            active_env_index: None,
             tabs: vec![TabState {
                 tab: Tab::new(1),
                 is_editing_name: false,
@@ -153,31 +194,34 @@ fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 tab.is_loading = true;
                 tab.response = None;
 
-                let final_url = tab.url.clone();
-                let filtered_headers: Vec<(String, String)> = tab
-                    .request_headers
-                    .iter()
-                    .filter(|kv| kv.is_active && !kv.key.trim().is_empty())
-                    .map(|kv| (kv.key.trim().to_string(), kv.value.trim().to_string()))
-                    .collect();
-                let filtered_cookies: Vec<(String, String)> = tab
-                    .request_cookies
-                    .iter()
-                    .filter(|kv| kv.is_active && !kv.key.trim().is_empty())
-                    .map(|kv| (kv.key.trim().to_string(), kv.value.trim().to_string()))
-                    .collect();
+                // grab the active environment context reference
+                let active_env = app
+                    .active_env_index
+                    .and_then(|idx| app.environments.get(idx))
+                    .cloned();
 
+                // use compile_request_fields to unpack everything cleanly
+                let (
+                    final_url,
+                    compiled_body,
+                    compiled_form_data,
+                    filtered_headers,
+                    filtered_cookies,
+                    compiled_auth,
+                ) = tab.compile_request_fields(&active_env);
+
+                // dispatch the task over the cleanly decoupled arguments
                 return Task::perform(
                     send_request(
                         final_url,
                         tab.method.clone(),
                         tab.body_type,
-                        tab.request_body.text(),
-                        tab.body_form_data.clone(),
+                        compiled_body,
+                        compiled_form_data,
                         tab.binary_file_path.clone(),
                         filtered_headers,
                         filtered_cookies,
-                        tab.request_auth.clone(),
+                        compiled_auth,
                         tab.cancel_token.clone(),
                     ),
                     move |res| Message::ResponseReceived(tab_id, res),
@@ -226,16 +270,48 @@ fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             }
             Task::none()
         }
+        Message::EnvSelected(selected_name) => {
+            if let Some(name) = selected_name {
+                app.active_env_index = app.environments.iter().position(|e| e.name == name);
+            } else {
+                app.active_env_index = None;
+            }
+            Task::none()
+        }
     }
 }
 
 fn view(app: &Rustrest) -> Element<Message> {
-    // side bar element
+    // environment selector row
+    let env_options: Vec<String> = app.environments.iter().map(|e| e.name.clone()).collect();
+    let current_env_selection = app
+        .active_env_index
+        .and_then(|idx| app.environments.get(idx))
+        .map(|e| e.name.clone());
+
+    let env_selector = row![
+        text("Environment:").size(13),
+        pick_list(env_options, current_env_selection, |selected| {
+            Message::EnvSelected(Some(selected))
+        })
+        .placeholder("No Environment")
+        .width(Length::Fixed(180.0))
+    ]
+    .spacing(8)
+    .align_y(Alignment::Center);
+
+    // sidebar panel element
     let mut sidebar_contents = column![
         button("Import Collection")
             .on_press(Message::ImportCollectionPressed)
             .padding(8)
             .width(Length::Fill),
+        container(env_selector).padding(Padding {
+            top: 5.0,
+            right: 0.0,
+            bottom: 10.0,
+            left: 0.0,
+        }),
     ]
     .spacing(10);
 
@@ -257,7 +333,6 @@ fn view(app: &Rustrest) -> Element<Message> {
             ]
             .spacing(4);
 
-            // render subitems recursively
             for item in &col.item {
                 col_tree = render_sidebar_item(col_tree, item);
             }
@@ -271,7 +346,7 @@ fn view(app: &Rustrest) -> Element<Message> {
         .padding(10)
         .style(container::bordered_box);
 
-    // main tabs view
+    // main tabs workspace panel view
     let mut tab_bar = row![].spacing(5).align_y(Alignment::Center);
     for (idx, tab_state) in app.tabs.iter().enumerate() {
         let is_active = idx == app.active_tab_index;
@@ -333,7 +408,6 @@ fn view(app: &Rustrest) -> Element<Message> {
 
     let workbench = column![tab_bar, tab_view].spacing(15);
 
-    // join sidebar and workbench into a side by side grid viewport layout
     row![sidebar, workbench]
         .spacing(15)
         .padding(15)
