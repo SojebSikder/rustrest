@@ -68,9 +68,8 @@ where
                         })
                         .padding(5);
 
-                    let view_toggle_bar = row![text("Response Format:").size(14), view_dropdown]
-                        .spacing(10)
-                        .align_y(Alignment::Center);
+                    let view_toggle_bar =
+                        row![view_dropdown].spacing(10).align_y(Alignment::Center);
 
                     column![
                         view_toggle_bar,
