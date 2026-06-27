@@ -88,6 +88,7 @@ where
                             text_editor(&tab.response_body_editor)
                                 .font(Font::MONOSPACE)
                                 .size(13)
+                                .height(Length::Fill)
                                 .on_action(move |act| wrap_msg(
                                     TabMessage::ResponseBodyEditorAction(act)
                                 ))
