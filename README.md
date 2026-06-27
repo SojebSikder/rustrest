@@ -11,7 +11,10 @@ Rustrest is a native API testing platform written in Rust.
 - [ ] collaboration
 - [ ] add more auth types
 - [ ] collection of requests with saved responses
-- [x] import collections
+- [x] import collections postman (v2.1)
+- [ ] add support for insomnia (v4, v5.1)
+- [ ] add support for open api
+- [ ] add support for swagger
 - [x] collection view sidebar
 - [x] supports Postman v2.1 JSON file
 - [ ] export collections
@@ -26,6 +29,7 @@ Rustrest is a native API testing platform written in Rust.
   - [x] rename request tab
   - [x] form data type text and file
   - [x] request body binary data: file upload
+  - [ ] add basic Auth
 - [ ] Response section
   - [x] add json view in body response
   - [ ] json view highlighting
