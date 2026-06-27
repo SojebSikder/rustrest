@@ -48,7 +48,7 @@ impl Tab {
             request_headers: vec![
                 KeyValuePair::new("User-Agent", &format!("{}/{}", APP_NAME, APP_VERSION)),
                 KeyValuePair::new("Accept", "*/*"),
-                KeyValuePair::new("Accept-Encoding", "gzip, deflate, br"),
+                // KeyValuePair::new("Accept-Encoding", "gzip, deflate, br"),
                 KeyValuePair::new("Connection", "keep-alive"),
             ],
             request_cookies: vec![KeyValuePair::new("", "")],

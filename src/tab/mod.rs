@@ -27,10 +27,13 @@ impl Tab {
             request_bar,
             configuration_pane,
             container(response_content)
+                .height(Length::Fill)
                 .width(Length::Fill)
                 .padding(15)
                 .style(container::bordered_box)
         ]
+        .height(Length::Fill)
+        .width(Length::Fill)
         .spacing(18)
         .into()
     }
