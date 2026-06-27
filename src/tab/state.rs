@@ -37,7 +37,7 @@ impl Tab {
         Self {
             id,
             name: format!("Request {}", id),
-            url: String::from("https://httpbin.org/json"),
+            url: String::from("https://jsonplaceholder.typicode.com/todos/1"),
             method: HttpMethod::GET,
             active_sub_tab: RequestSubTab::Params,
             active_response_tab: ResponseSubTab::Body,
