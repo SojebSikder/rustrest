@@ -1,7 +1,9 @@
 use super::super::Tab;
 use super::super::messages::TabMessage;
 use super::super::types::{ResponseSubTab, ResponseView};
-use iced::widget::{button, column, container, pick_list, row, scrollable, text, text_editor};
+use iced::widget::{
+    Space, button, column, container, pick_list, row, scrollable, text, text_editor,
+};
 use iced::{Alignment, Element, Font, Length};
 
 pub fn render_response_pane<'a, Message>(
@@ -22,23 +24,28 @@ where
 
         Some(Ok(resp)) => {
             let status_color = if (200..300).contains(&resp.status) {
-                iced::Color::from_rgb(0.0, 0.6, 0.1)
+                iced::Color::from_rgb(0.12, 0.64, 0.35) // Elegant Emerald Green
             } else {
-                iced::Color::from_rgb(0.8, 0.1, 0.1)
+                iced::Color::from_rgb(0.87, 0.22, 0.22) // Coral/Red
             };
 
             let metadata_row = row![
-                text(format!("Status: {}", resp.status)).color(status_color),
-                text(format!(" | Latency: {}ms", resp.elapsed.as_millis())).size(14),
+                text(format!("Status: {}", resp.status))
+                    .color(status_color)
+                    .size(13),
+                text(format!("Time: {} ms", resp.elapsed.as_millis()))
+                    .color(iced::Color::from_rgb(0.5, 0.5, 0.5))
+                    .size(13),
             ]
-            .spacing(10);
+            .spacing(15)
+            .align_y(Alignment::Center);
 
             let response_tabs = [
                 ResponseSubTab::Body,
                 ResponseSubTab::Cookies,
                 ResponseSubTab::Headers,
             ];
-            let mut resp_tab_bar = row![].spacing(10);
+            let mut resp_tab_bar = row![].spacing(4).align_y(Alignment::Center);
 
             for variant in response_tabs.iter() {
                 let is_resp_active = tab.active_response_tab == *variant;
@@ -47,7 +54,8 @@ where
                     ResponseSubTab::Cookies => "Cookies",
                     ResponseSubTab::Headers => "Headers",
                 };
-                let mut resp_btn = button(text(tab_label).size(12)).padding(6);
+
+                let mut resp_btn = button(text(tab_label).size(13)).padding([6, 12]);
 
                 if is_resp_active {
                     resp_btn = resp_btn.style(button::primary);
@@ -60,33 +68,35 @@ where
                 resp_tab_bar = resp_tab_bar.push(resp_btn);
             }
 
+            let postman_header = row![resp_tab_bar, Space::new().width(Length::Fill), metadata_row]
+                .width(Length::Fill)
+                .align_y(Alignment::Center);
+
             let dynamic_pane: Element<Message> = match tab.active_response_tab {
                 ResponseSubTab::Body => {
                     let view_dropdown =
                         pick_list(&ResponseView::ALL[..], Some(tab.response_view), move |v| {
                             wrap_msg(TabMessage::ResponseViewChanged(v))
                         })
-                        .padding(5);
+                        .padding([4, 8]);
 
-                    let view_toggle_bar =
-                        row![view_dropdown].spacing(10).align_y(Alignment::Center);
+                    let view_toggle_bar = row![view_dropdown].spacing(8).align_y(Alignment::Center);
 
                     column![
                         view_toggle_bar,
-                        scrollable(
-                            container(
-                                text_editor(&tab.response_body_editor)
-                                    .font(Font::MONOSPACE)
-                                    .size(13)
-                                    .on_action(move |act| wrap_msg(
-                                        TabMessage::ResponseBodyEditorAction(act)
-                                    ))
-                            )
-                            .style(container::bordered_box)
-                            .width(Length::Fill)
+                        container(
+                            text_editor(&tab.response_body_editor)
+                                .font(Font::MONOSPACE)
+                                .size(13)
+                                .on_action(move |act| wrap_msg(
+                                    TabMessage::ResponseBodyEditorAction(act)
+                                ))
                         )
+                        .style(container::bordered_box)
+                        .width(Length::Fill)
+                        .height(Length::Fill)
                     ]
-                    .spacing(10)
+                    .spacing(8)
                     .into()
                 }
 
@@ -95,8 +105,14 @@ where
                     cookie_table = cookie_table.push(
                         container(
                             row![
-                                text("Name").width(Length::FillPortion(2)).size(12),
-                                text("Value").width(Length::FillPortion(4)).size(12),
+                                text("Name")
+                                    .width(Length::FillPortion(2))
+                                    .size(12)
+                                    .color(iced::Color::from_rgb(0.5, 0.5, 0.5)),
+                                text("Value")
+                                    .width(Length::FillPortion(4))
+                                    .size(12)
+                                    .color(iced::Color::from_rgb(0.5, 0.5, 0.5)),
                             ]
                             .padding(8)
                             .align_y(Alignment::Center),
@@ -142,13 +158,17 @@ where
                         }
                     } else {
                         cookie_table = cookie_table.push(
-                            container(text("No cookies returned in response headers.").size(13))
-                                .padding(10),
+                            container(
+                                text("No cookies returned in response headers.")
+                                    .size(13)
+                                    .color(iced::Color::from_rgb(0.5, 0.5, 0.5)),
+                            )
+                            .padding(10),
                         );
                     }
 
                     scrollable(container(cookie_table).width(Length::Fill))
-                        .height(Length::Fixed(220.0))
+                        .height(Length::Fill)
                         .into()
                 }
 
@@ -157,8 +177,14 @@ where
                     headers_table = headers_table.push(
                         container(
                             row![
-                                text("Header Key").width(Length::FillPortion(1)).size(12),
-                                text("Value").width(Length::FillPortion(2)).size(12),
+                                text("Header Key")
+                                    .width(Length::FillPortion(1))
+                                    .size(12)
+                                    .color(iced::Color::from_rgb(0.5, 0.5, 0.5)),
+                                text("Value")
+                                    .width(Length::FillPortion(2))
+                                    .size(12)
+                                    .color(iced::Color::from_rgb(0.5, 0.5, 0.5)),
                             ]
                             .padding(8)
                             .align_y(Alignment::Center),
@@ -167,8 +193,14 @@ where
                     );
 
                     if resp.headers.is_empty() {
-                        headers_table = headers_table
-                            .push(container(text("No headers returned.").size(13)).padding(10));
+                        headers_table = headers_table.push(
+                            container(
+                                text("No headers returned.")
+                                    .size(13)
+                                    .color(iced::Color::from_rgb(0.5, 0.5, 0.5)),
+                            )
+                            .padding(10),
+                        );
                     } else {
                         let mut sorted_headers: Vec<(&String, &String)> =
                             resp.headers.iter().collect();
@@ -203,18 +235,18 @@ where
                     }
 
                     scrollable(container(headers_table).width(Length::Fill))
-                        .height(Length::Fixed(220.0))
+                        .height(Length::Fill)
                         .into()
                 }
             };
 
-            column![metadata_row, resp_tab_bar, dynamic_pane]
-                .spacing(10)
-                .into()
+            column![postman_header, dynamic_pane].spacing(12).into()
         }
 
         Some(Err(err_msg)) => column![
-            text("Transaction Failure").color(iced::Color::from_rgb(0.9, 0.0, 0.0)),
+            text("Transaction Failure")
+                .color(iced::Color::from_rgb(0.9, 0.0, 0.0))
+                .size(14),
             scrollable(
                 text(err_msg)
                     .font(Font::MONOSPACE)
