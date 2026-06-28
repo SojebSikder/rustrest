@@ -25,18 +25,6 @@ pub struct HttpResponse {
     pub elapsed: Duration,
 }
 
-impl HttpMethod {
-    pub const ALL: [Self; 7] = [
-        Self::GET,
-        Self::POST,
-        Self::PUT,
-        Self::DELETE,
-        Self::PATCH,
-        Self::HEAD,
-        Self::OPTIONS,
-    ];
-}
-
 impl fmt::Display for HttpMethod {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
