@@ -1,5 +1,7 @@
 use std::fmt;
 
+use crate::tab::Tab;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RequestSubTab {
     Params,
@@ -172,4 +174,15 @@ pub enum ResponseSubTab {
     Body,
     Cookies,
     Headers,
+}
+
+// collection details page
+#[derive(Debug, Clone)]
+pub enum WorkspaceContent {
+    HttpRequest(Tab),
+    CollectionRoot {
+        collection_id: usize,
+        name: String,
+        // TODO: add collection level tabs later: Variables, Auth, Docs
+    },
 }

@@ -29,6 +29,16 @@ pub fn main() -> iced::Result {
         .run()
 }
 
+/// Defines what context is loaded inside an operational UI tab workspace
+#[derive(Debug, Clone)]
+enum WorkspaceContent {
+    HttpRequest,
+    CollectionRoot {
+        collection_id: usize,
+        collection_name: String,
+    },
+}
+
 struct Rustrest {
     collections: Vec<PostmanCollection>,
     environments: Vec<Environment>,
@@ -40,6 +50,7 @@ struct Rustrest {
 
 struct TabState {
     tab: Tab,
+    content: WorkspaceContent,
     is_editing_name: bool,
 }
 
@@ -47,6 +58,7 @@ struct TabState {
 enum Message {
     TabSelected(usize),
     NewTabPressed,
+    SidebarCollectionRootClicked(usize),
     CloseTabPressed(usize),
     ActiveTabMessage(TabMessage),
     SendPressed,
@@ -63,7 +75,9 @@ enum Message {
 
 fn init() -> (Rustrest, Task<Message>) {
     let mut demo_env = Environment::new("Default");
-    demo_env.variables[0].is_active = true;
+    if !demo_env.variables.is_empty() {
+        demo_env.variables[0].is_active = true;
+    }
 
     (
         Rustrest {
@@ -72,6 +86,7 @@ fn init() -> (Rustrest, Task<Message>) {
             active_env_index: None,
             tabs: vec![TabState {
                 tab: Tab::new(1),
+                content: WorkspaceContent::HttpRequest,
                 is_editing_name: false,
             }],
             active_tab_index: 0,
@@ -92,14 +107,41 @@ fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     if let Ok(mut collection) =
                         serde_json::from_str::<PostmanCollection>(&file_content)
                     {
-                        // dynamically tag collection IDs
                         collection.id = app.next_tab_id;
                         app.next_tab_id += 1;
-
-                        // collection variables stay isolated within the collection item.
                         app.collections.push(collection);
                     }
                 }
+            }
+            Task::none()
+        }
+
+        Message::SidebarCollectionRootClicked(col_id) => {
+            // check if workspace tab is already open for this collection root node
+            let existing_tab_idx = app.tabs.iter().position(|t| {
+                if let WorkspaceContent::CollectionRoot { collection_id, .. } = t.content {
+                    collection_id == col_id
+                } else {
+                    false
+                }
+            });
+
+            if let Some(idx) = existing_tab_idx {
+                app.active_tab_index = idx;
+            } else if let Some(col) = app.collections.iter().find(|c| c.id == col_id) {
+                let mut root_tab = Tab::new(app.next_tab_id);
+                root_tab.name = col.info.name.clone();
+
+                app.tabs.push(TabState {
+                    tab: root_tab,
+                    content: WorkspaceContent::CollectionRoot {
+                        collection_id: col_id,
+                        collection_name: col.info.name.clone(),
+                    },
+                    is_editing_name: false,
+                });
+                app.next_tab_id += 1;
+                app.active_tab_index = app.tabs.len() - 1;
             }
             Task::none()
         }
@@ -116,6 +158,7 @@ fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
 
             app.tabs.push(TabState {
                 tab: new_tab,
+                content: WorkspaceContent::HttpRequest,
                 is_editing_name: false,
             });
             app.next_tab_id += 1;
@@ -129,15 +172,18 @@ fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             }
             Task::none()
         }
+
         Message::NewTabPressed => {
             app.tabs.push(TabState {
                 tab: Tab::new(app.next_tab_id),
+                content: WorkspaceContent::HttpRequest,
                 is_editing_name: false,
             });
             app.active_tab_index = app.tabs.len() - 1;
             app.next_tab_id += 1;
             Task::none()
         }
+
         Message::CloseTabPressed(index) => {
             if app.tabs.len() > 1 {
                 if let Some(tab_state) = app.tabs.get(index) {
@@ -152,6 +198,7 @@ fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             }
             Task::none()
         }
+
         Message::ActiveTabMessage(tab_msg) => {
             if let Some(tab_state) = app.tabs.get_mut(app.active_tab_index) {
                 if let TabMessage::ResponseViewChanged(view) = tab_msg {
@@ -170,8 +217,14 @@ fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             }
             Task::none()
         }
+
         Message::SendPressed => {
             if let Some(tab_state) = app.tabs.get_mut(app.active_tab_index) {
+                // safeguard against triggering network requests if looking at a collection overview
+                if let WorkspaceContent::CollectionRoot { .. } = tab_state.content {
+                    return Task::none();
+                }
+
                 let tab = &mut tab_state.tab;
                 if tab.is_loading || tab.url.is_empty() {
                     return Task::none();
@@ -182,7 +235,6 @@ fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 tab.is_loading = true;
                 tab.response = None;
 
-                // grab the active environment context reference
                 let active_env = app
                     .active_env_index
                     .and_then(|idx| app.environments.get(idx))
@@ -193,7 +245,6 @@ fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     .and_then(|c_id| app.collections.iter().find(|c| c.id == c_id))
                     .map(|c| c.get_native_variables());
 
-                // use compile_request_fields to unpack everything cleanly
                 let (
                     final_url,
                     compiled_body,
@@ -203,7 +254,6 @@ fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     compiled_auth,
                 ) = tab.compile_request_fields(&active_env, collection_vars.as_deref());
 
-                // dispatch the task over the cleanly decoupled arguments
                 return Task::perform(
                     send_request(
                         final_url,
@@ -222,6 +272,7 @@ fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             }
             Task::none()
         }
+
         Message::ResponseReceived(tab_id, res) => {
             if let Some(tab_state) = app.tabs.iter_mut().find(|t| t.tab.id == tab_id) {
                 let tab = &mut tab_state.tab;
@@ -242,27 +293,36 @@ fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             }
             Task::none()
         }
+
         Message::TabNameDoubleClick(idx) => {
             if let Some(tab_state) = app.tabs.get_mut(idx) {
                 tab_state.is_editing_name = true;
             }
             Task::none()
         }
+
         Message::TabNameChanged(idx, new_name) => {
             if let Some(tab_state) = app.tabs.get_mut(idx) {
                 tab_state.tab.name = new_name;
             }
             Task::none()
         }
+
         Message::TabNameSave(idx) => {
             if let Some(tab_state) = app.tabs.get_mut(idx) {
                 tab_state.is_editing_name = false;
                 if tab_state.tab.name.trim().is_empty() {
-                    tab_state.tab.name = "Untitled Request".to_string();
+                    tab_state.tab.name = match &tab_state.content {
+                        WorkspaceContent::HttpRequest => "Untitled Request".to_string(),
+                        WorkspaceContent::CollectionRoot {
+                            collection_name, ..
+                        } => collection_name.clone(),
+                    };
                 }
             }
             Task::none()
         }
+
         Message::EnvSelected(selected_name) => {
             if let Some(name) = selected_name {
                 app.active_env_index = app.environments.iter().position(|e| e.name == name);
@@ -275,7 +335,6 @@ fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
 }
 
 fn view(app: &Rustrest) -> Element<Message> {
-    // environment selector row
     let env_options: Vec<String> = app.environments.iter().map(|e| e.name.clone()).collect();
     let current_env_selection = app
         .active_env_index
@@ -292,7 +351,6 @@ fn view(app: &Rustrest) -> Element<Message> {
     .spacing(8)
     .align_y(Alignment::Center);
 
-    // sidebar panel element
     let mut sidebar_contents = column![
         button("Import Collection")
             .on_press(Message::ImportCollectionPressed)
@@ -315,15 +373,21 @@ fn view(app: &Rustrest) -> Element<Message> {
         );
     } else {
         for col in &app.collections {
-            let mut col_tree = column![
-                text(&col.info.name)
+            let col_id = col.id;
+
+            let collection_header = button(
+                text(format!("📁 {}", col.info.name))
                     .font(Font {
                         weight: iced::font::Weight::Bold,
                         ..Font::DEFAULT
                     })
-                    .size(15)
-            ]
-            .spacing(4);
+                    .size(15),
+            )
+            .on_press(Message::SidebarCollectionRootClicked(col_id))
+            .style(button::text)
+            .padding([4, 2]);
+
+            let mut col_tree = column![collection_header].spacing(4);
 
             for item in &col.item {
                 col_tree = render_sidebar_item(col_tree, item);
@@ -344,12 +408,20 @@ fn view(app: &Rustrest) -> Element<Message> {
         let is_active = idx == app.active_tab_index;
         let tab = &tab_state.tab;
 
-        let method_str = match &tab.method {
-            HttpMethod::Custom(c) if c.trim().is_empty() => "CUSTOM".to_string(),
-            HttpMethod::Custom(c) => c.to_uppercase(),
-            other => format!("{}", other),
+        // build prefix badge depending on the workspace variant context
+        let prefix_badge = match &tab_state.content {
+            WorkspaceContent::HttpRequest => {
+                let method_str = match &tab.method {
+                    HttpMethod::Custom(c) if c.trim().is_empty() => "CUSTOM".to_string(),
+                    HttpMethod::Custom(c) => c.to_uppercase(),
+                    other => format!("{}", other),
+                };
+                text(format!("[{}]", method_str)).size(11)
+            }
+            WorkspaceContent::CollectionRoot { .. } => {
+                text("[COLL]").size(11).style(text::secondary)
+            }
         };
-        let method_badge = text(format!("[{}]", method_str)).size(11);
 
         let tab_content: Element<Message> = if tab_state.is_editing_name {
             text_input("", &tab.name)
@@ -368,7 +440,7 @@ fn view(app: &Rustrest) -> Element<Message> {
 
         let mut tab_button = button(
             row![
-                method_badge,
+                prefix_badge,
                 tab_content,
                 button("×")
                     .on_press(Message::CloseTabPressed(idx))
@@ -395,8 +467,44 @@ fn view(app: &Rustrest) -> Element<Message> {
 
     tab_bar = tab_bar.push(add_tab_btn);
 
-    let current_tab = &app.tabs[app.active_tab_index].tab;
-    let tab_view = current_tab.view(Message::ActiveTabMessage, Message::SendPressed);
+    // dynamic workbench rendering based on active tab state
+    let active_tab_state = &app.tabs[app.active_tab_index];
+    let tab_view: Element<Message> = match &active_tab_state.content {
+        WorkspaceContent::HttpRequest => active_tab_state
+            .tab
+            .view(Message::ActiveTabMessage, Message::SendPressed),
+        WorkspaceContent::CollectionRoot {
+            collection_id,
+            collection_name,
+        } => {
+            container(scrollable(
+                column![
+                    text(collection_name).size(24).font(Font {
+                        weight: iced::font::Weight::Bold,
+                        ..Font::DEFAULT
+                    }),
+                    // text(format!("Collection ID: {}", collection_id))
+                    //     .size(12)
+                    //     .style(text::secondary),
+                    // section divider line
+                    container("")
+                        .height(Length::Fixed(1.0))
+                        .width(Length::Fill)
+                        .style(container::bordered_box),
+                    text("Collection Documentation").size(16).font(Font {
+                        weight: iced::font::Weight::Semibold,
+                        ..Font::DEFAULT
+                    }),
+                    text("Welcome to collection dashboard.").size(13),
+                ]
+                .spacing(15),
+            ))
+            .padding(20)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
+        }
+    };
 
     let workbench = column![tab_bar, tab_view].spacing(15);
 
@@ -409,7 +517,7 @@ fn view(app: &Rustrest) -> Element<Message> {
 }
 
 fn render_sidebar_item<'a>(
-    mut layout: iced::widget::Column<'a, Message>,
+    layout: iced::widget::Column<'a, Message>,
     item: &'a CollectionItem,
 ) -> iced::widget::Column<'a, Message> {
     match item {

@@ -8,6 +8,7 @@ use crate::{APP_NAME, APP_VERSION};
 use iced::widget::text_editor;
 use tokio_util::sync::CancellationToken;
 
+#[derive(Debug, Clone)]
 pub struct Tab {
     pub id: usize,
     pub collection_id: Option<usize>, // Tracks the parent collection context
