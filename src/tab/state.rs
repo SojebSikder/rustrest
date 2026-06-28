@@ -10,6 +10,7 @@ use tokio_util::sync::CancellationToken;
 
 pub struct Tab {
     pub id: usize,
+    pub collection_id: Option<usize>, // Tracks the parent collection context
     pub name: String,
     pub url: String,
     pub method: HttpMethod,
@@ -36,6 +37,7 @@ impl Tab {
     pub fn new(id: usize) -> Self {
         Self {
             id,
+            collection_id: None, // Default to standalone request
             name: format!("Request {}", id),
             url: String::from("https://jsonplaceholder.typicode.com/todos/1"),
             method: HttpMethod::GET,
@@ -231,6 +233,7 @@ impl Tab {
     pub fn compile_request_fields(
         &self,
         env: &Option<crate::Environment>,
+        collection_vars: Option<&[KeyValuePair]>, // fallback variables parsed from the Postman Collection
     ) -> (
         String,                              // URL
         String,                              // Raw Body
@@ -241,7 +244,18 @@ impl Tab {
     ) {
         let resolve = |val: &str| -> String {
             if let Some(e) = env {
-                e.replace_vars(val)
+                // pass collection variables into the environment to allow tiered variable parsing
+                e.replace_vars(val, collection_vars)
+            } else if let Some(col_vars) = collection_vars {
+                // standalone environment handler context fallback
+                let mut output = val.to_string();
+                for var in col_vars {
+                    if var.is_active && !var.key.trim().is_empty() {
+                        let placeholder = format!("{{{{{}}}}}", var.key.trim());
+                        output = output.replace(&placeholder, &var.value);
+                    }
+                }
+                output
             } else {
                 val.to_string()
             }

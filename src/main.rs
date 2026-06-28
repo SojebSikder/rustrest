@@ -8,7 +8,6 @@ mod tab;
 use collection::{CollectionItem, PostmanCollection, PostmanRequestNode, create_tab_from_request};
 use env::Environment;
 use http_client::{HttpMethod, HttpResponse, send_request};
-use tab::types::KeyValuePair;
 use tab::{Tab, TabMessage};
 use tokio_util::sync::CancellationToken;
 
@@ -63,16 +62,8 @@ enum Message {
 }
 
 fn init() -> (Rustrest, Task<Message>) {
-    // seed an example environment workspace for context demonstration
-    let mut demo_env = Environment {
-        name: "Production API".to_string(),
-        variables: vec![
-            KeyValuePair::new("base_url", "https://jsonplaceholder.typicode.com"),
-            KeyValuePair::new("bearer_token", "secret_token_abc123"),
-        ],
-    };
+    let mut demo_env = Environment::new("Default");
     demo_env.variables[0].is_active = true;
-    demo_env.variables[1].is_active = true;
 
     (
         Rustrest {
@@ -98,8 +89,14 @@ fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 .pick_file()
             {
                 if let Ok(file_content) = std::fs::read_to_string(path) {
-                    if let Ok(collection) = serde_json::from_str::<PostmanCollection>(&file_content)
+                    if let Ok(mut collection) =
+                        serde_json::from_str::<PostmanCollection>(&file_content)
                     {
+                        // dynamically tag collection IDs
+                        collection.id = app.next_tab_id;
+                        app.next_tab_id += 1;
+
+                        // collection variables stay isolated within the collection item.
                         app.collections.push(collection);
                     }
                 }
@@ -108,7 +105,15 @@ fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         }
 
         Message::SidebarRequestClicked(req_node) => {
-            let new_tab = create_tab_from_request(app.next_tab_id, &req_node);
+            let associated_collection_id = app
+                .collections
+                .iter()
+                .find(|c| contains_request_node(&c.item, &req_node.name))
+                .map(|c| c.id);
+
+            let new_tab =
+                create_tab_from_request(app.next_tab_id, &req_node, associated_collection_id);
+
             app.tabs.push(TabState {
                 tab: new_tab,
                 is_editing_name: false,
@@ -171,6 +176,7 @@ fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 if tab.is_loading || tab.url.is_empty() {
                     return Task::none();
                 }
+
                 let tab_id = tab.id;
                 tab.cancel_token = CancellationToken::new();
                 tab.is_loading = true;
@@ -182,6 +188,11 @@ fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     .and_then(|idx| app.environments.get(idx))
                     .cloned();
 
+                let collection_vars = tab
+                    .collection_id
+                    .and_then(|c_id| app.collections.iter().find(|c| c.id == c_id))
+                    .map(|c| c.get_native_variables());
+
                 // use compile_request_fields to unpack everything cleanly
                 let (
                     final_url,
@@ -190,7 +201,7 @@ fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     filtered_headers,
                     filtered_cookies,
                     compiled_auth,
-                ) = tab.compile_request_fields(&active_env);
+                ) = tab.compile_request_fields(&active_env, collection_vars.as_deref());
 
                 // dispatch the task over the cleanly decoupled arguments
                 return Task::perform(
@@ -272,7 +283,6 @@ fn view(app: &Rustrest) -> Element<Message> {
         .map(|e| e.name.clone());
 
     let env_selector = row![
-        text("Environment:").size(13),
         pick_list(env_options, current_env_selection, |selected| {
             Message::EnvSelected(Some(selected))
         })
@@ -439,4 +449,24 @@ fn format_json_or_fallback(raw_body: &str) -> String {
     } else {
         format!("// Invalid JSON:\n{}", raw_body)
     }
+}
+
+fn contains_request_node(items: &[CollectionItem], name: &str) -> bool {
+    for item in items {
+        match item {
+            CollectionItem::Request(node) => {
+                if node.name == name {
+                    return true;
+                }
+            }
+            CollectionItem::Folder {
+                item: sub_items, ..
+            } => {
+                if contains_request_node(sub_items, name) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
