@@ -23,14 +23,15 @@ Rustrest is a native API testing platform written in Rust.
   - [ ] Variables
   - [ ] Run
 - [x] supports Postman v2.1 JSON file
-- [ ] export collections
-- [ ] create collections
+- [ ] *export collections
+- [ ] *create collections
   - [ ] create folder
   - [ ] create request
 - [ ] create environment
 - [x] environment values
 - [x] variables
-- [ ] supports postman collection environment values and variables
+- [x] supports postman collection variables
+- [ ] supports postman collection environment values
 - [ ] docs generation
 - [x] request cancellation
 - [ ] code generation
