@@ -1,12 +1,14 @@
 #![windows_subsystem = "windows"]
 
 mod collection;
+mod env;
 mod http_client;
 mod tab;
 
 use collection::{CollectionItem, PostmanCollection, PostmanRequestNode, create_tab_from_request};
+use env::Environment;
 use http_client::{HttpMethod, HttpResponse, send_request};
-use tab::types::{FormDataRow, KeyValuePair};
+use tab::types::KeyValuePair;
 use tab::{Tab, TabMessage};
 use tokio_util::sync::CancellationToken;
 
@@ -26,26 +28,6 @@ pub fn main() -> iced::Result {
             ..Default::default()
         })
         .run()
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct Environment {
-    pub name: String,
-    pub variables: Vec<KeyValuePair>,
-}
-
-impl Environment {
-    /// Replaces occurrences of {{variable_key}} with its corresponding active value
-    pub fn replace_vars(&self, input: &str) -> String {
-        let mut output = input.to_string();
-        for var in &self.variables {
-            if var.is_active && !var.key.trim().is_empty() {
-                let placeholder = format!("{{{{{}}}}}", var.key.trim());
-                output = output.replace(&placeholder, &var.value);
-            }
-        }
-        output
-    }
 }
 
 struct Rustrest {
