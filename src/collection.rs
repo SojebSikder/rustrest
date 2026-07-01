@@ -36,6 +36,25 @@ impl PostmanCollection {
         }
         native_vars
     }
+
+    pub fn assign_request_ids(&mut self, start_id: &mut usize) {
+        fn assign_item_ids(items: &mut [CollectionItem], start_id: &mut usize) {
+            for item in items {
+                match item {
+                    CollectionItem::Request(node) => {
+                        node.id = *start_id;
+                        *start_id += 1;
+                    }
+                    CollectionItem::Folder {
+                        item: sub_items, ..
+                    } => {
+                        assign_item_ids(sub_items, start_id);
+                    }
+                }
+            }
+        }
+        assign_item_ids(&mut self.item, start_id);
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,6 +77,8 @@ pub enum CollectionItem {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PostmanRequestNode {
+    #[serde(skip)]
+    pub id: usize,
     pub name: String,
     pub request: PostmanRequestDetails,
 }
@@ -109,6 +130,7 @@ pub fn create_tab_from_request(
     tab.name = node.name.clone();
     tab.url = node.request.url.to_string();
     tab.collection_id = collection_id;
+    tab.request_id = Some(node.id);
 
     tab.method = match node.request.method.to_uppercase().as_str() {
         "GET" => HttpMethod::GET,

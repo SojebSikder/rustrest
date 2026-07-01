@@ -3,7 +3,7 @@ use crate::env::Environment;
 use crate::http_client::send_request;
 use crate::message::Message;
 use crate::tab::{Tab, TabMessage};
-use crate::utils::{contains_request_node, format_json_or_fallback};
+use crate::utils::{contains_request_node_by_id, format_json_or_fallback};
 use iced::Task;
 use tokio_util::sync::CancellationToken;
 
@@ -36,6 +36,7 @@ pub struct Rustrest {
     pub tabs: Vec<TabState>,
     pub active_tab_index: usize,
     pub next_tab_id: usize,
+    pub next_request_id: usize,
 }
 
 pub fn init() -> (Rustrest, Task<Message>) {
@@ -56,6 +57,7 @@ pub fn init() -> (Rustrest, Task<Message>) {
             }],
             active_tab_index: 0,
             next_tab_id: 2,
+            next_request_id: 1,
         },
         Task::none(),
     )
@@ -74,6 +76,9 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     {
                         collection.id = app.next_tab_id;
                         app.next_tab_id += 1;
+
+                        collection.assign_request_ids(&mut app.next_request_id);
+
                         app.collections.push(collection);
                     }
                 }
@@ -112,22 +117,32 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         }
 
         Message::SidebarRequestClicked(req_node) => {
-            let associated_collection_id = app
-                .collections
-                .iter()
-                .find(|c| contains_request_node(&c.item, &req_node.name))
-                .map(|c| c.id);
-
-            let new_tab =
-                create_tab_from_request(app.next_tab_id, &req_node, associated_collection_id);
-
-            app.tabs.push(TabState {
-                tab: new_tab,
-                content: WorkspaceContent::HttpRequest,
-                is_editing_name: false,
+            // find an open tab matching this exact Request ID to prevent duplicating tabs
+            let existing_tab_idx = app.tabs.iter().position(|t| {
+                t.tab.request_id == Some(req_node.id)
+                    && matches!(t.content, WorkspaceContent::HttpRequest)
             });
-            app.next_tab_id += 1;
-            app.active_tab_index = app.tabs.len() - 1;
+
+            if let Some(idx) = existing_tab_idx {
+                app.active_tab_index = idx;
+            } else {
+                let associated_collection_id = app
+                    .collections
+                    .iter()
+                    .find(|c| contains_request_node_by_id(&c.item, req_node.id))
+                    .map(|c| c.id);
+
+                let new_tab =
+                    create_tab_from_request(app.next_tab_id, &req_node, associated_collection_id);
+
+                app.tabs.push(TabState {
+                    tab: new_tab,
+                    content: WorkspaceContent::HttpRequest,
+                    is_editing_name: false,
+                });
+                app.next_tab_id += 1;
+                app.active_tab_index = app.tabs.len() - 1;
+            }
             Task::none()
         }
 

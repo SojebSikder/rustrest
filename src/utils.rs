@@ -8,18 +8,38 @@ pub fn format_json_or_fallback(raw_body: &str) -> String {
     }
 }
 
-pub fn contains_request_node(items: &[CollectionItem], name: &str) -> bool {
+// pub fn contains_request_node(items: &[CollectionItem], name: &str) -> bool {
+//     for item in items {
+//         match item {
+//             CollectionItem::Request(node) => {
+//                 if node.name == name {
+//                     return true;
+//                 }
+//             }
+//             CollectionItem::Folder {
+//                 item: sub_items, ..
+//             } => {
+//                 if contains_request_node(sub_items, name) {
+//                     return true;
+//                 }
+//             }
+//         }
+//     }
+//     false
+// }
+
+pub fn contains_request_node_by_id(items: &[CollectionItem], target_id: usize) -> bool {
     for item in items {
         match item {
             CollectionItem::Request(node) => {
-                if node.name == name {
+                if node.id == target_id {
                     return true;
                 }
             }
             CollectionItem::Folder {
                 item: sub_items, ..
             } => {
-                if contains_request_node(sub_items, name) {
+                if contains_request_node_by_id(sub_items, target_id) {
                     return true;
                 }
             }

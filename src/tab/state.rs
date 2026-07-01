@@ -12,6 +12,7 @@ use tokio_util::sync::CancellationToken;
 pub struct Tab {
     pub id: usize,
     pub collection_id: Option<usize>, // Tracks the parent collection context
+    pub request_id: Option<usize>,
     pub name: String,
     pub url: String,
     pub method: HttpMethod,
@@ -39,6 +40,7 @@ impl Tab {
         Self {
             id,
             collection_id: None, // Default to standalone request
+            request_id: None,
             name: format!("Request {}", id),
             url: String::from("https://jsonplaceholder.typicode.com/todos/1"),
             method: HttpMethod::GET,
