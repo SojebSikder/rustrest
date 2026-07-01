@@ -1,28 +1,31 @@
 use crate::app::{Rustrest, WorkspaceContent};
 use crate::http_client::HttpMethod;
 use crate::message::Message;
-use iced::widget::{button, column, container, row, scrollable, text, text_input};
-use iced::{Alignment, Element, Font, Length};
+use iced::widget::{button, column, row, text, text_input};
+use iced::{Alignment, Element, Length};
 
 pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
+    if app.tabs.is_empty() {
+        return iced::widget::text("No active requests open. Click a sidebar item or hit '+'.")
+            .into();
+    }
+
     let mut tab_bar = row![].spacing(5).align_y(Alignment::Center);
 
     for (idx, tab_state) in app.tabs.iter().enumerate() {
         let is_active = idx == app.active_tab_index;
         let tab = &tab_state.tab;
 
-        let prefix_badge = match &tab_state.content {
+        let prefix_badge: Element<'_, Message> = match &tab_state.content {
             WorkspaceContent::HttpRequest => {
                 let method_str = match &tab.method {
                     HttpMethod::Custom(c) if c.trim().is_empty() => "CUSTOM".to_string(),
                     HttpMethod::Custom(c) => c.to_uppercase(),
                     other => format!("{}", other),
                 };
-                text(format!("[{}]", method_str)).size(11)
+                text(format!("[{}]", method_str)).size(11).into()
             }
-            WorkspaceContent::CollectionRoot { .. } => {
-                text("[COLL]").size(11).style(text::secondary)
-            }
+            WorkspaceContent::CollectionRoot { .. } => text("[COLL]").size(11).into(),
         };
 
         let tab_content: Element<Message> = if tab_state.is_editing_name {
@@ -70,34 +73,23 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
     tab_bar = tab_bar.push(add_tab_btn);
 
     let active_tab_state = &app.tabs[app.active_tab_index];
+
+    // collection root UI, routed into the active workspace window
     let tab_view: Element<Message> = match &active_tab_state.content {
         WorkspaceContent::HttpRequest => active_tab_state
             .tab
             .view(Message::ActiveTabMessage, Message::SendPressed),
+
         WorkspaceContent::CollectionRoot {
-            collection_name, ..
-        } => container(scrollable(
-            column![
-                text(collection_name).size(24).font(Font {
-                    weight: iced::font::Weight::Bold,
-                    ..Font::DEFAULT
-                }),
-                container("")
-                    .height(Length::Fixed(1.0))
-                    .width(Length::Fill)
-                    .style(container::bordered_box),
-                text("Collection Documentation").size(16).font(Font {
-                    weight: iced::font::Weight::Semibold,
-                    ..Font::DEFAULT
-                }),
-                text("Welcome to collection dashboard.").size(13),
-            ]
-            .spacing(15),
-        ))
-        .padding(20)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into(),
+            collection_id,
+            collection_name,
+            active_sub_tab,
+        } => super::collection_viewer::render_collection_root(
+            *collection_id,
+            collection_name,
+            active_sub_tab,
+            &app.collections,
+        ),
     };
 
     column![tab_bar, tab_view].spacing(15).into()

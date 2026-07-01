@@ -1,3 +1,4 @@
+use crate::app::CollectionSubTab;
 use crate::collection::PostmanRequestNode;
 use crate::http_client::HttpResponse;
 use crate::tab::TabMessage;
@@ -19,4 +20,20 @@ pub enum Message {
 
     // environment Actions
     EnvSelected(Option<String>),
+
+    // collection viewer actions
+    CollectionSubTabSelected(CollectionSubTab),
+    CollectionVariableChanged {
+        collection_id: usize,
+        index: usize,
+        key: String,
+        value: String,
+    },
+    CollectionVariableToggled {
+        collection_id: usize,
+        index: usize,
+        is_active: bool,
+    },
+    AddCollectionVariablePressed(usize),
+    DeleteCollectionVariablePressed(usize, usize),
 }

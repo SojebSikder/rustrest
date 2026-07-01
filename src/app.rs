@@ -7,12 +7,19 @@ use crate::utils::{contains_request_node, format_json_or_fallback};
 use iced::Task;
 use tokio_util::sync::CancellationToken;
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum CollectionSubTab {
+    Variables,
+    Documentation,
+}
+
 #[derive(Debug, Clone)]
 pub enum WorkspaceContent {
     HttpRequest,
     CollectionRoot {
         collection_id: usize,
         collection_name: String,
+        active_sub_tab: CollectionSubTab,
     },
 }
 
@@ -94,6 +101,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     content: WorkspaceContent::CollectionRoot {
                         collection_id: col_id,
                         collection_name: col.info.name.clone(),
+                        active_sub_tab: CollectionSubTab::Variables,
                     },
                     is_editing_name: false,
                 });
@@ -290,6 +298,78 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 app.active_env_index = app.environments.iter().position(|e| e.name == name);
             } else {
                 app.active_env_index = None;
+            }
+            Task::none()
+        }
+
+        Message::CollectionSubTabSelected(sub_tab) => {
+            if let Some(tab_state) = app.tabs.get_mut(app.active_tab_index) {
+                if let WorkspaceContent::CollectionRoot {
+                    ref mut active_sub_tab,
+                    ..
+                } = tab_state.content
+                {
+                    *active_sub_tab = sub_tab;
+                }
+            }
+            Task::none()
+        }
+
+        Message::CollectionVariableChanged {
+            collection_id,
+            index,
+            key,
+            value,
+        } => {
+            if let Some(col) = app.collections.iter_mut().find(|c| c.id == collection_id) {
+                // Initialize the variable vector if it is currently None
+                let vars = col.variable.get_or_insert_with(Vec::new);
+                if let Some(var) = vars.get_mut(index) {
+                    var.key = key;
+                    var.value = Some(serde_json::Value::String(value));
+                }
+            }
+            Task::none()
+        }
+
+        Message::CollectionVariableToggled {
+            collection_id,
+            index,
+            is_active,
+        } => {
+            if let Some(col) = app.collections.iter_mut().find(|c| c.id == collection_id) {
+                if let Some(ref mut vars) = col.variable {
+                    if let Some(var) = vars.get_mut(index) {
+                        var.r#type = Some(if is_active {
+                            "string".to_string()
+                        } else {
+                            "disabled".to_string()
+                        });
+                    }
+                }
+            }
+            Task::none()
+        }
+
+        Message::AddCollectionVariablePressed(collection_id) => {
+            if let Some(col) = app.collections.iter_mut().find(|c| c.id == collection_id) {
+                let vars = col.variable.get_or_insert_with(Vec::new);
+                vars.push(crate::collection::PostmanVariable {
+                    key: String::new(),
+                    value: Some(serde_json::Value::String(String::new())),
+                    r#type: Some("string".to_string()),
+                });
+            }
+            Task::none()
+        }
+
+        Message::DeleteCollectionVariablePressed(collection_id, index) => {
+            if let Some(col) = app.collections.iter_mut().find(|c| c.id == collection_id) {
+                if let Some(ref mut vars) = col.variable {
+                    if index < vars.len() {
+                        vars.remove(index);
+                    }
+                }
             }
             Task::none()
         }
