@@ -25,7 +25,7 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
                 };
                 text(format!("[{}]", method_str)).size(11).into()
             }
-            WorkspaceContent::CollectionRoot { .. } => text("[COLL]").size(11).into(),
+            WorkspaceContent::CollectionRoot { .. } => text("").size(11).into(),
         };
 
         let tab_content: Element<Message> = if tab_state.is_editing_name {

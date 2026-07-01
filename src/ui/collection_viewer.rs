@@ -15,6 +15,15 @@ pub fn render_collection_root(
 
     // tab headers bavigation bar
     let tabs_nav = row![
+        button(text("Overview"))
+            .style(if *active_sub_tab == CollectionSubTab::Documentation {
+                button::primary
+            } else {
+                button::secondary
+            })
+            .on_press(Message::CollectionSubTabSelected(
+                CollectionSubTab::Documentation
+            )),
         button(text("Variables"))
             .style(if *active_sub_tab == CollectionSubTab::Variables {
                 button::primary
@@ -23,15 +32,6 @@ pub fn render_collection_root(
             })
             .on_press(Message::CollectionSubTabSelected(
                 CollectionSubTab::Variables
-            )),
-        button(text("Documentation"))
-            .style(if *active_sub_tab == CollectionSubTab::Documentation {
-                button::primary
-            } else {
-                button::secondary
-            })
-            .on_press(Message::CollectionSubTabSelected(
-                CollectionSubTab::Documentation
             )),
     ]
     .spacing(10);
