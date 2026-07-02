@@ -1,4 +1,4 @@
-use crate::collection::{PostmanCollection, create_tab_from_request};
+use crate::collection::{PostmanCollection, PostmanRequestNode, create_tab_from_request};
 use crate::env::Environment;
 use crate::http_client::send_request;
 use crate::message::Message;
@@ -117,7 +117,6 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         }
 
         Message::SidebarRequestClicked(req_node) => {
-            // find an open tab matching this exact Request ID to prevent duplicating tabs
             let existing_tab_idx = app.tabs.iter().position(|t| {
                 t.tab.request_id == Some(req_node.id)
                     && matches!(t.content, WorkspaceContent::HttpRequest)
@@ -337,7 +336,6 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             value,
         } => {
             if let Some(col) = app.collections.iter_mut().find(|c| c.id == collection_id) {
-                // Initialize the variable vector if it is currently None
                 let vars = col.variable.get_or_insert_with(Vec::new);
                 if let Some(var) = vars.get_mut(index) {
                     var.key = key;
@@ -409,9 +407,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         }
 
         Message::DeleteCollectionPressed(col_id) => {
-            // remove collection
             app.collections.retain(|c| c.id != col_id);
-            // clean up tabs pointing to this collection root view
             app.tabs.retain(|t| {
                 if let WorkspaceContent::CollectionRoot { collection_id, .. } = t.content {
                     collection_id != col_id
@@ -472,6 +468,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                         if path.is_empty() {
                             return;
                         }
+
                         if path.len() == 1 {
                             items.retain(|item| {
                                 if let crate::collection::CollectionItem::Folder { name, .. } = item
@@ -483,6 +480,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                             });
                             return;
                         }
+
                         for item in items.iter_mut() {
                             if let crate::collection::CollectionItem::Folder {
                                 name,
@@ -497,6 +495,101 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                         }
                     }
                     remove_nested(&mut col.item, &folder_path);
+                }
+            }
+            Task::none()
+        }
+
+        Message::AddRequestPressed {
+            collection_id,
+            parent_folder_path,
+        } => {
+            if let Some(col) = app.collections.iter_mut().find(|c| c.id == collection_id) {
+                let req_id = app.next_request_id;
+                app.next_request_id += 1;
+
+                let new_request_node = PostmanRequestNode {
+                    id: req_id,
+                    name: "Untitled Request".to_string(),
+                    request: crate::collection::PostmanRequestDetails {
+                        method: "GET".to_string(),
+                        url: crate::collection::PostmanUrl::String(String::new()),
+                        header: None,
+                        body: None,
+                    },
+                };
+
+                fn insert_nested_request(
+                    items: &mut Vec<crate::collection::CollectionItem>,
+                    path: &[String],
+                    new_req: crate::collection::CollectionItem,
+                ) {
+                    if path.is_empty() {
+                        items.push(new_req);
+                        return;
+                    }
+                    for item in items.iter_mut() {
+                        if let crate::collection::CollectionItem::Folder {
+                            name,
+                            item: sub_items,
+                        } = item
+                        {
+                            if name == &path[0] {
+                                insert_nested_request(sub_items, &path[1..], new_req);
+                                return;
+                            }
+                        }
+                    }
+                }
+
+                insert_nested_request(
+                    &mut col.item,
+                    &parent_folder_path,
+                    crate::collection::CollectionItem::Request(new_request_node),
+                );
+            }
+            Task::none()
+        }
+
+        Message::DeleteRequestPressed {
+            collection_id,
+            parent_folder_path,
+            request_id,
+        } => {
+            if let Some(col) = app.collections.iter_mut().find(|c| c.id == collection_id) {
+                fn remove_nested_request(
+                    items: &mut Vec<crate::collection::CollectionItem>,
+                    path: &[String],
+                    req_id: usize,
+                ) {
+                    if path.is_empty() {
+                        items.retain(|item| {
+                            if let crate::collection::CollectionItem::Request(req) = item {
+                                req.id != req_id
+                            } else {
+                                true
+                            }
+                        });
+                        return;
+                    }
+                    for item in items.iter_mut() {
+                        if let crate::collection::CollectionItem::Folder {
+                            name,
+                            item: sub_items,
+                        } = item
+                        {
+                            if name == &path[0] {
+                                remove_nested_request(sub_items, &path[1..], req_id);
+                                return;
+                            }
+                        }
+                    }
+                }
+                remove_nested_request(&mut col.item, &parent_folder_path, request_id);
+
+                app.tabs.retain(|t| t.tab.request_id != Some(request_id));
+                if app.active_tab_index >= app.tabs.len() && !app.tabs.is_empty() {
+                    app.active_tab_index = app.tabs.len() - 1;
                 }
             }
             Task::none()

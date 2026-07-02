@@ -1,8 +1,9 @@
 use crate::app::Rustrest;
 use crate::collection::CollectionItem;
 use crate::message::Message;
+use iced::Padding;
 use iced::widget::{Column, button, column, container, pick_list, row, scrollable, text};
-use iced::{Alignment, Element, Font, Length, Padding};
+use iced::{Alignment, Element, Font, Length};
 
 pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
     let env_options: Vec<String> = app.environments.iter().map(|e| e.name.clone()).collect();
@@ -70,6 +71,12 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
                         parent_folder_path: Vec::new()
                     })
                     .style(button::text),
+                button(text("+R").size(11))
+                    .on_press(Message::AddRequestPressed {
+                        collection_id: col_id,
+                        parent_folder_path: Vec::new()
+                    })
+                    .style(button::text),
                 button(text("🗑").size(11))
                     .on_press(Message::DeleteCollectionPressed(col_id))
                     .style(button::text)
@@ -107,7 +114,8 @@ fn render_sidebar_item<'a>(
         } => {
             current_path.push(name.clone());
 
-            let path_for_add = current_path.clone();
+            let path_for_add_folder = current_path.clone();
+            let path_for_add_req = current_path.clone();
             let path_for_delete = current_path.clone();
 
             let folder_header = row![
@@ -115,7 +123,13 @@ fn render_sidebar_item<'a>(
                 button(text("+F").size(10))
                     .on_press(Message::AddFolderPressed {
                         collection_id,
-                        parent_folder_path: path_for_add,
+                        parent_folder_path: path_for_add_folder,
+                    })
+                    .style(button::text),
+                button(text("+R").size(10))
+                    .on_press(Message::AddRequestPressed {
+                        collection_id,
+                        parent_folder_path: path_for_add_req,
                     })
                     .style(button::text),
                 button(text("🗑").size(10))
@@ -144,11 +158,31 @@ fn render_sidebar_item<'a>(
         CollectionItem::Request(req_node) => {
             let req_clone = req_node.clone();
             let label = format!("{} - {}", req_node.request.method, req_node.name);
+            let path_for_delete_req = current_path.clone();
+            let req_id = req_node.id;
+
             layout.push(
-                button(text(label).size(14))
-                    .on_press(Message::SidebarRequestClicked(req_clone))
-                    .style(button::text)
-                    .padding([2, 5]),
+                row![
+                    button(text(label).size(13))
+                        .on_press(Message::SidebarRequestClicked(req_clone))
+                        .style(button::text)
+                        .padding([2, 5]),
+                    button(text("🗑").size(10))
+                        .on_press(Message::DeleteRequestPressed {
+                            collection_id,
+                            parent_folder_path: path_for_delete_req,
+                            request_id: req_id,
+                        })
+                        .style(button::text)
+                ]
+                .spacing(5)
+                .align_y(Alignment::Center)
+                .padding(Padding {
+                    top: 0.0,
+                    right: 0.0,
+                    bottom: 0.0,
+                    left: 10.0,
+                }),
             )
         }
     }

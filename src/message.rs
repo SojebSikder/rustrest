@@ -50,4 +50,15 @@ pub enum Message {
         collection_id: usize,
         folder_path: Vec<String>,
     },
+
+    AddRequestPressed {
+        collection_id: usize,
+        parent_folder_path: Vec<String>,
+    },
+
+    DeleteRequestPressed {
+        collection_id: usize,
+        request_id: usize,
+        parent_folder_path: Vec<String>,
+    },
 }

@@ -26,6 +26,7 @@ Rustrest is a native API testing platform written in Rust.
 - [ ] *export collections
 - [x] create/delete collections
   - [x] create/delete folder
+  - [x] create/delete request
 - [ ] create environment
 - [x] environment values
 - [x] variables
