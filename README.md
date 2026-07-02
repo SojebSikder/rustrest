@@ -29,6 +29,7 @@ Rustrest is a native API testing platform written in Rust.
   - [x] create/delete request
   - [x] rename collection
   - [x] rename folder
+  - [ ] rename request like this mechanism
 - [ ] create environment
 - [x] environment values
 - [x] variables

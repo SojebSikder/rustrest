@@ -30,7 +30,7 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
                 .on_press(Message::ImportCollectionPressed)
                 .padding(6)
                 .width(Length::FillPortion(1)),
-            button("+ New Col")
+            button("+ Collection")
                 .on_press(Message::CreateNewCollectionPressed)
                 .padding(6)
                 .width(Length::FillPortion(1)),
@@ -55,7 +55,6 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
         for col in &app.collections {
             let col_id = col.id;
 
-            // Check if this specific collection is undergoing a rename operation
             let is_editing_col = app.editing_collection_id == Some(col_id);
 
             let collection_header_title: Element<'_, Message> = if is_editing_col {
@@ -84,7 +83,6 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
                 .spacing(5)
                 .align_y(Alignment::Center);
 
-            // Append administrative utility buttons based on visual context
             if is_editing_col {
                 collection_header = collection_header.push(
                     button(text("💾").size(11))
