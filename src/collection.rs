@@ -20,6 +20,41 @@ pub struct PostmanVariable {
 }
 
 impl PostmanCollection {
+    // rename collection root
+    pub fn rename(&mut self, new_name: &str) {
+        self.info.name = new_name.to_string();
+    }
+
+    // recursively find a folder by its current path and rename it
+    pub fn rename_folder_by_path(&mut self, path: &[String], new_name: &str) -> bool {
+        fn rename_recursive(items: &mut [CollectionItem], path: &[String], new_name: &str) -> bool {
+            if path.is_empty() {
+                return false;
+            }
+            let target = &path[0];
+            let is_last = path.len() == 1;
+
+            for item in items {
+                if let CollectionItem::Folder {
+                    name,
+                    item: sub_items,
+                } = item
+                {
+                    if name == target {
+                        if is_last {
+                            *name = new_name.to_string();
+                            return true;
+                        } else {
+                            return rename_recursive(sub_items, &path[1..], new_name);
+                        }
+                    }
+                }
+            }
+            false
+        }
+        rename_recursive(&mut self.item, path, new_name)
+    }
+
     // extracts raw postman variables into native application KeyValuePairs
     pub fn get_native_variables(&self) -> Vec<KeyValuePair> {
         let mut native_vars = Vec::new();

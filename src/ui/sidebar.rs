@@ -2,7 +2,9 @@ use crate::app::Rustrest;
 use crate::collection::CollectionItem;
 use crate::message::Message;
 use iced::Padding;
-use iced::widget::{Column, button, column, container, pick_list, row, scrollable, text};
+use iced::widget::{
+    Column, button, column, container, pick_list, row, scrollable, text, text_input,
+};
 use iced::{Alignment, Element, Font, Length};
 
 pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
@@ -53,7 +55,17 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
         for col in &app.collections {
             let col_id = col.id;
 
-            let collection_header = row![
+            // Check if this specific collection is undergoing a rename operation
+            let is_editing_col = app.editing_collection_id == Some(col_id);
+
+            let collection_header_title: Element<'_, Message> = if is_editing_col {
+                text_input("Collection Name...", &col.info.name)
+                    .on_input(move |txt| Message::CollectionNameChanged(col_id, txt))
+                    .on_submit(Message::SaveCollectionNamePressed(col_id))
+                    .width(Length::Fixed(120.0))
+                    .padding(2)
+                    .into()
+            } else {
                 button(
                     text(format!("📁 {}", col.info.name))
                         .font(Font {
@@ -64,30 +76,55 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
                 )
                 .on_press(Message::SidebarCollectionRootClicked(col_id))
                 .style(button::text)
-                .padding([4, 2]),
-                button(text("+F").size(11))
-                    .on_press(Message::AddFolderPressed {
-                        collection_id: col_id,
-                        parent_folder_path: Vec::new()
-                    })
-                    .style(button::text),
-                button(text("+R").size(11))
-                    .on_press(Message::AddRequestPressed {
-                        collection_id: col_id,
-                        parent_folder_path: Vec::new()
-                    })
-                    .style(button::text),
-                button(text("🗑").size(11))
-                    .on_press(Message::DeleteCollectionPressed(col_id))
-                    .style(button::text)
-            ]
-            .spacing(5)
-            .align_y(Alignment::Center);
+                .padding([4, 2])
+                .into()
+            };
+
+            let mut collection_header = row![collection_header_title]
+                .spacing(5)
+                .align_y(Alignment::Center);
+
+            // Append administrative utility buttons based on visual context
+            if is_editing_col {
+                collection_header = collection_header.push(
+                    button(text("💾").size(11))
+                        .on_press(Message::SaveCollectionNamePressed(col_id))
+                        .style(button::text),
+                );
+            } else {
+                collection_header = collection_header
+                    .push(
+                        button(text("✏️").size(11))
+                            .on_press(Message::RenameCollectionPressed(col_id))
+                            .style(button::text),
+                    )
+                    .push(
+                        button(text("+F").size(11))
+                            .on_press(Message::AddFolderPressed {
+                                collection_id: col_id,
+                                parent_folder_path: Vec::new(),
+                            })
+                            .style(button::text),
+                    )
+                    .push(
+                        button(text("+R").size(11))
+                            .on_press(Message::AddRequestPressed {
+                                collection_id: col_id,
+                                parent_folder_path: Vec::new(),
+                            })
+                            .style(button::text),
+                    )
+                    .push(
+                        button(text("🗑").size(11))
+                            .on_press(Message::DeleteCollectionPressed(col_id))
+                            .style(button::text),
+                    );
+            }
 
             let mut col_tree = column![collection_header].spacing(4);
 
             for item in &col.item {
-                col_tree = render_sidebar_item(col_tree, item, col_id, Vec::new());
+                col_tree = render_sidebar_item(app, col_tree, item, col_id, Vec::new());
             }
             sidebar_contents = sidebar_contents.push(col_tree);
         }
@@ -102,6 +139,7 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
 }
 
 fn render_sidebar_item<'a>(
+    app: &'a Rustrest,
     layout: Column<'a, Message>,
     item: &'a CollectionItem,
     collection_id: usize,
@@ -114,33 +152,81 @@ fn render_sidebar_item<'a>(
         } => {
             current_path.push(name.clone());
 
+            let path_for_change = current_path.clone();
+            let path_for_save = current_path.clone();
+            let path_for_rename_trigger = current_path.clone();
             let path_for_add_folder = current_path.clone();
             let path_for_add_req = current_path.clone();
             let path_for_delete = current_path.clone();
 
-            let folder_header = row![
-                text(format!("📁 {}", name)).size(14),
-                button(text("+F").size(10))
-                    .on_press(Message::AddFolderPressed {
+            // Check if this folder's path matches the active editing path targeting within Rustrest state
+            let is_editing_folder = app.editing_folder_collection_id == Some(collection_id)
+                && app.editing_folder_path == current_path;
+
+            let folder_title: Element<'_, Message> = if is_editing_folder {
+                text_input("Folder Name...", name)
+                    .on_input(move |txt| Message::FolderNameChanged {
                         collection_id,
-                        parent_folder_path: path_for_add_folder,
+                        folder_path: path_for_change.clone(),
+                        new_name: txt,
                     })
-                    .style(button::text),
-                button(text("+R").size(10))
-                    .on_press(Message::AddRequestPressed {
+                    .on_submit(Message::SaveFolderNamePressed {
                         collection_id,
-                        parent_folder_path: path_for_add_req,
+                        folder_path: path_for_save.clone(),
                     })
-                    .style(button::text),
-                button(text("🗑").size(10))
-                    .on_press(Message::DeleteFolderPressed {
-                        collection_id,
-                        folder_path: path_for_delete,
-                    })
-                    .style(button::text)
-            ]
-            .spacing(5)
-            .align_y(Alignment::Center);
+                    .width(Length::Fixed(110.0))
+                    .padding(2)
+                    .into()
+            } else {
+                text(format!("📁 {}", name)).size(14).into()
+            };
+
+            let mut folder_header = row![folder_title].spacing(5).align_y(Alignment::Center);
+
+            if is_editing_folder {
+                folder_header = folder_header.push(
+                    button(text("💾").size(10))
+                        .on_press(Message::SaveFolderNamePressed {
+                            collection_id,
+                            folder_path: current_path.clone(),
+                        })
+                        .style(button::text),
+                );
+            } else {
+                folder_header = folder_header
+                    .push(
+                        button(text("✏️").size(10))
+                            .on_press(Message::RenameFolderPressed {
+                                collection_id,
+                                folder_path: path_for_rename_trigger,
+                            })
+                            .style(button::text),
+                    )
+                    .push(
+                        button(text("+F").size(10))
+                            .on_press(Message::AddFolderPressed {
+                                collection_id,
+                                parent_folder_path: path_for_add_folder,
+                            })
+                            .style(button::text),
+                    )
+                    .push(
+                        button(text("+R").size(10))
+                            .on_press(Message::AddRequestPressed {
+                                collection_id,
+                                parent_folder_path: path_for_add_req,
+                            })
+                            .style(button::text),
+                    )
+                    .push(
+                        button(text("🗑").size(10))
+                            .on_press(Message::DeleteFolderPressed {
+                                collection_id,
+                                folder_path: path_for_delete,
+                            })
+                            .style(button::text),
+                    );
+            }
 
             let mut folder_layout = column![folder_header].spacing(3).padding(Padding {
                 top: 0.0,
@@ -150,8 +236,13 @@ fn render_sidebar_item<'a>(
             });
 
             for sub in sub_items {
-                folder_layout =
-                    render_sidebar_item(folder_layout, sub, collection_id, current_path.clone());
+                folder_layout = render_sidebar_item(
+                    app,
+                    folder_layout,
+                    sub,
+                    collection_id,
+                    current_path.clone(),
+                );
             }
             layout.push(folder_layout)
         }

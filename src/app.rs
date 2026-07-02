@@ -37,6 +37,11 @@ pub struct Rustrest {
     pub active_tab_index: usize,
     pub next_tab_id: usize,
     pub next_request_id: usize,
+
+    // Rename state management tracks
+    pub editing_collection_id: Option<usize>,
+    pub editing_folder_collection_id: Option<usize>,
+    pub editing_folder_path: Vec<String>,
 }
 
 pub fn init() -> (Rustrest, Task<Message>) {
@@ -58,6 +63,9 @@ pub fn init() -> (Rustrest, Task<Message>) {
             active_tab_index: 0,
             next_tab_id: 2,
             next_request_id: 1,
+            editing_collection_id: None,
+            editing_folder_collection_id: None,
+            editing_folder_path: Vec::new(),
         },
         Task::none(),
     )
@@ -418,6 +426,96 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             if app.active_tab_index >= app.tabs.len() && !app.tabs.is_empty() {
                 app.active_tab_index = app.tabs.len() - 1;
             }
+            Task::none()
+        }
+
+        Message::RenameCollectionPressed(col_id) => {
+            app.editing_collection_id = Some(col_id);
+            Task::none()
+        }
+
+        Message::CollectionNameChanged(col_id, new_name) => {
+            if let Some(col) = app.collections.iter_mut().find(|c| c.id == col_id) {
+                col.info.name = new_name.clone();
+
+                // update associated workspace tabs showing this collection's root
+                for t in &mut app.tabs {
+                    if let WorkspaceContent::CollectionRoot {
+                        collection_id,
+                        ref mut collection_name,
+                        ..
+                    } = t.content
+                    {
+                        if collection_id == col_id {
+                            *collection_name = new_name.clone();
+                            t.tab.name = new_name.clone();
+                        }
+                    }
+                }
+            }
+            Task::none()
+        }
+
+        Message::SaveCollectionNamePressed(_col_id) => {
+            app.editing_collection_id = None;
+            Task::none()
+        }
+
+        Message::RenameFolderPressed {
+            collection_id,
+            folder_path,
+        } => {
+            app.editing_folder_collection_id = Some(collection_id);
+            app.editing_folder_path = folder_path;
+            Task::none()
+        }
+
+        Message::FolderNameChanged {
+            collection_id,
+            folder_path,
+            new_name,
+        } => {
+            if let Some(col) = app.collections.iter_mut().find(|c| c.id == collection_id) {
+                fn rename_nested_folder(
+                    items: &mut Vec<crate::collection::CollectionItem>,
+                    path: &[String],
+                    new_val: &str,
+                ) -> bool {
+                    if path.is_empty() {
+                        return false;
+                    }
+                    for item in items.iter_mut() {
+                        if let crate::collection::CollectionItem::Folder {
+                            name,
+                            item: sub_items,
+                        } = item
+                        {
+                            if name == &path[0] {
+                                if path.len() == 1 {
+                                    *name = new_val.to_string();
+                                    return true;
+                                } else {
+                                    return rename_nested_folder(sub_items, &path[1..], new_val);
+                                }
+                            }
+                        }
+                    }
+                    false
+                }
+
+                if rename_nested_folder(&mut col.item, &folder_path, &new_name) {
+                    // update our navigation path to track the new name dynamically
+                    if let Some(last) = app.editing_folder_path.last_mut() {
+                        *last = new_name;
+                    }
+                }
+            }
+            Task::none()
+        }
+
+        Message::SaveFolderNamePressed { .. } => {
+            app.editing_folder_collection_id = None;
+            app.editing_folder_path.clear();
             Task::none()
         }
 

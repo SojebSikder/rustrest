@@ -61,4 +61,24 @@ pub enum Message {
         request_id: usize,
         parent_folder_path: Vec<String>,
     },
+
+    // collection Rename Actions
+    RenameCollectionPressed(usize),       // trigger edit mode
+    CollectionNameChanged(usize, String), // inline text change
+    SaveCollectionNamePressed(usize),
+
+    // folder Rename Actions
+    RenameFolderPressed {
+        collection_id: usize,
+        folder_path: Vec<String>, // current path to target folder
+    },
+    FolderNameChanged {
+        collection_id: usize,
+        folder_path: Vec<String>,
+        new_name: String,
+    },
+    SaveFolderNamePressed {
+        collection_id: usize,
+        folder_path: Vec<String>,
+    },
 }
