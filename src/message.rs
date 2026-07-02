@@ -36,4 +36,18 @@ pub enum Message {
     },
     AddCollectionVariablePressed(usize),
     DeleteCollectionVariablePressed(usize, usize),
+
+    // collection CRUD actions
+    CreateNewCollectionPressed,
+    DeleteCollectionPressed(usize),
+
+    // folder CRUD actions
+    AddFolderPressed {
+        collection_id: usize,
+        parent_folder_path: Vec<String>,
+    },
+    DeleteFolderPressed {
+        collection_id: usize,
+        folder_path: Vec<String>,
+    },
 }

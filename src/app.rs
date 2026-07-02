@@ -388,5 +388,118 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             }
             Task::none()
         }
+
+        Message::CreateNewCollectionPressed => {
+            let col_id = app.next_tab_id;
+            app.next_tab_id += 1;
+
+            let new_col = crate::collection::PostmanCollection {
+                id: col_id,
+                info: crate::collection::CollectionInfo {
+                    name: format!("New Collection {}", col_id),
+                    postman_id: None,
+                    schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+                        .to_string(),
+                },
+                item: Vec::new(),
+                variable: Some(Vec::new()),
+            };
+            app.collections.push(new_col);
+            Task::none()
+        }
+
+        Message::DeleteCollectionPressed(col_id) => {
+            // remove collection
+            app.collections.retain(|c| c.id != col_id);
+            // clean up tabs pointing to this collection root view
+            app.tabs.retain(|t| {
+                if let WorkspaceContent::CollectionRoot { collection_id, .. } = t.content {
+                    collection_id != col_id
+                } else {
+                    true
+                }
+            });
+            if app.active_tab_index >= app.tabs.len() && !app.tabs.is_empty() {
+                app.active_tab_index = app.tabs.len() - 1;
+            }
+            Task::none()
+        }
+
+        Message::AddFolderPressed {
+            collection_id,
+            parent_folder_path,
+        } => {
+            if let Some(col) = app.collections.iter_mut().find(|c| c.id == collection_id) {
+                fn insert_nested(
+                    items: &mut Vec<crate::collection::CollectionItem>,
+                    path: &[String],
+                ) {
+                    if path.is_empty() {
+                        items.push(crate::collection::CollectionItem::Folder {
+                            name: "New Folder".to_string(),
+                            item: Vec::new(),
+                        });
+                        return;
+                    }
+                    for item in items.iter_mut() {
+                        if let crate::collection::CollectionItem::Folder {
+                            name,
+                            item: sub_items,
+                        } = item
+                        {
+                            if name == &path[0] {
+                                insert_nested(sub_items, &path[1..]);
+                                return;
+                            }
+                        }
+                    }
+                }
+                insert_nested(&mut col.item, &parent_folder_path);
+            }
+            Task::none()
+        }
+
+        Message::DeleteFolderPressed {
+            collection_id,
+            folder_path,
+        } => {
+            if !folder_path.is_empty() {
+                if let Some(col) = app.collections.iter_mut().find(|c| c.id == collection_id) {
+                    fn remove_nested(
+                        items: &mut Vec<crate::collection::CollectionItem>,
+                        path: &[String],
+                    ) {
+                        if path.is_empty() {
+                            return;
+                        }
+                        if path.len() == 1 {
+                            items.retain(|item| {
+                                if let crate::collection::CollectionItem::Folder { name, .. } = item
+                                {
+                                    name != &path[0]
+                                } else {
+                                    true
+                                }
+                            });
+                            return;
+                        }
+                        for item in items.iter_mut() {
+                            if let crate::collection::CollectionItem::Folder {
+                                name,
+                                item: sub_items,
+                            } = item
+                            {
+                                if name == &path[0] {
+                                    remove_nested(sub_items, &path[1..]);
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                    remove_nested(&mut col.item, &folder_path);
+                }
+            }
+            Task::none()
+        }
     }
 }
