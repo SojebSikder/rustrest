@@ -1,6 +1,6 @@
 use crate::http_client::HttpMethod;
 use crate::tab::Tab;
-use crate::tab::types::{KeyValuePair, RequestSubTab};
+use crate::tab::types::{BodyType, FormDataRow, FormDataType, KeyValuePair, RequestSubTab};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -11,6 +11,7 @@ pub struct PostmanCollection {
     pub item: Vec<CollectionItem>,
     pub variable: Option<Vec<PostmanVariable>>,
 }
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PostmanVariable {
     pub key: String,
@@ -118,6 +119,16 @@ pub struct PostmanHeader {
 pub struct PostmanBody {
     pub mode: Option<String>,
     pub raw: Option<String>,
+    pub formdata: Option<Vec<PostmanBodyRow>>,
+    pub urlencoded: Option<Vec<PostmanBodyRow>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PostmanBodyRow {
+    pub key: String,
+    pub value: Option<String>,
+    pub disabled: Option<bool>,
+    pub r#type: Option<String>,
 }
 
 // helper to recursively transform a Postman Request Node into our app's live tab state
@@ -155,9 +166,71 @@ pub fn create_tab_from_request(
     }
 
     if let Some(body) = &node.request.body {
-        if let Some(raw_text) = &body.raw {
-            tab.request_body = iced::widget::text_editor::Content::with_text(raw_text);
-            tab.active_sub_tab = RequestSubTab::Body;
+        if let Some(mode) = &body.mode {
+            match mode.as_str() {
+                "raw" => {
+                    if let Some(raw_text) = &body.raw {
+                        tab.request_body = iced::widget::text_editor::Content::with_text(raw_text);
+                        tab.body_type = BodyType::Raw;
+                        tab.active_sub_tab = RequestSubTab::Body;
+                    }
+                }
+                "formdata" => {
+                    tab.body_type = BodyType::FormData;
+                    tab.active_sub_tab = RequestSubTab::Body;
+                    if let Some(rows) = &body.formdata {
+                        tab.body_form_data = rows
+                            .iter()
+                            .map(|r| {
+                                let f_type = match r.r#type.as_deref() {
+                                    Some("file") => FormDataType::File,
+                                    _ => FormDataType::Text,
+                                };
+                                let mut row = FormDataRow::new(
+                                    &r.key,
+                                    &r.value.clone().unwrap_or_default(),
+                                    f_type,
+                                );
+                                row.is_active = !r.disabled.unwrap_or(false);
+                                row
+                            })
+                            .collect();
+                    }
+                }
+                "urlencoded" => {
+                    tab.body_type = BodyType::Raw; // default to raw fallback safely
+                    tab.active_sub_tab = RequestSubTab::Body;
+
+                    if let Some(rows) = &body.urlencoded {
+                        tab.body_urlencoded = rows
+                            .iter()
+                            .map(|r| {
+                                let mut kv =
+                                    KeyValuePair::new(&r.key, &r.value.clone().unwrap_or_default());
+                                kv.is_active = !r.disabled.unwrap_or(false);
+                                kv
+                            })
+                            .collect();
+
+                        let encoded_string = rows
+                            .iter()
+                            .filter(|r| !r.disabled.unwrap_or(false))
+                            .map(|r| {
+                                format!(
+                                    "{}={}",
+                                    urlencoding::encode(&r.key),
+                                    urlencoding::encode(&r.value.as_deref().unwrap_or(""))
+                                )
+                            })
+                            .collect::<Vec<String>>()
+                            .join("&");
+
+                        tab.request_body =
+                            iced::widget::text_editor::Content::with_text(&encoded_string);
+                    }
+                }
+                _ => {}
+            }
         }
     }
 
