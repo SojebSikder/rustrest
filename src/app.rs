@@ -54,16 +54,65 @@ pub struct Rustrest {
     pub next_request_id_counter: usize,
 }
 
+// impl Rustrest {
+//     pub fn sync_active_tab_to_collection(&mut self) {
+//         if let Some(tab_state) = self.tabs.get(self.active_tab_index) {
+//             // only sync if it's an HTTP request tab and is tied to a saved collection request
+//             if let (WorkspaceContent::HttpRequest, Some(req_id)) =
+//                 (&tab_state.content, tab_state.tab.request_id)
+//             {
+//                 if let Some(col_id) = tab_state.tab.collection_id {
+//                     if let Some(col) = self.collections.iter_mut().find(|c| c.id == col_id) {
+//                         // internal recursive helper to find and update the node
+//                         fn update_node(
+//                             items: &mut Vec<crate::collection::CollectionItem>,
+//                             target_id: usize,
+//                             tab: &crate::tab::Tab,
+//                         ) -> bool {
+//                             for item in items.iter_mut() {
+//                                 match item {
+//                                     crate::collection::CollectionItem::Request(req) => {
+//                                         if req.id == target_id {
+//                                             // sync values from Tab back to Postman Request Node
+//                                             req.name = tab.name.clone();
+//                                             req.request.method = tab.method.to_string();
+//                                             req.request.url = crate::collection::PostmanUrl::String(
+//                                                 tab.url.clone(),
+//                                             );
+
+//                                             // TODO: sync headers, body, auth, etc., here
+//                                             return true;
+//                                         }
+//                                     }
+//                                     crate::collection::CollectionItem::Folder {
+//                                         item: sub_items,
+//                                         ..
+//                                     } => {
+//                                         if update_node(sub_items, target_id, tab) {
+//                                             return true;
+//                                         }
+//                                     }
+//                                 }
+//                             }
+//                             false
+//                         }
+
+//                         update_node(&mut col.item, req_id, &tab_state.tab);
+//                     }
+//                 }
+//             }
+//         }
+//     }
+// }
+
 impl Rustrest {
     pub fn sync_active_tab_to_collection(&mut self) {
         if let Some(tab_state) = self.tabs.get(self.active_tab_index) {
-            // only sync if it's an HTTP request tab and is tied to a saved collection request
             if let (WorkspaceContent::HttpRequest, Some(req_id)) =
                 (&tab_state.content, tab_state.tab.request_id)
             {
                 if let Some(col_id) = tab_state.tab.collection_id {
                     if let Some(col) = self.collections.iter_mut().find(|c| c.id == col_id) {
-                        // internal recursive helper to find and update the node
                         fn update_node(
                             items: &mut Vec<crate::collection::CollectionItem>,
                             target_id: usize,
@@ -73,14 +122,84 @@ impl Rustrest {
                                 match item {
                                     crate::collection::CollectionItem::Request(req) => {
                                         if req.id == target_id {
-                                            // sync values from Tab back to Postman Request Node
+                                            // sync Basic Fields
                                             req.name = tab.name.clone();
                                             req.request.method = tab.method.to_string();
                                             req.request.url = crate::collection::PostmanUrl::String(
                                                 tab.url.clone(),
                                             );
 
-                                            // TODO: sync headers, body, auth, etc., here
+                                            // sync Request Headers
+                                            req.request.header = Some(
+                                                tab.request_headers
+                                                    .iter()
+                                                    .filter(|h| !h.key.trim().is_empty())
+                                                    .map(|h| crate::collection::PostmanHeader {
+                                                        key: h.key.clone(),
+                                                        value: h.value.clone(),
+                                                        disabled: Some(!h.is_active),
+                                                    })
+                                                    .collect(),
+                                            );
+
+                                            // sync Request Body types conditionally
+                                            match tab.body_type {
+                                                crate::tab::types::BodyType::Raw => {
+                                                    let text_content = tab.request_body.text();
+                                                    if !text_content.trim().is_empty() {
+                                                        req.request.body =
+                                                            Some(crate::collection::PostmanBody {
+                                                                mode: Some("raw".to_string()),
+                                                                raw: Some(text_content),
+                                                                formdata: None,
+                                                                urlencoded: None,
+                                                            });
+                                                    } else {
+                                                        req.request.body = None;
+                                                    }
+                                                }
+                                                crate::tab::types::BodyType::FormData => {
+                                                    req.request.body = Some(crate::collection::PostmanBody {
+                                                        mode: Some("formdata".to_string()),
+                                                        raw: None,
+                                                        formdata: Some(
+                                                            tab.body_form_data
+                                                                .iter()
+                                                                .map(|r| crate::collection::PostmanBodyRow {
+                                                                    key: r.key.clone(),
+                                                                    value: Some(r.value.clone()),
+                                                                    disabled: Some(!r.is_active),
+                                                                    r#type: Some(match r.field_type {
+                                                                        crate::tab::types::FormDataType::File => "file".to_string(),
+                                                                        crate::tab::types::FormDataType::Text => "text".to_string(),
+                                                                    }),
+                                                                })
+                                                                .collect()
+                                                        ),
+                                                        urlencoded: None,
+                                                    });
+                                                }
+                                                // handle urlencoded if types parse it natively or fall back safely
+                                                _ => {
+                                                    req.request.body = Some(crate::collection::PostmanBody {
+                                                        mode: Some("urlencoded".to_string()),
+                                                        raw: None,
+                                                        formdata: None,
+                                                        urlencoded: Some(
+                                                            tab.body_urlencoded
+                                                                .iter()
+                                                                .map(|u| crate::collection::PostmanBodyRow {
+                                                                    key: u.key.clone(),
+                                                                    value: Some(u.value.clone()),
+                                                                    disabled: Some(!u.is_active),
+                                                                    r#type: Some("text".to_string()),
+                                                                })
+                                                                .collect()
+                                                        ),
+                                                    });
+                                                }
+                                            }
+
                                             return true;
                                         }
                                     }
