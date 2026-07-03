@@ -49,6 +49,9 @@ pub struct Rustrest {
     pub editing_folder_collection_id: Option<usize>,
     pub editing_folder_path: Vec<String>,
     pub active_context_menu: Option<ContextMenu>,
+
+    pub next_collection_id_counter: usize,
+    pub next_request_id_counter: usize,
 }
 
 pub fn init() -> (Rustrest, Task<Message>) {
@@ -74,6 +77,8 @@ pub fn init() -> (Rustrest, Task<Message>) {
             editing_folder_collection_id: None,
             editing_folder_path: Vec::new(),
             active_context_menu: None,
+            next_collection_id_counter: 0,
+            next_request_id_counter: 0,
         },
         Task::none(),
     )
@@ -82,25 +87,91 @@ pub fn init() -> (Rustrest, Task<Message>) {
 pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
     match message {
         Message::None => Task::none(),
+        // Message::ImportCollectionPressed => {
+        //     if let Some(path) = rfd::FileDialog::new()
+        //         .add_filter("Postman Collection", &["json"])
+        //         .pick_file()
+        //     {
+        //         if let Ok(file_content) = std::fs::read_to_string(path) {
+        //             if let Ok(mut collection) =
+        //                 serde_json::from_str::<PostmanCollection>(&file_content)
+        //             {
+        //                 collection.id = app.next_tab_id;
+        //                 app.next_tab_id += 1;
+
+        //                 collection.assign_request_ids(&mut app.next_request_id);
+
+        //                 app.collections.push(collection);
+        //             }
+        //         }
+        //     }
+        //     Task::none()
+        // }
         Message::ImportCollectionPressed => {
-            if let Some(path) = rfd::FileDialog::new()
-                .add_filter("Postman Collection", &["json"])
-                .pick_file()
-            {
-                if let Ok(file_content) = std::fs::read_to_string(path) {
-                    if let Ok(mut collection) =
-                        serde_json::from_str::<PostmanCollection>(&file_content)
-                    {
-                        collection.id = app.next_tab_id;
-                        app.next_tab_id += 1;
+            iced::Task::perform(
+                async {
+                    // open the file dialog and await selection
+                    let file_handle = rfd::AsyncFileDialog::new()
+                        .add_filter("Postman Collection (*.json)", &["json"])
+                        .pick_file()
+                        .await;
 
-                        collection.assign_request_ids(&mut app.next_request_id);
-
-                        app.collections.push(collection);
+                    // if a file was selected, read its contents
+                    if let Some(file) = file_handle {
+                        let path = file.path().to_path_buf();
+                        if let Ok(content) = tokio::fs::read_to_string(&path).await {
+                            return Some((path, content));
+                        }
                     }
+                    None
+                },
+                |result| {
+                    // map the final result back to a single Message
+                    if let Some((path, content)) = result {
+                        Message::CollectionLoaded(Some(path), content)
+                    } else {
+                        Message::None
+                    }
+                },
+            )
+        }
+
+        // process file contents once loaded from disk
+        Message::CollectionLoaded(path, content) => {
+            if let Ok(mut collection) =
+                serde_json::from_str::<crate::collection::PostmanCollection>(&content)
+            {
+                collection.id = app.next_tab_id;
+                collection.file_path = path;
+                app.next_tab_id += 1;
+
+                collection.assign_request_ids(&mut app.next_request_id);
+
+                app.collections.push(collection);
+            }
+            iced::Task::none()
+        }
+
+        // simple inline disk overwrite action
+        Message::SaveCollectionPressed(col_id) => {
+            if let Some(collection) = app.collections.iter().find(|c| c.id == col_id) {
+                if let Some(ref path) = collection.file_path {
+                    if let Ok(json_content) = collection.to_postman_json() {
+                        let write_path = path.clone();
+                        return iced::Task::perform(
+                            async move { tokio::fs::write(write_path, json_content).await },
+                            |_result| {
+                                // TODO: dispatch a toast success indicator notification message here
+                                Message::None
+                            },
+                        );
+                    }
+                } else {
+                    // if it has no file location yet, perform "Export"
+                    return iced::Task::done(Message::ExportCollectionPressed(col_id));
                 }
             }
-            Task::none()
+            iced::Task::none()
         }
 
         Message::ExportCollectionPressed(col_id) => {
@@ -456,6 +527,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 },
                 item: Vec::new(),
                 variable: Some(Vec::new()),
+                file_path: None,
             };
             app.collections.push(new_col);
             Task::none()

@@ -7,6 +7,10 @@ use serde::{Deserialize, Serialize};
 pub struct PostmanCollection {
     #[serde(skip)]
     pub id: usize, // track collection identity uniquely
+
+    #[serde(skip)]
+    pub file_path: Option<std::path::PathBuf>,
+
     pub info: CollectionInfo,
     pub item: Vec<CollectionItem>,
     pub variable: Option<Vec<PostmanVariable>>,

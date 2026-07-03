@@ -17,6 +17,10 @@ pub enum Message {
     TabNameSave(usize),
     ImportCollectionPressed,
     ExportCollectionPressed(usize),
+
+    CollectionLoaded(Option<std::path::PathBuf>, String),
+    SaveCollectionPressed(usize),
+
     SidebarRequestClicked(PostmanRequestNode),
 
     // environment Actions

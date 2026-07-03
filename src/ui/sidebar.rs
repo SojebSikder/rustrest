@@ -111,10 +111,8 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
                             parent_folder_path: Vec::new(),
                         },
                     ),
-                    (
-                        "Export Collection",
-                        Message::ExportCollectionPressed(col_id),
-                    ),
+                    ("Save Collection", Message::SaveCollectionPressed(col_id)),
+                    ("Export As...", Message::ExportCollectionPressed(col_id)),
                     ("Delete", Message::DeleteCollectionPressed(col_id)),
                 ]);
                 col_tree = col_tree.push(dropdown);
