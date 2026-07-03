@@ -54,6 +54,57 @@ pub struct Rustrest {
     pub next_request_id_counter: usize,
 }
 
+impl Rustrest {
+    pub fn sync_active_tab_to_collection(&mut self) {
+        if let Some(tab_state) = self.tabs.get(self.active_tab_index) {
+            // only sync if it's an HTTP request tab and is tied to a saved collection request
+            if let (WorkspaceContent::HttpRequest, Some(req_id)) =
+                (&tab_state.content, tab_state.tab.request_id)
+            {
+                if let Some(col_id) = tab_state.tab.collection_id {
+                    if let Some(col) = self.collections.iter_mut().find(|c| c.id == col_id) {
+                        // internal recursive helper to find and update the node
+                        fn update_node(
+                            items: &mut Vec<crate::collection::CollectionItem>,
+                            target_id: usize,
+                            tab: &crate::tab::Tab,
+                        ) -> bool {
+                            for item in items.iter_mut() {
+                                match item {
+                                    crate::collection::CollectionItem::Request(req) => {
+                                        if req.id == target_id {
+                                            // sync values from Tab back to Postman Request Node
+                                            req.name = tab.name.clone();
+                                            req.request.method = tab.method.to_string();
+                                            req.request.url = crate::collection::PostmanUrl::String(
+                                                tab.url.clone(),
+                                            );
+
+                                            // TODO: sync headers, body, auth, etc., here
+                                            return true;
+                                        }
+                                    }
+                                    crate::collection::CollectionItem::Folder {
+                                        item: sub_items,
+                                        ..
+                                    } => {
+                                        if update_node(sub_items, target_id, tab) {
+                                            return true;
+                                        }
+                                    }
+                                }
+                            }
+                            false
+                        }
+
+                        update_node(&mut col.item, req_id, &tab_state.tab);
+                    }
+                }
+            }
+        }
+    }
+}
+
 pub fn init() -> (Rustrest, Task<Message>) {
     let mut demo_env = Environment::new("Default");
     if !demo_env.variables.is_empty() {
@@ -154,6 +205,8 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
 
         // simple inline disk overwrite action
         Message::SaveCollectionPressed(col_id) => {
+            app.sync_active_tab_to_collection();
+
             if let Some(collection) = app.collections.iter().find(|c| c.id == col_id) {
                 if let Some(ref path) = collection.file_path {
                     if let Ok(json_content) = collection.to_postman_json() {
