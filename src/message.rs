@@ -81,4 +81,16 @@ pub enum Message {
         collection_id: usize,
         folder_path: Vec<String>,
     },
+
+    ShowCollectionContextMenu(usize),
+    ShowFolderContextMenu {
+        collection_id: usize,
+        folder_path: Vec<String>,
+    },
+    ShowRequestContextMenu {
+        collection_id: usize,
+        request_id: usize,
+    },
+    CloseContextMenu,
+    None,
 }

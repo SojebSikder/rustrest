@@ -29,6 +29,12 @@ pub struct TabState {
     pub is_editing_name: bool,
 }
 
+pub enum ContextMenu {
+    Collection(usize),
+    Folder { col_id: usize, path: Vec<String> },
+    Request { col_id: usize, req_id: usize },
+}
+
 pub struct Rustrest {
     pub collections: Vec<PostmanCollection>,
     pub environments: Vec<Environment>,
@@ -42,6 +48,7 @@ pub struct Rustrest {
     pub editing_collection_id: Option<usize>,
     pub editing_folder_collection_id: Option<usize>,
     pub editing_folder_path: Vec<String>,
+    pub active_context_menu: Option<ContextMenu>,
 }
 
 pub fn init() -> (Rustrest, Task<Message>) {
@@ -66,6 +73,7 @@ pub fn init() -> (Rustrest, Task<Message>) {
             editing_collection_id: None,
             editing_folder_collection_id: None,
             editing_folder_path: Vec::new(),
+            active_context_menu: None,
         },
         Task::none(),
     )
@@ -73,6 +81,7 @@ pub fn init() -> (Rustrest, Task<Message>) {
 
 pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
     match message {
+        Message::None => Task::none(),
         Message::ImportCollectionPressed => {
             if let Some(path) = rfd::FileDialog::new()
                 .add_filter("Postman Collection", &["json"])
@@ -690,6 +699,39 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     app.active_tab_index = app.tabs.len() - 1;
                 }
             }
+            Task::none()
+        }
+
+        // context menu
+        Message::ShowCollectionContextMenu(col_id) => {
+            app.active_context_menu = Some(ContextMenu::Collection(col_id));
+            Task::none()
+        }
+
+        Message::ShowFolderContextMenu {
+            collection_id,
+            folder_path,
+        } => {
+            app.active_context_menu = Some(ContextMenu::Folder {
+                col_id: collection_id,
+                path: folder_path,
+            });
+            Task::none()
+        }
+
+        Message::ShowRequestContextMenu {
+            collection_id,
+            request_id,
+        } => {
+            app.active_context_menu = Some(ContextMenu::Request {
+                col_id: collection_id,
+                req_id: request_id,
+            });
+            Task::none()
+        }
+
+        Message::CloseContextMenu => {
+            app.active_context_menu = None;
             Task::none()
         }
     }

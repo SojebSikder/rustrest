@@ -3,7 +3,7 @@ use crate::collection::CollectionItem;
 use crate::message::Message;
 use iced::Padding;
 use iced::widget::{
-    Column, button, column, container, pick_list, row, scrollable, text, text_input,
+    Column, button, column, container, mouse_area, pick_list, row, scrollable, text, text_input,
 };
 use iced::{Alignment, Element, Font, Length};
 
@@ -54,72 +54,67 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
     } else {
         for col in &app.collections {
             let col_id = col.id;
-
             let is_editing_col = app.editing_collection_id == Some(col_id);
 
+            // determine if this collection's context menu dropdown is open
+            let show_dropdown = matches!(&app.active_context_menu, Some(crate::app::ContextMenu::Collection(id)) if *id == col_id);
+
             let collection_header_title: Element<'_, Message> = if is_editing_col {
-                text_input("Collection Name...", &col.info.name)
-                    .on_input(move |txt| Message::CollectionNameChanged(col_id, txt))
-                    .on_submit(Message::SaveCollectionNamePressed(col_id))
-                    .width(Length::Fixed(120.0))
-                    .padding(2)
-                    .into()
+                row![
+                    text_input("Collection Name...", &col.info.name)
+                        .on_input(move |txt| Message::CollectionNameChanged(col_id, txt))
+                        .on_submit(Message::SaveCollectionNamePressed(col_id))
+                        .width(Length::Fixed(120.0))
+                        .padding(2),
+                    button(text("💾").size(11))
+                        .on_press(Message::SaveCollectionNamePressed(col_id))
+                        .style(button::text)
+                ]
+                .spacing(5)
+                .align_y(Alignment::Center)
+                .into()
             } else {
-                button(
-                    text(format!("📁 {}", col.info.name))
-                        .font(Font {
-                            weight: iced::font::Weight::Bold,
-                            ..Font::DEFAULT
-                        })
-                        .size(14),
+                // wrap the standard header view with mouse_area to intercept right click
+                mouse_area(
+                    container(
+                        text(format!("📁 {}", col.info.name))
+                            .font(Font {
+                                weight: iced::font::Weight::Bold,
+                                ..Font::DEFAULT
+                            })
+                            .size(14),
+                    )
+                    .padding([4, 2]),
                 )
-                .on_press(Message::SidebarCollectionRootClicked(col_id))
-                .style(button::text)
-                .padding([4, 2])
+                .on_press(Message::SidebarCollectionRootClicked(col_id)) // left click opens it
+                .on_right_press(Message::ShowCollectionContextMenu(col_id)) // right click opens dropdown
                 .into()
             };
 
-            let mut collection_header = row![collection_header_title]
-                .spacing(5)
-                .align_y(Alignment::Center);
+            let mut col_tree = column![collection_header_title].spacing(4);
 
-            if is_editing_col {
-                collection_header = collection_header.push(
-                    button(text("💾").size(11))
-                        .on_press(Message::SaveCollectionNamePressed(col_id))
-                        .style(button::text),
-                );
-            } else {
-                collection_header = collection_header
-                    .push(
-                        button(text("✏️").size(11))
-                            .on_press(Message::RenameCollectionPressed(col_id))
-                            .style(button::text),
-                    )
-                    .push(
-                        button(text("+F").size(11))
-                            .on_press(Message::AddFolderPressed {
-                                collection_id: col_id,
-                                parent_folder_path: Vec::new(),
-                            })
-                            .style(button::text),
-                    )
-                    .push(
-                        button(text("+R").size(11))
-                            .on_press(Message::AddRequestPressed {
-                                collection_id: col_id,
-                                parent_folder_path: Vec::new(),
-                            })
-                            .style(button::text),
-                    )
-                    .push(
-                        button(text("🗑").size(11))
-                            .on_press(Message::DeleteCollectionPressed(col_id))
-                            .style(button::text),
-                    );
+            // render dropdown if active
+            if show_dropdown && !is_editing_col {
+                let dropdown = render_dropdown(vec![
+                    ("Rename", Message::RenameCollectionPressed(col_id)),
+                    (
+                        "New Folder",
+                        Message::AddFolderPressed {
+                            collection_id: col_id,
+                            parent_folder_path: Vec::new(),
+                        },
+                    ),
+                    (
+                        "New Request",
+                        Message::AddRequestPressed {
+                            collection_id: col_id,
+                            parent_folder_path: Vec::new(),
+                        },
+                    ),
+                    ("Delete", Message::DeleteCollectionPressed(col_id)),
+                ]);
+                col_tree = col_tree.push(dropdown);
             }
-
-            let mut col_tree = column![collection_header].spacing(4);
 
             for item in &col.item {
                 col_tree = render_sidebar_item(app, col_tree, item, col_id, Vec::new());
@@ -156,82 +151,87 @@ fn render_sidebar_item<'a>(
             let path_for_add_folder = current_path.clone();
             let path_for_add_req = current_path.clone();
             let path_for_delete = current_path.clone();
+            let path_for_right_click = current_path.clone();
 
-            // Check if this folder's path matches the active editing path targeting within Rustrest state
             let is_editing_folder = app.editing_folder_collection_id == Some(collection_id)
                 && app.editing_folder_path == current_path;
 
+            // determine if this folder's dropdown is open
+            let show_dropdown = matches!(&app.active_context_menu, Some(crate::app::ContextMenu::Folder { col_id, path }) if *col_id == collection_id && *path == current_path);
+
             let folder_title: Element<'_, Message> = if is_editing_folder {
-                text_input("Folder Name...", name)
-                    .on_input(move |txt| Message::FolderNameChanged {
-                        collection_id,
-                        folder_path: path_for_change.clone(),
-                        new_name: txt,
-                    })
-                    .on_submit(Message::SaveFolderNamePressed {
-                        collection_id,
-                        folder_path: path_for_save.clone(),
-                    })
-                    .width(Length::Fixed(110.0))
-                    .padding(2)
-                    .into()
-            } else {
-                text(format!("📁 {}", name)).size(14).into()
-            };
-
-            let mut folder_header = row![folder_title].spacing(5).align_y(Alignment::Center);
-
-            if is_editing_folder {
-                folder_header = folder_header.push(
+                row![
+                    text_input("Folder Name...", name)
+                        .on_input(move |txt| Message::FolderNameChanged {
+                            collection_id,
+                            folder_path: path_for_change.clone(),
+                            new_name: txt,
+                        })
+                        .on_submit(Message::SaveFolderNamePressed {
+                            collection_id,
+                            folder_path: path_for_save.clone(),
+                        })
+                        .width(Length::Fixed(110.0))
+                        .padding(2),
                     button(text("💾").size(10))
                         .on_press(Message::SaveFolderNamePressed {
                             collection_id,
                             folder_path: current_path.clone(),
                         })
-                        .style(button::text),
-                );
+                        .style(button::text)
+                ]
+                .spacing(5)
+                .align_y(Alignment::Center)
+                .into()
             } else {
-                folder_header = folder_header
-                    .push(
-                        button(text("✏️").size(10))
-                            .on_press(Message::RenameFolderPressed {
-                                collection_id,
-                                folder_path: path_for_rename_trigger,
-                            })
-                            .style(button::text),
-                    )
-                    .push(
-                        button(text("+F").size(10))
-                            .on_press(Message::AddFolderPressed {
-                                collection_id,
-                                parent_folder_path: path_for_add_folder,
-                            })
-                            .style(button::text),
-                    )
-                    .push(
-                        button(text("+R").size(10))
-                            .on_press(Message::AddRequestPressed {
-                                collection_id,
-                                parent_folder_path: path_for_add_req,
-                            })
-                            .style(button::text),
-                    )
-                    .push(
-                        button(text("🗑").size(10))
-                            .on_press(Message::DeleteFolderPressed {
-                                collection_id,
-                                folder_path: path_for_delete,
-                            })
-                            .style(button::text),
-                    );
-            }
+                mouse_area(container(text(format!("📁 {}", name)).size(14)).padding([2, 0]))
+                    .on_right_press(Message::ShowFolderContextMenu {
+                        collection_id,
+                        folder_path: path_for_right_click,
+                    })
+                    .into()
+            };
 
-            let mut folder_layout = column![folder_header].spacing(3).padding(Padding {
+            let mut folder_layout = column![folder_title].spacing(3).padding(Padding {
                 top: 0.0,
                 right: 0.0,
                 bottom: 0.0,
                 left: 10.0,
             });
+
+            if show_dropdown && !is_editing_folder {
+                let dropdown = render_dropdown(vec![
+                    (
+                        "Rename",
+                        Message::RenameFolderPressed {
+                            collection_id,
+                            folder_path: path_for_rename_trigger,
+                        },
+                    ),
+                    (
+                        "New Folder",
+                        Message::AddFolderPressed {
+                            collection_id,
+                            parent_folder_path: path_for_add_folder,
+                        },
+                    ),
+                    (
+                        "New Request",
+                        Message::AddRequestPressed {
+                            collection_id,
+                            parent_folder_path: path_for_add_req,
+                        },
+                    ),
+                    (
+                        "Delete",
+                        Message::DeleteFolderPressed {
+                            collection_id,
+                            folder_path: path_for_delete,
+                        },
+                    ),
+                ]);
+                folder_layout = folder_layout.push(dropdown);
+            }
 
             for sub in sub_items {
                 folder_layout = render_sidebar_item(
@@ -250,29 +250,68 @@ fn render_sidebar_item<'a>(
             let path_for_delete_req = current_path.clone();
             let req_id = req_node.id;
 
-            layout.push(
-                row![
-                    button(text(label).size(13))
-                        .on_press(Message::SidebarRequestClicked(req_clone))
-                        .style(button::text)
-                        .padding([2, 5]),
-                    button(text("🗑").size(10))
-                        .on_press(Message::DeleteRequestPressed {
-                            collection_id,
-                            parent_folder_path: path_for_delete_req,
-                            request_id: req_id,
-                        })
-                        .style(button::text)
-                ]
-                .spacing(5)
-                .align_y(Alignment::Center)
-                .padding(Padding {
-                    top: 0.0,
-                    right: 0.0,
-                    bottom: 0.0,
-                    left: 10.0,
-                }),
-            )
+            let show_dropdown = matches!(&app.active_context_menu, Some(crate::app::ContextMenu::Request { col_id, req_id: id }) if *col_id == collection_id && *id == req_id);
+
+            let mut req_layout = column![
+                mouse_area(
+                    container(
+                        button(text(label).size(13))
+                            .on_press(Message::SidebarRequestClicked(req_clone))
+                            .style(button::text)
+                            .padding([2, 5])
+                    )
+                    .padding(Padding {
+                        top: 0.0,
+                        right: 0.0,
+                        bottom: 0.0,
+                        left: 10.0,
+                    })
+                )
+                .on_right_press(Message::ShowRequestContextMenu {
+                    collection_id,
+                    request_id: req_id,
+                })
+            ];
+
+            if show_dropdown {
+                let dropdown = render_dropdown(vec![(
+                    "Delete",
+                    Message::DeleteRequestPressed {
+                        collection_id,
+                        parent_folder_path: path_for_delete_req,
+                        request_id: req_id,
+                    },
+                )]);
+                req_layout = req_layout.push(dropdown);
+            }
+
+            layout.push(req_layout)
         }
     }
+}
+
+// helper function to create a dropdown box containing actionable context items
+fn render_dropdown<'a>(options: Vec<(&'a str, Message)>) -> Element<'a, Message> {
+    let mut menu = column![].spacing(2);
+
+    for (label, message) in options {
+        menu = menu.push(
+            button(
+                text(label)
+                    .size(12)
+                    .width(Length::Fill)
+                    .style(text::primary),
+            )
+            .on_press(message)
+            .padding([4, 8])
+            .style(button::text)
+            .width(Length::Fill),
+        );
+    }
+
+    container(menu)
+        .padding(4)
+        .width(Length::Fixed(140.0))
+        .style(container::bordered_box)
+        .into()
 }
