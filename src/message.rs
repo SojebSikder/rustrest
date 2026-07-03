@@ -16,6 +16,7 @@ pub enum Message {
     TabNameChanged(usize, String),
     TabNameSave(usize),
     ImportCollectionPressed,
+    ExportCollectionPressed(usize),
     SidebarRequestClicked(PostmanRequestNode),
 
     // environment Actions

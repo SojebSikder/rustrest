@@ -111,6 +111,10 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
                             parent_folder_path: Vec::new(),
                         },
                     ),
+                    (
+                        "Export Collection",
+                        Message::ExportCollectionPressed(col_id),
+                    ),
                     ("Delete", Message::DeleteCollectionPressed(col_id)),
                 ]);
                 col_tree = col_tree.push(dropdown);
@@ -290,7 +294,6 @@ fn render_sidebar_item<'a>(
     }
 }
 
-// helper function to create a dropdown box containing actionable context items
 fn render_dropdown<'a>(options: Vec<(&'a str, Message)>) -> Element<'a, Message> {
     let mut menu = column![].spacing(2);
 

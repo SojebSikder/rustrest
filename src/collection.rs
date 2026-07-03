@@ -91,6 +91,11 @@ impl PostmanCollection {
         }
         assign_item_ids(&mut self.item, start_id);
     }
+
+    pub fn to_postman_json(&self) -> Result<String, String> {
+        serde_json::to_string_pretty(self)
+            .map_err(|e| format!("Failed to serialize collection schema: {}", e))
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

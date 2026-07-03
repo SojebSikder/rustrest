@@ -103,6 +103,44 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             Task::none()
         }
 
+        Message::ExportCollectionPressed(col_id) => {
+            // find collection by internal ID
+            if let Some(collection) = app.collections.iter().find(|c| c.id == col_id) {
+                match collection.to_postman_json() {
+                    Ok(json_content) => {
+                        let default_name =
+                            format!("{}.postman_collection.json", collection.info.name);
+
+                        // open save-file window dialog
+                        return iced::Task::perform(
+                            async move {
+                                rfd::AsyncFileDialog::new()
+                                    .set_title("Export Postman Collection")
+                                    .set_file_name(&default_name)
+                                    .add_filter("Postman Collection (*.json)", &["json"])
+                                    .save_file()
+                                    .await
+                            },
+                            move |file_handle| {
+                                if let Some(file) = file_handle {
+                                    // drop the async write onto a background task block
+                                    let content = json_content.clone();
+                                    tokio::spawn(async move {
+                                        let _ = tokio::fs::write(file.path(), content).await;
+                                    });
+                                }
+                                Message::None
+                            },
+                        );
+                    }
+                    Err(err_msg) => {
+                        println!("Export Error: {}", err_msg);
+                    }
+                }
+            }
+            iced::Task::none()
+        }
+
         Message::SidebarCollectionRootClicked(col_id) => {
             let existing_tab_idx = app.tabs.iter().position(|t| {
                 if let WorkspaceContent::CollectionRoot { collection_id, .. } = t.content {
