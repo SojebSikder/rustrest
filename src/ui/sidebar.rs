@@ -1,5 +1,5 @@
 use crate::app::Rustrest;
-use crate::collection::CollectionItem;
+use crate::collection::collection::CollectionItem;
 use crate::message::Message;
 use iced::Padding;
 use iced::widget::{

@@ -1,4 +1,4 @@
-use crate::collection::CollectionItem;
+use crate::collection::collection::CollectionItem;
 
 pub fn format_json_or_fallback(raw_body: &str) -> String {
     if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(raw_body) {
@@ -7,26 +7,6 @@ pub fn format_json_or_fallback(raw_body: &str) -> String {
         format!("// Invalid JSON:\n{}", raw_body)
     }
 }
-
-// pub fn contains_request_node(items: &[CollectionItem], name: &str) -> bool {
-//     for item in items {
-//         match item {
-//             CollectionItem::Request(node) => {
-//                 if node.name == name {
-//                     return true;
-//                 }
-//             }
-//             CollectionItem::Folder {
-//                 item: sub_items, ..
-//             } => {
-//                 if contains_request_node(sub_items, name) {
-//                     return true;
-//                 }
-//             }
-//         }
-//     }
-//     false
-// }
 
 pub fn contains_request_node_by_id(items: &[CollectionItem], target_id: usize) -> bool {
     for item in items {

@@ -2,14 +2,12 @@
 
 mod app;
 mod collection;
-mod env;
 mod http_client;
 mod message;
 mod tab;
 mod ui;
 mod utils;
 use app::Rustrest;
-use env::Environment;
 use iced::widget::row;
 use iced::{Element, Length, Size};
 use iced::{Event, Subscription, event};

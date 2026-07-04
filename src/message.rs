@@ -1,5 +1,5 @@
 use crate::app::CollectionSubTab;
-use crate::collection::PostmanRequestNode;
+use crate::collection::collection::PostmanRequestNode;
 use crate::http_client::HttpResponse;
 use crate::tab::TabMessage;
 

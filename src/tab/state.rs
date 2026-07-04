@@ -3,6 +3,7 @@ use super::types::{
     BodyType, FormDataRow, FormDataType, KeyValuePair, RawType, RequestSubTab, ResponseSubTab,
     ResponseView,
 };
+use crate::collection::env::Environment;
 use crate::http_client::{HttpMethod, HttpResponse};
 use crate::{APP_NAME, APP_VERSION};
 use iced::widget::text_editor;
@@ -51,6 +52,7 @@ impl Tab {
             response_view: ResponseView::Json,
             request_params: vec![KeyValuePair::new("", "")],
             request_headers: vec![
+                KeyValuePair::new("Content-Type", "application/json"),
                 KeyValuePair::new("User-Agent", &format!("{}/{}", APP_NAME, APP_VERSION)),
                 KeyValuePair::new("Accept", "*/*"),
                 // KeyValuePair::new("Accept-Encoding", "gzip, deflate, br"),
@@ -235,7 +237,7 @@ impl Tab {
 
     pub fn compile_request_fields(
         &self,
-        env: &Option<crate::Environment>,
+        env: &Option<Environment>,
         collection_vars: Option<&[KeyValuePair]>, // fallback variables parsed from the Postman Collection
     ) -> (
         String,                              // URL

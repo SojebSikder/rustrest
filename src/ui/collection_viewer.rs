@@ -1,5 +1,5 @@
 use crate::app::CollectionSubTab;
-use crate::collection::PostmanCollection;
+use crate::collection::collection::PostmanCollection;
 use crate::message::Message;
 use iced::widget::{button, checkbox, column, container, row, scrollable, text, text_input};
 use iced::{Alignment, Element, Length, Theme};

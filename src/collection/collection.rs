@@ -96,9 +96,49 @@ impl PostmanCollection {
         assign_item_ids(&mut self.item, start_id);
     }
 
+    // set default headers
+    pub fn set_headers(&mut self, headers: Vec<KeyValuePair>) {
+        let postman_headers: Vec<PostmanHeader> = headers
+            .iter()
+            .map(|kv| PostmanHeader {
+                key: kv.key.clone(),
+                value: kv.value.clone(),
+                disabled: None,
+            })
+            .collect();
+
+        for item in &mut self.item {
+            apply_headers_to_item(item, &postman_headers);
+        }
+    }
+
     pub fn to_postman_json(&self) -> Result<String, String> {
         serde_json::to_string_pretty(self)
             .map_err(|e| format!("Failed to serialize collection schema: {}", e))
+    }
+}
+
+// helper function to apply headers to a collection item
+fn apply_headers_to_item(item: &mut CollectionItem, headers: &[PostmanHeader]) {
+    match item {
+        // if it's a request node, merge the new headers with the existin ones
+        CollectionItem::Request(node) => {
+            let mut merged_headers = headers.to_vec();
+
+            if let Some(existing_headers) = node.request.header.take() {
+                merged_headers.extend(existing_headers);
+            }
+
+            node.request.header = Some(merged_headers)
+        }
+        // if it's a folder, iterate through its sub-items and apply headers recursively
+        CollectionItem::Folder {
+            item: sub_items, ..
+        } => {
+            for sub_item in sub_items {
+                apply_headers_to_item(sub_item, headers);
+            }
+        }
     }
 }
 

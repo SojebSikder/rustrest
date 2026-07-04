@@ -1,9 +1,15 @@
-use crate::collection::{PostmanCollection, PostmanRequestNode, create_tab_from_request};
-use crate::env::Environment;
+use crate::collection::collection::{
+    CollectionInfo, CollectionItem, PostmanBody, PostmanBodyRow, PostmanCollection, PostmanHeader,
+    PostmanRequestDetails, PostmanRequestNode, PostmanUrl, PostmanVariable,
+    create_tab_from_request,
+};
+use crate::collection::env::Environment;
 use crate::http_client::send_request;
 use crate::message::Message;
+use crate::tab::types::KeyValuePair;
 use crate::tab::{Tab, TabMessage};
 use crate::utils::{contains_request_node_by_id, format_json_or_fallback};
+use crate::{APP_NAME, APP_VERSION};
 use iced::Task;
 use tokio_util::sync::CancellationToken;
 
@@ -54,57 +60,6 @@ pub struct Rustrest {
     pub next_request_id_counter: usize,
 }
 
-// impl Rustrest {
-//     pub fn sync_active_tab_to_collection(&mut self) {
-//         if let Some(tab_state) = self.tabs.get(self.active_tab_index) {
-//             // only sync if it's an HTTP request tab and is tied to a saved collection request
-//             if let (WorkspaceContent::HttpRequest, Some(req_id)) =
-//                 (&tab_state.content, tab_state.tab.request_id)
-//             {
-//                 if let Some(col_id) = tab_state.tab.collection_id {
-//                     if let Some(col) = self.collections.iter_mut().find(|c| c.id == col_id) {
-//                         // internal recursive helper to find and update the node
-//                         fn update_node(
-//                             items: &mut Vec<crate::collection::CollectionItem>,
-//                             target_id: usize,
-//                             tab: &crate::tab::Tab,
-//                         ) -> bool {
-//                             for item in items.iter_mut() {
-//                                 match item {
-//                                     crate::collection::CollectionItem::Request(req) => {
-//                                         if req.id == target_id {
-//                                             // sync values from Tab back to Postman Request Node
-//                                             req.name = tab.name.clone();
-//                                             req.request.method = tab.method.to_string();
-//                                             req.request.url = crate::collection::PostmanUrl::String(
-//                                                 tab.url.clone(),
-//                                             );
-
-//                                             // TODO: sync headers, body, auth, etc., here
-//                                             return true;
-//                                         }
-//                                     }
-//                                     crate::collection::CollectionItem::Folder {
-//                                         item: sub_items,
-//                                         ..
-//                                     } => {
-//                                         if update_node(sub_items, target_id, tab) {
-//                                             return true;
-//                                         }
-//                                     }
-//                                 }
-//                             }
-//                             false
-//                         }
-
-//                         update_node(&mut col.item, req_id, &tab_state.tab);
-//                     }
-//                 }
-//             }
-//         }
-//     }
-// }
-
 impl Rustrest {
     pub fn sync_active_tab_to_collection(&mut self) {
         if let Some(tab_state) = self.tabs.get(self.active_tab_index) {
@@ -114,27 +69,25 @@ impl Rustrest {
                 if let Some(col_id) = tab_state.tab.collection_id {
                     if let Some(col) = self.collections.iter_mut().find(|c| c.id == col_id) {
                         fn update_node(
-                            items: &mut Vec<crate::collection::CollectionItem>,
+                            items: &mut Vec<CollectionItem>,
                             target_id: usize,
                             tab: &crate::tab::Tab,
                         ) -> bool {
                             for item in items.iter_mut() {
                                 match item {
-                                    crate::collection::CollectionItem::Request(req) => {
+                                    CollectionItem::Request(req) => {
                                         if req.id == target_id {
                                             // sync Basic Fields
                                             req.name = tab.name.clone();
                                             req.request.method = tab.method.to_string();
-                                            req.request.url = crate::collection::PostmanUrl::String(
-                                                tab.url.clone(),
-                                            );
+                                            req.request.url = PostmanUrl::String(tab.url.clone());
 
                                             // sync Request Headers
                                             req.request.header = Some(
                                                 tab.request_headers
                                                     .iter()
                                                     .filter(|h| !h.key.trim().is_empty())
-                                                    .map(|h| crate::collection::PostmanHeader {
+                                                    .map(|h| PostmanHeader {
                                                         key: h.key.clone(),
                                                         value: h.value.clone(),
                                                         disabled: Some(!h.is_active),
@@ -147,25 +100,24 @@ impl Rustrest {
                                                 crate::tab::types::BodyType::Raw => {
                                                     let text_content = tab.request_body.text();
                                                     if !text_content.trim().is_empty() {
-                                                        req.request.body =
-                                                            Some(crate::collection::PostmanBody {
-                                                                mode: Some("raw".to_string()),
-                                                                raw: Some(text_content),
-                                                                formdata: None,
-                                                                urlencoded: None,
-                                                            });
+                                                        req.request.body = Some(PostmanBody {
+                                                            mode: Some("raw".to_string()),
+                                                            raw: Some(text_content),
+                                                            formdata: None,
+                                                            urlencoded: None,
+                                                        });
                                                     } else {
                                                         req.request.body = None;
                                                     }
                                                 }
                                                 crate::tab::types::BodyType::FormData => {
-                                                    req.request.body = Some(crate::collection::PostmanBody {
+                                                    req.request.body = Some(PostmanBody {
                                                         mode: Some("formdata".to_string()),
                                                         raw: None,
                                                         formdata: Some(
                                                             tab.body_form_data
                                                                 .iter()
-                                                                .map(|r| crate::collection::PostmanBodyRow {
+                                                                .map(|r| PostmanBodyRow {
                                                                     key: r.key.clone(),
                                                                     value: Some(r.value.clone()),
                                                                     disabled: Some(!r.is_active),
@@ -181,20 +133,22 @@ impl Rustrest {
                                                 }
                                                 // handle urlencoded if types parse it natively or fall back safely
                                                 _ => {
-                                                    req.request.body = Some(crate::collection::PostmanBody {
+                                                    req.request.body = Some(PostmanBody {
                                                         mode: Some("urlencoded".to_string()),
                                                         raw: None,
                                                         formdata: None,
                                                         urlencoded: Some(
                                                             tab.body_urlencoded
                                                                 .iter()
-                                                                .map(|u| crate::collection::PostmanBodyRow {
+                                                                .map(|u| PostmanBodyRow {
                                                                     key: u.key.clone(),
                                                                     value: Some(u.value.clone()),
                                                                     disabled: Some(!u.is_active),
-                                                                    r#type: Some("text".to_string()),
+                                                                    r#type: Some(
+                                                                        "text".to_string(),
+                                                                    ),
                                                                 })
-                                                                .collect()
+                                                                .collect(),
                                                         ),
                                                     });
                                                 }
@@ -203,9 +157,8 @@ impl Rustrest {
                                             return true;
                                         }
                                     }
-                                    crate::collection::CollectionItem::Folder {
-                                        item: sub_items,
-                                        ..
+                                    CollectionItem::Folder {
+                                        item: sub_items, ..
                                     } => {
                                         if update_node(sub_items, target_id, tab) {
                                             return true;
@@ -257,26 +210,6 @@ pub fn init() -> (Rustrest, Task<Message>) {
 pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
     match message {
         Message::None => Task::none(),
-        // Message::ImportCollectionPressed => {
-        //     if let Some(path) = rfd::FileDialog::new()
-        //         .add_filter("Postman Collection", &["json"])
-        //         .pick_file()
-        //     {
-        //         if let Ok(file_content) = std::fs::read_to_string(path) {
-        //             if let Ok(mut collection) =
-        //                 serde_json::from_str::<PostmanCollection>(&file_content)
-        //             {
-        //                 collection.id = app.next_tab_id;
-        //                 app.next_tab_id += 1;
-
-        //                 collection.assign_request_ids(&mut app.next_request_id);
-
-        //                 app.collections.push(collection);
-        //             }
-        //         }
-        //     }
-        //     Task::none()
-        // }
         Message::ImportCollectionPressed => {
             iced::Task::perform(
                 async {
@@ -308,14 +241,21 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
 
         // process file contents once loaded from disk
         Message::CollectionLoaded(path, content) => {
-            if let Ok(mut collection) =
-                serde_json::from_str::<crate::collection::PostmanCollection>(&content)
-            {
+            if let Ok(mut collection) = serde_json::from_str::<PostmanCollection>(&content) {
                 collection.id = app.next_tab_id;
                 collection.file_path = path;
                 app.next_tab_id += 1;
 
                 collection.assign_request_ids(&mut app.next_request_id);
+
+                // set default headers for the collection
+                let default_headers: Vec<KeyValuePair> = vec![
+                    KeyValuePair::new("Content-Type", "application/json"),
+                    KeyValuePair::new("User-Agent", &format!("{}/{}", APP_NAME, APP_VERSION)),
+                    KeyValuePair::new("Accept", "*/*"),
+                    KeyValuePair::new("Connection", "keep-alive"),
+                ];
+                collection.set_headers(default_headers);
 
                 app.collections.push(collection);
             }
@@ -665,7 +605,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         Message::AddCollectionVariablePressed(collection_id) => {
             if let Some(col) = app.collections.iter_mut().find(|c| c.id == collection_id) {
                 let vars = col.variable.get_or_insert_with(Vec::new);
-                vars.push(crate::collection::PostmanVariable {
+                vars.push(PostmanVariable {
                     key: String::new(),
                     value: Some(serde_json::Value::String(String::new())),
                     r#type: Some("string".to_string()),
@@ -689,9 +629,9 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             let col_id = app.next_tab_id;
             app.next_tab_id += 1;
 
-            let new_col = crate::collection::PostmanCollection {
+            let new_col = PostmanCollection {
                 id: col_id,
-                info: crate::collection::CollectionInfo {
+                info: CollectionInfo {
                     name: format!("New Collection {}", col_id),
                     postman_id: None,
                     schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
@@ -768,7 +708,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         } => {
             if let Some(col) = app.collections.iter_mut().find(|c| c.id == collection_id) {
                 fn rename_nested_folder(
-                    items: &mut Vec<crate::collection::CollectionItem>,
+                    items: &mut Vec<CollectionItem>,
                     path: &[String],
                     new_val: &str,
                 ) -> bool {
@@ -776,7 +716,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                         return false;
                     }
                     for item in items.iter_mut() {
-                        if let crate::collection::CollectionItem::Folder {
+                        if let CollectionItem::Folder {
                             name,
                             item: sub_items,
                         } = item
@@ -815,19 +755,16 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             parent_folder_path,
         } => {
             if let Some(col) = app.collections.iter_mut().find(|c| c.id == collection_id) {
-                fn insert_nested(
-                    items: &mut Vec<crate::collection::CollectionItem>,
-                    path: &[String],
-                ) {
+                fn insert_nested(items: &mut Vec<CollectionItem>, path: &[String]) {
                     if path.is_empty() {
-                        items.push(crate::collection::CollectionItem::Folder {
+                        items.push(CollectionItem::Folder {
                             name: "New Folder".to_string(),
                             item: Vec::new(),
                         });
                         return;
                     }
                     for item in items.iter_mut() {
-                        if let crate::collection::CollectionItem::Folder {
+                        if let CollectionItem::Folder {
                             name,
                             item: sub_items,
                         } = item
@@ -850,18 +787,14 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         } => {
             if !folder_path.is_empty() {
                 if let Some(col) = app.collections.iter_mut().find(|c| c.id == collection_id) {
-                    fn remove_nested(
-                        items: &mut Vec<crate::collection::CollectionItem>,
-                        path: &[String],
-                    ) {
+                    fn remove_nested(items: &mut Vec<CollectionItem>, path: &[String]) {
                         if path.is_empty() {
                             return;
                         }
 
                         if path.len() == 1 {
                             items.retain(|item| {
-                                if let crate::collection::CollectionItem::Folder { name, .. } = item
-                                {
+                                if let CollectionItem::Folder { name, .. } = item {
                                     name != &path[0]
                                 } else {
                                     true
@@ -871,7 +804,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                         }
 
                         for item in items.iter_mut() {
-                            if let crate::collection::CollectionItem::Folder {
+                            if let CollectionItem::Folder {
                                 name,
                                 item: sub_items,
                             } = item
@@ -900,25 +833,25 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 let new_request_node = PostmanRequestNode {
                     id: req_id,
                     name: "Untitled Request".to_string(),
-                    request: crate::collection::PostmanRequestDetails {
+                    request: PostmanRequestDetails {
                         method: "GET".to_string(),
-                        url: crate::collection::PostmanUrl::String(String::new()),
+                        url: PostmanUrl::String(String::new()),
                         header: None,
                         body: None,
                     },
                 };
 
                 fn insert_nested_request(
-                    items: &mut Vec<crate::collection::CollectionItem>,
+                    items: &mut Vec<CollectionItem>,
                     path: &[String],
-                    new_req: crate::collection::CollectionItem,
+                    new_req: CollectionItem,
                 ) {
                     if path.is_empty() {
                         items.push(new_req);
                         return;
                     }
                     for item in items.iter_mut() {
-                        if let crate::collection::CollectionItem::Folder {
+                        if let CollectionItem::Folder {
                             name,
                             item: sub_items,
                         } = item
@@ -934,7 +867,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 insert_nested_request(
                     &mut col.item,
                     &parent_folder_path,
-                    crate::collection::CollectionItem::Request(new_request_node),
+                    CollectionItem::Request(new_request_node),
                 );
             }
             Task::none()
@@ -947,13 +880,13 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         } => {
             if let Some(col) = app.collections.iter_mut().find(|c| c.id == collection_id) {
                 fn remove_nested_request(
-                    items: &mut Vec<crate::collection::CollectionItem>,
+                    items: &mut Vec<CollectionItem>,
                     path: &[String],
                     req_id: usize,
                 ) {
                     if path.is_empty() {
                         items.retain(|item| {
-                            if let crate::collection::CollectionItem::Request(req) = item {
+                            if let CollectionItem::Request(req) = item {
                                 req.id != req_id
                             } else {
                                 true
@@ -962,7 +895,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                         return;
                     }
                     for item in items.iter_mut() {
-                        if let crate::collection::CollectionItem::Folder {
+                        if let CollectionItem::Folder {
                             name,
                             item: sub_items,
                         } = item
