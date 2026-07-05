@@ -1,14 +1,13 @@
 use crate::collection::collection::{
-    CollectionInfo, CollectionItem, PostmanBody, PostmanBodyRow, PostmanCollection, PostmanHeader,
-    PostmanRequestDetails, PostmanRequestNode, PostmanUrl, PostmanVariable,
-    create_tab_from_request,
+    CollectionInfo, CollectionItem, PostmanCollection, PostmanRequestDetails, PostmanRequestNode,
+    PostmanUrl, PostmanVariable, create_tab_from_request,
 };
 use crate::collection::env::Environment;
 use crate::http_client::send_request;
 use crate::message::Message;
 use crate::tab::types::KeyValuePair;
 use crate::tab::{Tab, TabMessage};
-use crate::utils::{contains_request_node_by_id, format_json_or_fallback};
+use crate::utils::{contains_request_node_by_id, format_json_or_fallback, update_node};
 use crate::{APP_NAME, APP_VERSION};
 use iced::Task;
 use tokio_util::sync::CancellationToken;
@@ -68,107 +67,6 @@ impl Rustrest {
             {
                 if let Some(col_id) = tab_state.tab.collection_id {
                     if let Some(col) = self.collections.iter_mut().find(|c| c.id == col_id) {
-                        fn update_node(
-                            items: &mut Vec<CollectionItem>,
-                            target_id: usize,
-                            tab: &crate::tab::Tab,
-                        ) -> bool {
-                            for item in items.iter_mut() {
-                                match item {
-                                    CollectionItem::Request(req) => {
-                                        if req.id == target_id {
-                                            // sync Basic Fields
-                                            req.name = tab.name.clone();
-                                            req.request.method = tab.method.to_string();
-                                            req.request.url = PostmanUrl::String(tab.url.clone());
-
-                                            // sync Request Headers
-                                            req.request.header = Some(
-                                                tab.request_headers
-                                                    .iter()
-                                                    .filter(|h| !h.key.trim().is_empty())
-                                                    .map(|h| PostmanHeader {
-                                                        key: h.key.clone(),
-                                                        value: h.value.clone(),
-                                                        disabled: Some(!h.is_active),
-                                                    })
-                                                    .collect(),
-                                            );
-
-                                            // sync Request Body types conditionally
-                                            match tab.body_type {
-                                                crate::tab::types::BodyType::Raw => {
-                                                    let text_content = tab.request_body.text();
-                                                    if !text_content.trim().is_empty() {
-                                                        req.request.body = Some(PostmanBody {
-                                                            mode: Some("raw".to_string()),
-                                                            raw: Some(text_content),
-                                                            formdata: None,
-                                                            urlencoded: None,
-                                                        });
-                                                    } else {
-                                                        req.request.body = None;
-                                                    }
-                                                }
-                                                crate::tab::types::BodyType::FormData => {
-                                                    req.request.body = Some(PostmanBody {
-                                                        mode: Some("formdata".to_string()),
-                                                        raw: None,
-                                                        formdata: Some(
-                                                            tab.body_form_data
-                                                                .iter()
-                                                                .map(|r| PostmanBodyRow {
-                                                                    key: r.key.clone(),
-                                                                    value: Some(r.value.clone()),
-                                                                    disabled: Some(!r.is_active),
-                                                                    r#type: Some(match r.field_type {
-                                                                        crate::tab::types::FormDataType::File => "file".to_string(),
-                                                                        crate::tab::types::FormDataType::Text => "text".to_string(),
-                                                                    }),
-                                                                })
-                                                                .collect()
-                                                        ),
-                                                        urlencoded: None,
-                                                    });
-                                                }
-                                                // handle urlencoded if types parse it natively or fall back safely
-                                                _ => {
-                                                    req.request.body = Some(PostmanBody {
-                                                        mode: Some("urlencoded".to_string()),
-                                                        raw: None,
-                                                        formdata: None,
-                                                        urlencoded: Some(
-                                                            tab.body_urlencoded
-                                                                .iter()
-                                                                .map(|u| PostmanBodyRow {
-                                                                    key: u.key.clone(),
-                                                                    value: Some(u.value.clone()),
-                                                                    disabled: Some(!u.is_active),
-                                                                    r#type: Some(
-                                                                        "text".to_string(),
-                                                                    ),
-                                                                })
-                                                                .collect(),
-                                                        ),
-                                                    });
-                                                }
-                                            }
-
-                                            return true;
-                                        }
-                                    }
-                                    CollectionItem::Folder {
-                                        item: sub_items, ..
-                                    } => {
-                                        if update_node(sub_items, target_id, tab) {
-                                            return true;
-                                        }
-                                    }
-                                }
-                            }
-                            false
-                        }
-
                         update_node(&mut col.item, req_id, &tab_state.tab);
                     }
                 }
