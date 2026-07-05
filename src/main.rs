@@ -41,7 +41,7 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
     }
 }
 
-fn view(app: &Rustrest) -> Element<Message> {
+fn view(app: &Rustrest) -> Element<'_, Message> {
     let sidebar = ui::sidebar::render_sidebar(app);
     let workbench = ui::workspace::render_workbench(app);
 
