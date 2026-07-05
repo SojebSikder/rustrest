@@ -8,7 +8,7 @@ mod tab;
 mod ui;
 mod utils;
 use app::Rustrest;
-use iced::widget::row;
+use iced::widget::{row, stack};
 use iced::{Element, Length, Size};
 use iced::{Event, Subscription, event};
 use message::Message;
@@ -44,11 +44,13 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
 fn view(app: &Rustrest) -> Element<'_, Message> {
     let sidebar = ui::sidebar::render_sidebar(app);
     let workbench = ui::workspace::render_workbench(app);
+    let toast_layer = app.toast_manager.view(|id| Message::DismissToast(id));
 
-    row![sidebar, workbench]
+    let base_layout = row![sidebar, workbench]
         .spacing(15)
         .padding(15)
         .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
+        .height(Length::Fill);
+
+    stack![base_layout, toast_layer].into()
 }

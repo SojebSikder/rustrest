@@ -7,6 +7,7 @@ use crate::http_client::send_request;
 use crate::message::Message;
 use crate::tab::types::KeyValuePair;
 use crate::tab::{Tab, TabMessage};
+use crate::ui::toast::toast::{ToastManager, ToastStatus};
 use crate::utils::{contains_request_node_by_id, format_json_or_fallback, update_node};
 use crate::{APP_NAME, APP_VERSION};
 use iced::Task;
@@ -57,6 +58,8 @@ pub struct Rustrest {
 
     pub next_collection_id_counter: usize,
     pub next_request_id_counter: usize,
+
+    pub toast_manager: ToastManager,
 }
 
 impl Rustrest {
@@ -100,6 +103,7 @@ pub fn init() -> (Rustrest, Task<Message>) {
             active_context_menu: None,
             next_collection_id_counter: 0,
             next_request_id_counter: 0,
+            toast_manager: ToastManager::new(),
         },
         Task::none(),
     )
@@ -139,25 +143,40 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
 
         // process file contents once loaded from disk
         Message::CollectionLoaded(path, content) => {
-            if let Ok(mut collection) = serde_json::from_str::<PostmanCollection>(&content) {
-                collection.id = app.next_tab_id;
-                collection.file_path = path;
-                app.next_tab_id += 1;
+            match serde_json::from_str::<PostmanCollection>(&content) {
+                Ok(mut collection) => {
+                    collection.id = app.next_tab_id;
+                    collection.file_path = path;
+                    app.next_tab_id += 1;
 
-                collection.assign_request_ids(&mut app.next_request_id);
+                    collection.assign_request_ids(&mut app.next_request_id);
 
-                // set default headers for the collection
-                let default_headers: Vec<KeyValuePair> = vec![
-                    KeyValuePair::new("Content-Type", "application/json"),
-                    KeyValuePair::new("User-Agent", &format!("{}/{}", APP_NAME, APP_VERSION)),
-                    KeyValuePair::new("Accept", "*/*"),
-                    KeyValuePair::new("Connection", "keep-alive"),
-                ];
-                collection.set_headers(default_headers);
+                    // set default headers for the collection
+                    let default_headers: Vec<KeyValuePair> = vec![
+                        KeyValuePair::new("Content-Type", "application/json"),
+                        KeyValuePair::new("User-Agent", &format!("{}/{}", APP_NAME, APP_VERSION)),
+                        KeyValuePair::new("Accept", "*/*"),
+                        KeyValuePair::new("Connection", "keep-alive"),
+                    ];
+                    collection.set_headers(default_headers);
 
-                app.collections.push(collection);
+                    app.collections.push(collection);
+
+                    iced::Task::none()
+                }
+                Err(err) => {
+                    eprintln!(
+                        "Failed to parse Postman collection from {:?}: {}",
+                        path, err
+                    );
+
+                    // iced::Task::none()
+                    iced::Task::done(Message::ShowToast(
+                        format!("Failed to load collection: {}", err),
+                        ToastStatus::Error,
+                    ))
+                }
             }
-            iced::Task::none()
         }
 
         // simple inline disk overwrite action
@@ -846,6 +865,27 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         Message::CloseContextMenu => {
             app.active_context_menu = None;
             Task::none()
+        }
+
+        Message::ShowToast(msg, status) => {
+            // Call the manager to register the toast
+            let (id, duration) =
+                app.toast_manager
+                    .show(msg, status, std::time::Duration::from_secs(4));
+
+            // Create the asynchronous task to dismiss it when the timer expires
+            iced::Task::perform(
+                async move {
+                    tokio::time::sleep(duration).await;
+                    id
+                },
+                Message::DismissToast,
+            )
+        }
+
+        Message::DismissToast(id) => {
+            app.toast_manager.dismiss(id);
+            iced::Task::none()
         }
     }
 }

@@ -2,6 +2,7 @@ use crate::app::CollectionSubTab;
 use crate::collection::collection::PostmanRequestNode;
 use crate::http_client::HttpResponse;
 use crate::tab::TabMessage;
+use crate::ui::toast::toast::ToastStatus;
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -97,5 +98,8 @@ pub enum Message {
         request_id: usize,
     },
     CloseContextMenu,
+
+    ShowToast(String, ToastStatus),
+    DismissToast(usize),
     None,
 }
