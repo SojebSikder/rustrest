@@ -28,6 +28,11 @@ impl ToastManager {
         Self::default()
     }
 
+    pub fn tick(&mut self) {
+        let now = Instant::now();
+        self.toasts.retain(|toast| toast.expires_at > now);
+    }
+
     pub fn show(
         &mut self,
         message: impl Into<String>,

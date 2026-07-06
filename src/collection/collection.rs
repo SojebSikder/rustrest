@@ -39,17 +39,13 @@ impl PostmanCollection {
             let is_last = path.len() == 1;
 
             for item in items {
-                if let CollectionItem::Folder {
-                    name,
-                    item: sub_items,
-                } = item
-                {
-                    if name == target {
+                if let CollectionItem::Folder(folder) = item {
+                    if folder.name == *target {
                         if is_last {
-                            *name = new_name.to_string();
+                            folder.name = new_name.to_string();
                             return true;
                         } else {
-                            return rename_recursive(sub_items, &path[1..], new_name);
+                            return rename_recursive(&mut folder.item, &path[1..], new_name);
                         }
                     }
                 }
@@ -85,10 +81,8 @@ impl PostmanCollection {
                         node.id = *start_id;
                         *start_id += 1;
                     }
-                    CollectionItem::Folder {
-                        item: sub_items, ..
-                    } => {
-                        assign_item_ids(sub_items, start_id);
+                    CollectionItem::Folder(folder) => {
+                        assign_item_ids(&mut folder.item, start_id);
                     }
                 }
             }
@@ -132,10 +126,8 @@ fn apply_headers_to_item(item: &mut CollectionItem, headers: &[PostmanHeader]) {
             node.request.header = Some(merged_headers)
         }
         // if it's a folder, iterate through its sub-items and apply headers recursively
-        CollectionItem::Folder {
-            item: sub_items, ..
-        } => {
-            for sub_item in sub_items {
+        CollectionItem::Folder(folder) => {
+            for sub_item in &mut folder.item {
                 apply_headers_to_item(sub_item, headers);
             }
         }
@@ -151,12 +143,24 @@ pub struct CollectionInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PostmanFolder {
+    pub name: String,
+    #[serde(rename = "protocolProfileBehavior")]
+    pub protocol_profile_behavior: Option<PostmanProtocolProfileBehavior>,
+    pub item: Vec<CollectionItem>,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PostmanProtocolProfileBehavior {
+    #[serde(rename = "disableBodyPruning")]
+    pub disable_body_pruning: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum CollectionItem {
-    Folder {
-        name: String,
-        item: Vec<CollectionItem>,
-    },
+    Folder(PostmanFolder),
     Request(PostmanRequestNode),
 }
 

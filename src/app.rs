@@ -1,6 +1,6 @@
 use crate::collection::collection::{
-    CollectionInfo, CollectionItem, PostmanCollection, PostmanRequestDetails, PostmanRequestNode,
-    PostmanUrl, PostmanVariable, create_tab_from_request,
+    CollectionInfo, CollectionItem, PostmanCollection, PostmanFolder, PostmanRequestDetails,
+    PostmanRequestNode, PostmanUrl, PostmanVariable, create_tab_from_request,
 };
 use crate::collection::env::Environment;
 use crate::http_client::send_request;
@@ -633,17 +633,17 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                         return false;
                     }
                     for item in items.iter_mut() {
-                        if let CollectionItem::Folder {
-                            name,
-                            item: sub_items,
-                        } = item
-                        {
-                            if name == &path[0] {
+                        if let CollectionItem::Folder(folder) = item {
+                            if folder.name == path[0] {
                                 if path.len() == 1 {
-                                    *name = new_val.to_string();
+                                    folder.name = new_val.to_string();
                                     return true;
                                 } else {
-                                    return rename_nested_folder(sub_items, &path[1..], new_val);
+                                    return rename_nested_folder(
+                                        &mut folder.item,
+                                        &path[1..],
+                                        new_val,
+                                    );
                                 }
                             }
                         }
@@ -674,20 +674,18 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             if let Some(col) = app.collections.iter_mut().find(|c| c.id == collection_id) {
                 fn insert_nested(items: &mut Vec<CollectionItem>, path: &[String]) {
                     if path.is_empty() {
-                        items.push(CollectionItem::Folder {
+                        items.push(CollectionItem::Folder(PostmanFolder {
                             name: "New Folder".to_string(),
+                            description: None,
                             item: Vec::new(),
-                        });
+                            protocol_profile_behavior: None,
+                        }));
                         return;
                     }
                     for item in items.iter_mut() {
-                        if let CollectionItem::Folder {
-                            name,
-                            item: sub_items,
-                        } = item
-                        {
-                            if name == &path[0] {
-                                insert_nested(sub_items, &path[1..]);
+                        if let CollectionItem::Folder(folder) = item {
+                            if folder.name == path[0] {
+                                insert_nested(&mut folder.item, &path[1..]);
                                 return;
                             }
                         }
@@ -711,8 +709,8 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
 
                         if path.len() == 1 {
                             items.retain(|item| {
-                                if let CollectionItem::Folder { name, .. } = item {
-                                    name != &path[0]
+                                if let CollectionItem::Folder(folder) = item {
+                                    folder.name != path[0]
                                 } else {
                                     true
                                 }
@@ -721,13 +719,9 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                         }
 
                         for item in items.iter_mut() {
-                            if let CollectionItem::Folder {
-                                name,
-                                item: sub_items,
-                            } = item
-                            {
-                                if name == &path[0] {
-                                    remove_nested(sub_items, &path[1..]);
+                            if let CollectionItem::Folder(folder) = item {
+                                if folder.name == path[0] {
+                                    remove_nested(&mut folder.item, &path[1..]);
                                     return;
                                 }
                             }
@@ -768,13 +762,9 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                         return;
                     }
                     for item in items.iter_mut() {
-                        if let CollectionItem::Folder {
-                            name,
-                            item: sub_items,
-                        } = item
-                        {
-                            if name == &path[0] {
-                                insert_nested_request(sub_items, &path[1..], new_req);
+                        if let CollectionItem::Folder(folder) = item {
+                            if folder.name == path[0] {
+                                insert_nested_request(&mut folder.item, &path[1..], new_req);
                                 return;
                             }
                         }
@@ -812,13 +802,9 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                         return;
                     }
                     for item in items.iter_mut() {
-                        if let CollectionItem::Folder {
-                            name,
-                            item: sub_items,
-                        } = item
-                        {
-                            if name == &path[0] {
-                                remove_nested_request(sub_items, &path[1..], req_id);
+                        if let CollectionItem::Folder(folder) = item {
+                            if folder.name == path[0] {
+                                remove_nested_request(&mut folder.item, &path[1..], req_id);
                                 return;
                             }
                         }

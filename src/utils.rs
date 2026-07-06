@@ -18,10 +18,8 @@ pub fn contains_request_node_by_id(items: &[CollectionItem], target_id: usize) -
                     return true;
                 }
             }
-            CollectionItem::Folder {
-                item: sub_items, ..
-            } => {
-                if contains_request_node_by_id(sub_items, target_id) {
+            CollectionItem::Folder(folder) => {
+                if contains_request_node_by_id(&folder.item, target_id) {
                     return true;
                 }
             }
@@ -122,10 +120,8 @@ pub fn update_node(
                     return true;
                 }
             }
-            CollectionItem::Folder {
-                item: sub_items, ..
-            } => {
-                if update_node(sub_items, target_id, tab) {
+            CollectionItem::Folder(folder) => {
+                if update_node(&mut folder.item, target_id, tab) {
                     return true;
                 }
             }

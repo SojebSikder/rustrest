@@ -141,11 +141,8 @@ fn render_sidebar_item<'a>(
     mut current_path: Vec<String>,
 ) -> Column<'a, Message> {
     match item {
-        CollectionItem::Folder {
-            name,
-            item: sub_items,
-        } => {
-            current_path.push(name.clone());
+        CollectionItem::Folder(folder) => {
+            current_path.push(folder.name.clone());
 
             let path_for_change = current_path.clone();
             let path_for_save = current_path.clone();
@@ -163,7 +160,7 @@ fn render_sidebar_item<'a>(
 
             let folder_title: Element<'_, Message> = if is_editing_folder {
                 row![
-                    text_input("Folder Name...", name)
+                    text_input("Folder Name...", &folder.name)
                         .on_input(move |txt| Message::FolderNameChanged {
                             collection_id,
                             folder_path: path_for_change.clone(),
@@ -186,7 +183,7 @@ fn render_sidebar_item<'a>(
                 .align_y(Alignment::Center)
                 .into()
             } else {
-                mouse_area(container(text(format!("📁 {}", name)).size(14)).padding([2, 0]))
+                mouse_area(container(text(format!("📁 {}", folder.name)).size(14)).padding([2, 0]))
                     .on_right_press(Message::ShowFolderContextMenu {
                         collection_id,
                         folder_path: path_for_right_click,
@@ -235,7 +232,7 @@ fn render_sidebar_item<'a>(
                 folder_layout = folder_layout.push(dropdown);
             }
 
-            for sub in sub_items {
+            for sub in &folder.item {
                 folder_layout = render_sidebar_item(
                     app,
                     folder_layout,
