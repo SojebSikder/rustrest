@@ -43,7 +43,7 @@ impl ToastManager {
         self.next_toast_id += 1;
 
         if !duration.is_zero() {
-            duration = Duration::from_secs(3);
+            duration = Duration::from_secs(5);
         }
 
         let expires_at = Instant::now() + duration;
