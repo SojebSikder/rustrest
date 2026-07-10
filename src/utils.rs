@@ -41,7 +41,7 @@ pub fn update_node(
                     // sync Basic Fields
                     req.name = tab.name.clone();
                     req.request.method = tab.method.to_string();
-                    req.request.url = PostmanUrl::String(tab.url.clone());
+                    req.request.url = Some(PostmanUrl::String(tab.url.clone()));
 
                     // sync Request Headers
                     req.request.header = Some(

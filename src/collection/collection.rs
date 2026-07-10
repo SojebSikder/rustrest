@@ -175,7 +175,7 @@ pub struct PostmanRequestNode {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PostmanRequestDetails {
     pub method: String,
-    pub url: PostmanUrl,
+    pub url: Option<PostmanUrl>,
     pub header: Option<Vec<PostmanHeader>>,
     pub body: Option<PostmanBody>,
 }
@@ -227,7 +227,13 @@ pub fn create_tab_from_request(
 ) -> Tab {
     let mut tab = Tab::new(id);
     tab.name = node.name.clone();
-    tab.url = node.request.url.to_string();
+    tab.url = node
+        .request
+        .url
+        .as_ref()
+        .map(|u| u.to_string())
+        .unwrap_or_default();
+    // tab.url = node.request.url.to_string();
     tab.collection_id = collection_id;
     tab.request_id = Some(node.id);
 
