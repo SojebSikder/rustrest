@@ -746,7 +746,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     name: "Untitled Request".to_string(),
                     request: PostmanRequestDetails {
                         method: "GET".to_string(),
-                        url: PostmanUrl::String(String::new()),
+                        url: Some(PostmanUrl::String(String::new())),
                         header: None,
                         body: None,
                     },
