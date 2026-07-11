@@ -267,8 +267,13 @@ impl Tab {
         };
 
         let resolved_url = resolve(&self.url);
-        let resolved_body = resolve(&self.request_body.text());
         let resolved_auth = resolve(&self.request_auth);
+        let mut resolved_body = resolve(&self.request_body.text());
+
+        // strip out comment lines if the body is Raw JSON
+        if self.body_type == BodyType::Raw && self.raw_type == RawType::Json {
+            resolved_body = strip_json_comments(&resolved_body);
+        }
 
         let resolved_headers = self
             .request_headers
@@ -323,4 +328,67 @@ fn sync_params_to_url(url_str: &str, params: &[KeyValuePair]) -> String {
 
     drop(query_serializer);
     parsed_url.to_string()
+}
+
+// helper function to strip line comments (`//`) and block comments (`/* */`) from a JSON payload string.
+fn strip_json_comments(input: &str) -> String {
+    let mut result = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+
+    let mut in_string = false;
+    let mut in_line_comment = false;
+    let mut in_block_comment = false;
+    let mut escaped = false;
+
+    while let Some(c) = chars.next() {
+        if in_line_comment {
+            if c == '\n' {
+                in_line_comment = false;
+                result.push('\n');
+            }
+            continue;
+        }
+
+        if in_block_comment {
+            if c == '*' {
+                if let Some(&'/') = chars.peek() {
+                    chars.next(); // consume '/'
+                    in_block_comment = false;
+                }
+            }
+            continue;
+        }
+
+        if in_string {
+            if c == '"' && !escaped {
+                in_string = false;
+            }
+            escaped = c == '\\' && !escaped;
+            result.push(c);
+            continue;
+        }
+
+        if c == '"' {
+            in_string = true;
+            result.push(c);
+        } else if c == '/' {
+            match chars.peek() {
+                Some(&'/') => {
+                    chars.next(); // consume '/'
+                    in_line_comment = true;
+                }
+                Some(&'*') => {
+                    chars.next(); // consume '*'
+                    in_block_comment = true;
+                }
+                _ => {
+                    result.push(c);
+                }
+            }
+        } else {
+            result.push(c);
+        }
+    }
+
+    result
 }
