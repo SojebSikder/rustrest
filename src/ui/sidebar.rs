@@ -25,17 +25,17 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
     .align_y(Alignment::Center);
 
     let mut sidebar_contents = column![
-        row![
-            button("Import")
-                .on_press(Message::ImportCollectionPressed)
-                .padding(6)
-                .width(Length::FillPortion(1)),
-            button("+ Collection")
-                .on_press(Message::CreateNewCollectionPressed)
-                .padding(6)
-                .width(Length::FillPortion(1)),
-        ]
-        .spacing(5),
+        // row![
+        //     button("Import")
+        //         .on_press(Message::ImportCollectionPressed)
+        //         .padding(6)
+        //         .width(Length::FillPortion(1)),
+        //     button("+ Collection")
+        //         .on_press(Message::CreateNewCollectionPressed)
+        //         .padding(6)
+        //         .width(Length::FillPortion(1)),
+        // ]
+        // .spacing(5),
         container(env_selector).padding(Padding {
             top: 5.0,
             right: 0.0,

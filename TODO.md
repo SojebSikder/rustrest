@@ -42,6 +42,8 @@
   - [x] request body binary data: file upload
   - [ ] allow multiline in form data values
   - [ ] add basic Auth
+  - [ ] individual request save to a collection
+  - [ ] fix rename request name
 - [ ] Response section
   - [x] add json view in body response
   - [ ] json view highlighting
