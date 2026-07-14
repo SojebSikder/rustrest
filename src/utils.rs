@@ -1,5 +1,5 @@
 use crate::collection::collection::{
-    CollectionItem, PostmanBody, PostmanBodyRow, PostmanHeader, PostmanUrl,
+    CollectionItem, PostmanBody, PostmanBodyRow, PostmanFolder, PostmanHeader, PostmanUrl,
 };
 
 pub fn format_json_or_fallback(raw_body: &str) -> String {
@@ -123,6 +123,121 @@ pub fn update_node(
             CollectionItem::Folder(folder) => {
                 if update_node(&mut folder.item, target_id, tab) {
                     return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+// collection, request operations
+
+/// inserts a nested folder into the collection at the specified path
+pub fn insert_nested(items: &mut Vec<CollectionItem>, path: &[String]) {
+    if path.is_empty() {
+        items.push(CollectionItem::Folder(PostmanFolder {
+            name: "New Folder".to_string(),
+            description: None,
+            item: Vec::new(),
+            protocol_profile_behavior: None,
+        }));
+        return;
+    }
+    for item in items.iter_mut() {
+        if let CollectionItem::Folder(folder) = item {
+            if folder.name == path[0] {
+                insert_nested(&mut folder.item, &path[1..]);
+                return;
+            }
+        }
+    }
+}
+
+/// inserts a nested request into the collection at the specified path
+pub fn insert_nested_request(
+    items: &mut Vec<CollectionItem>,
+    path: &[String],
+    new_req: CollectionItem,
+) {
+    if path.is_empty() {
+        items.push(new_req);
+        return;
+    }
+    for item in items.iter_mut() {
+        if let CollectionItem::Folder(folder) = item {
+            if folder.name == path[0] {
+                insert_nested_request(&mut folder.item, &path[1..], new_req);
+                return;
+            }
+        }
+    }
+}
+
+/// removes a nested request from the collection at the specified path
+pub fn remove_nested_request(items: &mut Vec<CollectionItem>, path: &[String], req_id: usize) {
+    if path.is_empty() {
+        items.retain(|item| {
+            if let CollectionItem::Request(req) = item {
+                req.id != req_id
+            } else {
+                true
+            }
+        });
+        return;
+    }
+    for item in items.iter_mut() {
+        if let CollectionItem::Folder(folder) = item {
+            if folder.name == path[0] {
+                remove_nested_request(&mut folder.item, &path[1..], req_id);
+                return;
+            }
+        }
+    }
+}
+
+/// removes a nested request from the collection at the specified path
+pub fn remove_nested(items: &mut Vec<CollectionItem>, path: &[String]) {
+    if path.is_empty() {
+        return;
+    }
+
+    if path.len() == 1 {
+        items.retain(|item| {
+            if let CollectionItem::Folder(folder) = item {
+                folder.name != path[0]
+            } else {
+                true
+            }
+        });
+        return;
+    }
+
+    for item in items.iter_mut() {
+        if let CollectionItem::Folder(folder) = item {
+            if folder.name == path[0] {
+                remove_nested(&mut folder.item, &path[1..]);
+                return;
+            }
+        }
+    }
+}
+
+pub fn rename_nested_folder(
+    items: &mut Vec<CollectionItem>,
+    path: &[String],
+    new_val: &str,
+) -> bool {
+    if path.is_empty() {
+        return false;
+    }
+    for item in items.iter_mut() {
+        if let CollectionItem::Folder(folder) = item {
+            if folder.name == path[0] {
+                if path.len() == 1 {
+                    folder.name = new_val.to_string();
+                    return true;
+                } else {
+                    return rename_nested_folder(&mut folder.item, &path[1..], new_val);
                 }
             }
         }

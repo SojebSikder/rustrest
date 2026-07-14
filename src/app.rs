@@ -10,7 +10,10 @@ use crate::tab::{Tab, TabMessage};
 use crate::ui::menu::menu::DropdownMenuState;
 use crate::ui::menu::menu_message::MenuMessage;
 use crate::ui::toast::toast::{ToastManager, ToastStatus};
-use crate::utils::{contains_request_node_by_id, format_json_or_fallback, update_node};
+use crate::utils::{
+    contains_request_node_by_id, format_json_or_fallback, insert_nested, insert_nested_request,
+    remove_nested, remove_nested_request, rename_nested_folder, update_node,
+};
 use crate::{APP_NAME, APP_VERSION};
 use iced::{Task, window};
 use tokio_util::sync::CancellationToken;
@@ -628,33 +631,6 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             new_name,
         } => {
             if let Some(col) = app.collections.iter_mut().find(|c| c.id == collection_id) {
-                fn rename_nested_folder(
-                    items: &mut Vec<CollectionItem>,
-                    path: &[String],
-                    new_val: &str,
-                ) -> bool {
-                    if path.is_empty() {
-                        return false;
-                    }
-                    for item in items.iter_mut() {
-                        if let CollectionItem::Folder(folder) = item {
-                            if folder.name == path[0] {
-                                if path.len() == 1 {
-                                    folder.name = new_val.to_string();
-                                    return true;
-                                } else {
-                                    return rename_nested_folder(
-                                        &mut folder.item,
-                                        &path[1..],
-                                        new_val,
-                                    );
-                                }
-                            }
-                        }
-                    }
-                    false
-                }
-
                 if rename_nested_folder(&mut col.item, &folder_path, &new_name) {
                     // update our navigation path to track the new name dynamically
                     if let Some(last) = app.editing_folder_path.last_mut() {
@@ -676,25 +652,6 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             parent_folder_path,
         } => {
             if let Some(col) = app.collections.iter_mut().find(|c| c.id == collection_id) {
-                fn insert_nested(items: &mut Vec<CollectionItem>, path: &[String]) {
-                    if path.is_empty() {
-                        items.push(CollectionItem::Folder(PostmanFolder {
-                            name: "New Folder".to_string(),
-                            description: None,
-                            item: Vec::new(),
-                            protocol_profile_behavior: None,
-                        }));
-                        return;
-                    }
-                    for item in items.iter_mut() {
-                        if let CollectionItem::Folder(folder) = item {
-                            if folder.name == path[0] {
-                                insert_nested(&mut folder.item, &path[1..]);
-                                return;
-                            }
-                        }
-                    }
-                }
                 insert_nested(&mut col.item, &parent_folder_path);
             }
             Task::none()
@@ -706,31 +663,6 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         } => {
             if !folder_path.is_empty() {
                 if let Some(col) = app.collections.iter_mut().find(|c| c.id == collection_id) {
-                    fn remove_nested(items: &mut Vec<CollectionItem>, path: &[String]) {
-                        if path.is_empty() {
-                            return;
-                        }
-
-                        if path.len() == 1 {
-                            items.retain(|item| {
-                                if let CollectionItem::Folder(folder) = item {
-                                    folder.name != path[0]
-                                } else {
-                                    true
-                                }
-                            });
-                            return;
-                        }
-
-                        for item in items.iter_mut() {
-                            if let CollectionItem::Folder(folder) = item {
-                                if folder.name == path[0] {
-                                    remove_nested(&mut folder.item, &path[1..]);
-                                    return;
-                                }
-                            }
-                        }
-                    }
                     remove_nested(&mut col.item, &folder_path);
                 }
             }
@@ -756,25 +688,6 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     },
                 };
 
-                fn insert_nested_request(
-                    items: &mut Vec<CollectionItem>,
-                    path: &[String],
-                    new_req: CollectionItem,
-                ) {
-                    if path.is_empty() {
-                        items.push(new_req);
-                        return;
-                    }
-                    for item in items.iter_mut() {
-                        if let CollectionItem::Folder(folder) = item {
-                            if folder.name == path[0] {
-                                insert_nested_request(&mut folder.item, &path[1..], new_req);
-                                return;
-                            }
-                        }
-                    }
-                }
-
                 insert_nested_request(
                     &mut col.item,
                     &parent_folder_path,
@@ -790,30 +703,6 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             request_id,
         } => {
             if let Some(col) = app.collections.iter_mut().find(|c| c.id == collection_id) {
-                fn remove_nested_request(
-                    items: &mut Vec<CollectionItem>,
-                    path: &[String],
-                    req_id: usize,
-                ) {
-                    if path.is_empty() {
-                        items.retain(|item| {
-                            if let CollectionItem::Request(req) = item {
-                                req.id != req_id
-                            } else {
-                                true
-                            }
-                        });
-                        return;
-                    }
-                    for item in items.iter_mut() {
-                        if let CollectionItem::Folder(folder) = item {
-                            if folder.name == path[0] {
-                                remove_nested_request(&mut folder.item, &path[1..], req_id);
-                                return;
-                            }
-                        }
-                    }
-                }
                 remove_nested_request(&mut col.item, &parent_folder_path, request_id);
 
                 app.tabs.retain(|t| t.tab.request_id != Some(request_id));
