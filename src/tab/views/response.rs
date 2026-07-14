@@ -98,6 +98,7 @@ where
                         .height(Length::Fill)
                     ]
                     .spacing(8)
+                    .height(Length::Fill)
                     .into()
                 }
 

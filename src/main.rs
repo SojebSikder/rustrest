@@ -17,7 +17,7 @@ use crate::ui::menu::menu::{DropdownItem, MenuGroup, render_menu_bar, render_men
 use crate::ui::menu::menu_message::MenuMessage;
 
 const APP_NAME: &str = "Rustrest";
-const APP_VERSION: &str = "0.1.0";
+const APP_VERSION: &str = "0.2.0";
 
 pub fn main() -> iced::Result {
     iced::application(app::init, app::update, view)
