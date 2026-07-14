@@ -1,6 +1,6 @@
 use crate::collection::collection::{
-    CollectionInfo, CollectionItem, PostmanCollection, PostmanFolder, PostmanRequestDetails,
-    PostmanRequestNode, PostmanUrl, PostmanVariable, create_tab_from_request,
+    CollectionInfo, CollectionItem, PostmanCollection, PostmanRequestDetails, PostmanRequestNode,
+    PostmanUrl, PostmanVariable, create_tab_from_request,
 };
 use crate::collection::env::Environment;
 use crate::http_client::send_request;
@@ -15,7 +15,7 @@ use crate::utils::{
     remove_nested, remove_nested_request, rename_nested_folder, update_node,
 };
 use crate::{APP_NAME, APP_VERSION};
-use iced::{Task, window};
+use iced::Task;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone, PartialEq)]
