@@ -6,7 +6,6 @@ repository = "https://github.com/SojebSikder/rustrest"
 
 [dependencies]
 iced = { version = "0.14", features = ["tokio"] }
-iced_aw = { version = "0.14.0", features = ["full"] }
 
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["compat"] }
@@ -23,13 +22,3 @@ rfd = "0.17.2"
 [profile.dist]
 inherits = "release"
 lto = "thin"
-
-
-# Split debuginfo reduces the sheer size of symbol generation on Windows GNU
-[profile.dev]
-split-debuginfo = "packed"
-
-# Alternatively, force dependencies to compile with basic optimizations
-# which drastically collapses the internal symbol count
-[profile.dev.package."*"]
-opt-level = 1
