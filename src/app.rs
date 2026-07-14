@@ -7,10 +7,12 @@ use crate::http_client::send_request;
 use crate::message::Message;
 use crate::tab::types::KeyValuePair;
 use crate::tab::{Tab, TabMessage};
+use crate::ui::menu::menu::DropdownMenuState;
+use crate::ui::menu::menu_message::MenuMessage;
 use crate::ui::toast::toast::{ToastManager, ToastStatus};
 use crate::utils::{contains_request_node_by_id, format_json_or_fallback, update_node};
 use crate::{APP_NAME, APP_VERSION};
-use iced::Task;
+use iced::{Task, window};
 use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -60,6 +62,7 @@ pub struct Rustrest {
     pub next_request_id_counter: usize,
 
     pub toast_manager: ToastManager,
+    pub menu_state: DropdownMenuState,
 }
 
 impl Rustrest {
@@ -104,6 +107,7 @@ pub fn init() -> (Rustrest, Task<Message>) {
             next_collection_id_counter: 0,
             next_request_id_counter: 0,
             toast_manager: ToastManager::new(),
+            menu_state: DropdownMenuState::new(),
         },
         Task::none(),
     )
@@ -869,9 +873,34 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             )
         }
 
+        // menu actions
+        Message::MenuInteraction(dropdown_msg) => {
+            if let Some(menu_action) = app.menu_state.update(dropdown_msg) {
+                match menu_action {
+                    MenuMessage::FileNew => {
+                        return update(app, Message::CreateNewCollectionPressed);
+                    }
+                    MenuMessage::FileOpen => {
+                        return update(app, Message::ImportCollectionPressed);
+                    }
+                    MenuMessage::FileExit => {
+                        return update(app, Message::AppExit);
+                    }
+                    MenuMessage::HelpAbout => {
+                        let version_info = format!("{} v{}", APP_NAME, APP_VERSION);
+                        return update(app, Message::ShowToast(version_info, ToastStatus::Info));
+                    }
+                }
+            }
+            Task::none()
+        }
+
         Message::DismissToast(id) => {
             app.toast_manager.dismiss(id);
             iced::Task::none()
         }
+
+        // exit the application
+        Message::AppExit => iced::exit(),
     }
 }
