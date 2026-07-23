@@ -28,6 +28,8 @@ pub enum Message {
 
     // environment Actions
     EnvSelected(Option<String>),
+    CreateEnvironmentPressed,
+    DeleteEnvironmentPressed(usize),
 
     // collection viewer actions
     CollectionSubTabSelected(CollectionSubTab),

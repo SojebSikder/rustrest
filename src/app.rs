@@ -478,6 +478,43 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             Task::none()
         }
 
+        Message::CreateEnvironmentPressed => {
+            let new_count = app.environments.len() + 1;
+            let new_env_name = format!("Environment {}", new_count);
+
+            // add a new environment instance
+            app.environments.push(Environment {
+                name: new_env_name,
+                variables: Vec::new(),
+            });
+
+            // auto-select the newly created environment
+            app.active_env_index = Some(app.environments.len() - 1);
+
+            Task::none()
+        }
+
+        Message::DeleteEnvironmentPressed(idx) => {
+            if idx < app.environments.len() {
+                app.environments.remove(idx);
+
+                // adjust active environment index safely
+                if app.environments.is_empty() {
+                    app.active_env_index = None;
+                } else if let Some(active) = app.active_env_index {
+                    if active == idx {
+                        // if we deleted the active item, fallback to previous or first item
+                        app.active_env_index = Some(idx.saturating_sub(1));
+                    } else if active > idx {
+                        // shift index back if an item before it was removed
+                        app.active_env_index = Some(active - 1);
+                    }
+                }
+            }
+
+            Task::none()
+        }
+
         Message::CollectionSubTabSelected(sub_tab) => {
             if let Some(tab_state) = app.tabs.get_mut(app.active_tab_index) {
                 if let WorkspaceContent::CollectionRoot {

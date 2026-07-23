@@ -14,36 +14,40 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
         .and_then(|idx| app.environments.get(idx))
         .map(|e| e.name.clone());
 
-    let env_selector = row![
+    // build environment selector row with controls
+    let mut env_row = row![
         pick_list(env_options, current_env_selection, |selected| {
             Message::EnvSelected(Some(selected))
         })
         .placeholder("No Environment")
-        .width(Length::Fixed(180.0))
+        .width(Length::Fixed(140.0)),
+        // add Environment button
+        button(text("+").size(14))
+            .on_press(Message::CreateEnvironmentPressed)
+            .padding([4, 8])
+            .style(button::secondary)
     ]
-    .spacing(8)
+    .spacing(6)
     .align_y(Alignment::Center);
 
-    let mut sidebar_contents = column![
-        // row![
-        //     button("Import")
-        //         .on_press(Message::ImportCollectionPressed)
-        //         .padding(6)
-        //         .width(Length::FillPortion(1)),
-        //     button("+ Collection")
-        //         .on_press(Message::CreateNewCollectionPressed)
-        //         .padding(6)
-        //         .width(Length::FillPortion(1)),
-        // ]
-        // .spacing(5),
-        container(env_selector).padding(Padding {
-            top: 5.0,
-            right: 0.0,
-            bottom: 10.0,
-            left: 0.0,
-        }),
-    ]
-    .spacing(10);
+    // show delete button if an active environment is currently selected
+    if let Some(active_idx) = app.active_env_index {
+        env_row = env_row.push(
+            button(text("🗑").size(12))
+                .on_press(Message::DeleteEnvironmentPressed(active_idx))
+                .padding([4, 6])
+                .style(button::danger),
+        );
+    }
+
+    let env_selector = container(env_row).padding(Padding {
+        top: 5.0,
+        right: 0.0,
+        bottom: 10.0,
+        left: 0.0,
+    });
+
+    let mut sidebar_contents = column![env_selector].spacing(10);
 
     if app.collections.is_empty() {
         sidebar_contents = sidebar_contents.push(
@@ -74,7 +78,6 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
                 .align_y(Alignment::Center)
                 .into()
             } else {
-                // wrap the standard header view with mouse_area to intercept right click
                 mouse_area(
                     container(
                         text(format!("📁 {}", col.info.name))
@@ -86,14 +89,13 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
                     )
                     .padding([4, 2]),
                 )
-                .on_press(Message::SidebarCollectionRootClicked(col_id)) // left click opens it
-                .on_right_press(Message::ShowCollectionContextMenu(col_id)) // right click opens dropdown
+                .on_press(Message::SidebarCollectionRootClicked(col_id))
+                .on_right_press(Message::ShowCollectionContextMenu(col_id))
                 .into()
             };
 
             let mut col_tree = column![collection_header_title].spacing(4);
 
-            // render dropdown if active
             if show_dropdown && !is_editing_col {
                 let dropdown = render_dropdown(vec![
                     ("Rename", Message::RenameCollectionPressed(col_id)),
@@ -155,7 +157,6 @@ fn render_sidebar_item<'a>(
             let is_editing_folder = app.editing_folder_collection_id == Some(collection_id)
                 && app.editing_folder_path == current_path;
 
-            // determine if this folder's dropdown is open
             let show_dropdown = matches!(&app.active_context_menu, Some(crate::app::ContextMenu::Folder { col_id, path }) if *col_id == collection_id && *path == current_path);
 
             let folder_title: Element<'_, Message> = if is_editing_folder {
