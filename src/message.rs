@@ -27,7 +27,31 @@ pub enum Message {
     SidebarRequestClicked(PostmanRequestNode),
 
     // environment Actions
+    EditEnvironmentPressed(usize),
+    CloseEnvEditorPressed,
     EnvSelected(Option<String>),
+    CreateEnvironmentPressed,
+    DeleteEnvironmentPressed(usize),
+    AddEnvVariablePressed(usize),
+    DeleteEnvVariablePressed {
+        env_idx: usize,
+        var_idx: usize,
+    },
+    EnvVariableKeyChanged {
+        env_idx: usize,
+        var_idx: usize,
+        key: String,
+    },
+    EnvVariableValueChanged {
+        env_idx: usize,
+        var_idx: usize,
+        value: String,
+    },
+    EnvVariableToggled {
+        env_idx: usize,
+        var_idx: usize,
+        is_active: bool,
+    },
 
     // collection viewer actions
     CollectionSubTabSelected(CollectionSubTab),
