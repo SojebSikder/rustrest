@@ -230,14 +230,16 @@ where
                         .on_action(move |action| {
                             wrap_msg(TabMessage::PreRequestScriptChanged(action))
                         })
+                        .height(Length::Fill)
                         .padding(10);
 
                     column![
                         container(editor)
-                            .height(Length::Fixed(250.0))
+                            .height(Length::Fill)
                             .style(container::bordered_box)
                     ]
                     .spacing(8)
+                    .height(Length::Fill)
                     .into()
                 }
                 ScriptTab::PostResponse => {
@@ -245,19 +247,24 @@ where
                         .on_action(move |action| {
                             wrap_msg(TabMessage::PostResponseScriptChanged(action))
                         })
+                        .height(Length::Fill)
                         .padding(10);
 
                     column![
                         container(editor)
-                            .height(Length::Fixed(250.0))
+                            .height(Length::Fill)
                             .style(container::bordered_box)
                     ]
                     .spacing(8)
+                    .height(Length::Fill)
                     .into()
                 }
             };
 
-            column![radio_bar, script_input].spacing(10).into()
+            column![radio_bar, script_input]
+                .spacing(10)
+                .height(Length::Fill)
+                .into()
         }
     };
 
