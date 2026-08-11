@@ -18,11 +18,18 @@ pub enum HttpMethod {
 }
 
 #[derive(Debug, Clone)]
+pub struct TestResult {
+    pub name: String,
+    pub passed: bool,
+}
+
+#[derive(Debug, Clone)]
 pub struct HttpResponse {
     pub status: u16,
     pub body: String,
     pub headers: HashMap<String, String>,
     pub elapsed: Duration,
+    pub test_results: Vec<TestResult>,
 }
 
 impl fmt::Display for HttpMethod {
@@ -194,5 +201,6 @@ pub async fn send_request(
         body: finalized_body,
         headers,
         elapsed,
+        test_results: Vec::new(),
     })
 }

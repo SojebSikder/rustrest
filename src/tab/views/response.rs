@@ -44,6 +44,7 @@ where
                 ResponseSubTab::Body,
                 ResponseSubTab::Cookies,
                 ResponseSubTab::Headers,
+                ResponseSubTab::TestResults,
             ];
             let mut resp_tab_bar = row![].spacing(4).align_y(Alignment::Center);
 
@@ -53,6 +54,7 @@ where
                     ResponseSubTab::Body => "Body",
                     ResponseSubTab::Cookies => "Cookies",
                     ResponseSubTab::Headers => "Headers",
+                    ResponseSubTab::TestResults => "Test Results",
                 };
 
                 let mut resp_btn = button(text(tab_label).size(13)).padding([6, 12]);
@@ -237,6 +239,56 @@ where
                     }
 
                     scrollable(container(headers_table).width(Length::Fill))
+                        .height(Length::Fill)
+                        .into()
+                }
+
+                ResponseSubTab::TestResults => {
+                    let mut test_list = column![].spacing(8);
+
+                    if resp.test_results.is_empty() {
+                        test_list = test_list.push(
+                            container(
+                                text("No test results. Add assertions in the Post-request script tab (e.g. pm.test(...)) to view test outcomes here.")
+                                    .size(13)
+                                    .color(iced::Color::from_rgb(0.5, 0.5, 0.5)),
+                            )
+                            .padding(10),
+                        );
+                    } else {
+                        for test in &resp.test_results {
+                            let (status_text, status_color) = if test.passed {
+                                ("PASS", iced::Color::from_rgb(0.12, 0.64, 0.35))
+                            } else {
+                                ("FAIL", iced::Color::from_rgb(0.87, 0.22, 0.22))
+                            };
+
+                            let test_row = container(
+                                row![
+                                    container(text(status_text).size(11).color(iced::Color::WHITE))
+                                        .padding([2, 6])
+                                        .style(move |_| container::Style {
+                                            background: Some(iced::Background::Color(status_color)),
+                                            border: iced::Border {
+                                                radius: 4.0.into(),
+                                                ..Default::default()
+                                            },
+                                            ..Default::default()
+                                        }),
+                                    text(&test.name).size(13),
+                                ]
+                                .spacing(10)
+                                .align_y(Alignment::Center),
+                            )
+                            .padding(8)
+                            .width(Length::Fill)
+                            .style(container::bordered_box);
+
+                            test_list = test_list.push(test_row);
+                        }
+                    }
+
+                    scrollable(container(test_list).width(Length::Fill))
                         .height(Length::Fill)
                         .into()
                 }

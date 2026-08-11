@@ -5,6 +5,7 @@ use super::types::{
 };
 use crate::collection::env::Environment;
 use crate::http_client::{HttpMethod, HttpResponse};
+use crate::tab::types::ScriptTab;
 use crate::{APP_NAME, APP_VERSION};
 use iced::widget::text_editor;
 use tokio_util::sync::CancellationToken;
@@ -27,6 +28,9 @@ pub struct Tab {
     pub request_cookies: Vec<KeyValuePair>,
     pub request_auth: String,
     pub request_body: text_editor::Content,
+    pub script_tab: ScriptTab,
+    pub pre_request_script: text_editor::Content,
+    pub post_response_script: text_editor::Content,
     pub body_form_data: Vec<FormDataRow>,
     pub body_urlencoded: Vec<KeyValuePair>,
     pub binary_file_path: Option<String>,
@@ -61,6 +65,13 @@ impl Tab {
             request_cookies: vec![KeyValuePair::new("", "")],
             request_auth: String::from("Bearer your_token_here"),
             request_body: text_editor::Content::with_text("{\n  \"key\": \"value\"\n}"),
+            script_tab: ScriptTab::PreRequest,
+            pre_request_script: text_editor::Content::with_text(
+                "// Executed before the request is sent\n// e.g. pm.environment.set(\"timestamp\", Date.now());",
+            ),
+            post_response_script: text_editor::Content::with_text(
+                "// Executed after receiving a response\n// e.g. pm.test(\"Status code is 200\", function () {\n//     pm.response.to.have.status(200);\n// });",
+            ),
             body_form_data: vec![FormDataRow::new("form_field", "value", FormDataType::Text)],
             body_urlencoded: vec![KeyValuePair::new("form_key", "form_value")],
             binary_file_path: None,
@@ -147,6 +158,16 @@ impl Tab {
             TabMessage::RawTypeChanged(raw_type) => self.raw_type = raw_type,
             TabMessage::ResponseViewChanged(view) => self.response_view = view,
             TabMessage::BodyChanged(action) => self.request_body.perform(action),
+
+            TabMessage::ScriptTabChanged(script_tab) => {
+                self.script_tab = script_tab;
+            }
+            TabMessage::PreRequestScriptChanged(action) => {
+                self.pre_request_script.perform(action);
+            }
+            TabMessage::PostResponseScriptChanged(action) => {
+                self.post_response_script.perform(action);
+            }
 
             TabMessage::HeaderRowChanged(index, kv) => {
                 if let Some(row) = self.request_headers.get_mut(index) {

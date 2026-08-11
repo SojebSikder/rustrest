@@ -7,15 +7,17 @@ pub enum RequestSubTab {
     Headers,
     Body,
     Cookies,
+    Scripts,
 }
 
 impl RequestSubTab {
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::Params,
         Self::Auth,
         Self::Headers,
         Self::Body,
         Self::Cookies,
+        Self::Scripts,
     ];
 
     pub fn name(&self) -> &str {
@@ -25,6 +27,24 @@ impl RequestSubTab {
             Self::Headers => "Headers",
             Self::Body => "Body",
             Self::Cookies => "Cookies",
+            Self::Scripts => "Scripts",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScriptTab {
+    PreRequest,
+    PostResponse,
+}
+
+impl ScriptTab {
+    pub const ALL: [Self; 2] = [Self::PreRequest, Self::PostResponse];
+
+    pub fn label(&self) -> &str {
+        match self {
+            Self::PreRequest => "Pre-request",
+            Self::PostResponse => "Post-response",
         }
     }
 }
@@ -133,7 +153,7 @@ impl RawType {
 }
 
 impl std::fmt::Display for RawType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Text => write!(f, "Text"),
             Self::JavaScript => write!(f, "JavaScript"),
@@ -172,4 +192,23 @@ pub enum ResponseSubTab {
     Body,
     Cookies,
     Headers,
+    TestResults,
+}
+
+impl ResponseSubTab {
+    pub const ALL: [ResponseSubTab; 4] = [
+        ResponseSubTab::Body,
+        ResponseSubTab::Cookies,
+        ResponseSubTab::Headers,
+        ResponseSubTab::TestResults,
+    ];
+
+    pub fn label(&self) -> &str {
+        match self {
+            ResponseSubTab::Body => "Body",
+            ResponseSubTab::Cookies => "Cookies",
+            ResponseSubTab::Headers => "Headers",
+            ResponseSubTab::TestResults => "Test Results",
+        }
+    }
 }
