@@ -23,11 +23,11 @@
   - [x] rename collection
   - [x] rename folder
   - [ ] rename request like this mechanism
-- [ ] create environment
+- [x] create environment
 - [x] environment values
 - [x] variables
 - [x] supports postman collection variables
-- [ ] supports postman collection environment values
+- [x] supports postman collection environment values
 - [ ] docs generation
 - [x] request cancellation
 - [ ] code generation
