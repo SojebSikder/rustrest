@@ -30,14 +30,21 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
     .spacing(6)
     .align_y(Alignment::Center);
 
-    // show delete button if an active environment is currently selected
+    // show Edit and Delete buttons if an active environment is selected
     if let Some(active_idx) = app.active_env_index {
-        env_row = env_row.push(
-            button(text("🗑").size(12))
-                .on_press(Message::DeleteEnvironmentPressed(active_idx))
-                .padding([4, 6])
-                .style(button::danger),
-        );
+        env_row = env_row
+            .push(
+                button(text("⚙️").size(12))
+                    .on_press(Message::EditEnvironmentPressed(active_idx))
+                    .padding([4, 6])
+                    .style(button::secondary),
+            )
+            .push(
+                button(text("✕").size(12))
+                    .on_press(Message::DeleteEnvironmentPressed(active_idx))
+                    .padding([4, 6])
+                    .style(button::danger),
+            );
     }
 
     let env_selector = container(env_row).padding(Padding {

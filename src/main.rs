@@ -7,12 +7,14 @@ mod message;
 mod tab;
 mod ui;
 mod utils;
+
 use app::Rustrest;
-use iced::widget::{row, stack};
-use iced::{Element, Length, Padding, Size};
+use iced::widget::{container, row, stack};
+use iced::{Alignment, Element, Length, Padding, Size};
 use iced::{Event, Subscription, event};
 use message::Message;
 
+use crate::ui::env_editor::render_env_editor;
 use crate::ui::menu::menu::{DropdownItem, MenuGroup, render_menu_bar, render_menu_overlay};
 use crate::ui::menu::menu_message::MenuMessage;
 
@@ -77,10 +79,23 @@ fn view(app: &Rustrest) -> Element<'_, Message> {
         .width(Length::Fill)
         .height(Length::Fill);
 
-    let mut main_interface_stack = stack![base_layout, menu_strip]
-        .width(Length::Fill)
-        .height(Length::Fill);
+    let mut main_interface_stack = stack![base_layout];
 
+    // environment editor modal overlay
+    if let Some(env_modal) = render_env_editor(app) {
+        let env_overlay = container(env_modal)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(Alignment::Center)
+            .align_y(Alignment::Center);
+
+        main_interface_stack = main_interface_stack.push(env_overlay);
+    }
+
+    // menu bar layer
+    main_interface_stack = main_interface_stack.push(menu_strip);
+
+    // dropdown menu overlay
     if let Some(overlay) = render_menu_overlay(&app.menu_state, &menu_structure) {
         main_interface_stack = main_interface_stack.push(overlay.map(Message::MenuInteraction));
     }

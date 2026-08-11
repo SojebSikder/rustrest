@@ -50,6 +50,7 @@ pub struct Rustrest {
     pub collections: Vec<PostmanCollection>,
     pub environments: Vec<Environment>,
     pub active_env_index: Option<usize>,
+    pub editing_env_index: Option<usize>,
     pub tabs: Vec<TabState>,
     pub active_tab_index: usize,
     pub next_tab_id: usize,
@@ -101,6 +102,7 @@ pub fn init() -> (Rustrest, Task<Message>) {
                 is_editing_name: false,
             }],
             active_tab_index: 0,
+            editing_env_index: None,
             next_tab_id: 2,
             next_request_id: 1,
             editing_collection_id: None,
@@ -152,6 +154,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         Message::CollectionLoaded(path, content) => {
             match serde_json::from_str::<PostmanCollection>(&content) {
                 Ok(mut collection) => {
+                    let col_name = collection.info.name.clone();
                     collection.id = app.next_tab_id;
                     collection.file_path = path;
                     app.next_tab_id += 1;
@@ -169,7 +172,10 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
 
                     app.collections.push(collection);
 
-                    iced::Task::none()
+                    iced::Task::done(Message::ShowToast(
+                        format!("Collection '{}' imported successfully", col_name),
+                        ToastStatus::Success,
+                    ))
                 }
                 Err(err) => {
                     eprintln!(
@@ -177,7 +183,6 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                         path, err
                     );
 
-                    // iced::Task::none()
                     iced::Task::done(Message::ShowToast(
                         format!("Failed to load collection: {}", err),
                         ToastStatus::Error,
@@ -196,9 +201,15 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                         let write_path = path.clone();
                         return iced::Task::perform(
                             async move { tokio::fs::write(write_path, json_content).await },
-                            |_result| {
-                                // TODO: dispatch a toast success indicator notification message here
-                                Message::None
+                            |result| match result {
+                                Ok(_) => Message::ShowToast(
+                                    "Collection saved successfully".to_string(),
+                                    ToastStatus::Success,
+                                ),
+                                Err(err) => Message::ShowToast(
+                                    format!("Failed to save collection: {}", err),
+                                    ToastStatus::Error,
+                                ),
                             },
                         );
                     }
@@ -218,30 +229,34 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                         let default_name =
                             format!("{}.postman_collection.json", collection.info.name);
 
-                        // open save-file window dialog
+                        // open save-file window dialog and write content asynchronously
                         return iced::Task::perform(
                             async move {
-                                rfd::AsyncFileDialog::new()
+                                let file_handle = rfd::AsyncFileDialog::new()
                                     .set_title("Export Postman Collection")
                                     .set_file_name(&default_name)
                                     .add_filter("Postman Collection (*.json)", &["json"])
                                     .save_file()
-                                    .await
+                                    .await?;
+
+                                let path = file_handle.path().to_path_buf();
+                                tokio::fs::write(&path, json_content).await.ok()?;
+                                Some(path)
                             },
-                            move |file_handle| {
-                                if let Some(file) = file_handle {
-                                    // drop the async write onto a background task block
-                                    let content = json_content.clone();
-                                    tokio::spawn(async move {
-                                        let _ = tokio::fs::write(file.path(), content).await;
-                                    });
-                                }
-                                Message::None
+                            move |result| match result {
+                                Some(path) => Message::ShowToast(
+                                    format!("Collection exported to {:?}", path),
+                                    ToastStatus::Success,
+                                ),
+                                None => Message::None,
                             },
                         );
                     }
                     Err(err_msg) => {
-                        println!("Export Error: {}", err_msg);
+                        return iced::Task::done(Message::ShowToast(
+                            format!("Export failed: {}", err_msg),
+                            ToastStatus::Error,
+                        ));
                     }
                 }
             }
@@ -797,6 +812,72 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 },
                 Message::DismissToast,
             )
+        }
+
+        // env actions
+        Message::EditEnvironmentPressed(idx) => {
+            app.editing_env_index = Some(idx);
+            Task::none()
+        }
+
+        Message::CloseEnvEditorPressed => {
+            app.editing_env_index = None;
+            Task::none()
+        }
+
+        Message::AddEnvVariablePressed(env_idx) => {
+            if let Some(env) = app.environments.get_mut(env_idx) {
+                env.variables.push(KeyValuePair::new("", ""));
+            }
+            Task::none()
+        }
+
+        Message::DeleteEnvVariablePressed { env_idx, var_idx } => {
+            if let Some(env) = app.environments.get_mut(env_idx) {
+                if var_idx < env.variables.len() {
+                    env.variables.remove(var_idx);
+                }
+            }
+            Task::none()
+        }
+
+        Message::EnvVariableKeyChanged {
+            env_idx,
+            var_idx,
+            key,
+        } => {
+            if let Some(env) = app.environments.get_mut(env_idx) {
+                if let Some(var) = env.variables.get_mut(var_idx) {
+                    var.key = key;
+                }
+            }
+            Task::none()
+        }
+
+        Message::EnvVariableValueChanged {
+            env_idx,
+            var_idx,
+            value,
+        } => {
+            if let Some(env) = app.environments.get_mut(env_idx) {
+                if let Some(var) = env.variables.get_mut(var_idx) {
+                    var.value = value;
+                }
+            }
+            Task::none()
+        }
+
+        Message::EnvVariableToggled {
+            env_idx,
+            var_idx,
+            is_active,
+        } => {
+            if let Some(env) = app.environments.get_mut(env_idx) {
+                if let Some(var) = env.variables.get_mut(var_idx) {
+                    var.is_active = is_active;
+                }
+            }
+            Task::none()
         }
 
         // menu actions
