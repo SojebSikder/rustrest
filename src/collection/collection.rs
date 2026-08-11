@@ -106,6 +106,29 @@ impl PostmanCollection {
         }
     }
 
+    /// recursively finds and updates a request item matching tab.request_id
+    pub fn update_request_from_tab(&mut self, tab: &Tab) -> bool {
+        fn update_recursive(items: &mut [CollectionItem], tab: &Tab) -> bool {
+            for item in items {
+                match item {
+                    CollectionItem::Request(node) => {
+                        if Some(node.id) == tab.request_id {
+                            node.update_from_tab(tab);
+                            return true;
+                        }
+                    }
+                    CollectionItem::Folder(folder) => {
+                        if update_recursive(&mut folder.item, tab) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            false
+        }
+        update_recursive(&mut self.item, tab)
+    }
+
     pub fn to_postman_json(&self) -> Result<String, String> {
         serde_json::to_string_pretty(self)
             .map_err(|e| format!("Failed to serialize collection schema: {}", e))
@@ -148,6 +171,7 @@ pub struct PostmanFolder {
     #[serde(rename = "protocolProfileBehavior")]
     pub protocol_profile_behavior: Option<PostmanProtocolProfileBehavior>,
     pub item: Vec<CollectionItem>,
+    pub event: Option<Vec<PostmanEvent>>,
     pub description: Option<String>,
 }
 
@@ -165,11 +189,100 @@ pub enum CollectionItem {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PostmanEvent {
+    pub listen: String, // "prerequest" or "test"
+    pub script: Option<PostmanScript>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PostmanScript {
+    pub r#type: Option<String>, // e.g. "text/javascript"
+    pub exec: Option<PostmanScriptExec>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum PostmanScriptExec {
+    List(Vec<String>),
+    Single(String),
+}
+
+impl PostmanScriptExec {
+    pub fn to_string_contents(&self) -> String {
+        match self {
+            Self::List(lines) => lines.join("\n"),
+            Self::Single(s) => s.clone(),
+        }
+    }
+
+    pub fn from_string(s: &str) -> Self {
+        Self::List(s.lines().map(|l| l.to_string()).collect())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PostmanRequestNode {
     #[serde(skip)]
     pub id: usize,
     pub name: String,
+    pub event: Option<Vec<PostmanEvent>>,
     pub request: PostmanRequestDetails,
+}
+
+impl PostmanRequestNode {
+    /// updates this collection request node from a live UI tab, including pre-request & test scripts.
+    pub fn update_from_tab(&mut self, tab: &Tab) {
+        self.name = tab.name.clone();
+        self.request.method = tab.method.to_string();
+        self.request.url = Some(PostmanUrl::String(tab.url.clone()));
+
+        // Update headers
+        let headers: Vec<PostmanHeader> = tab
+            .request_headers
+            .iter()
+            .map(|kv| PostmanHeader {
+                key: kv.key.clone(),
+                value: kv.value.clone(),
+                disabled: if kv.is_active { None } else { Some(true) },
+            })
+            .collect();
+        self.request.header = if headers.is_empty() {
+            None
+        } else {
+            Some(headers)
+        };
+
+        // sync scripts into postman events
+        let mut events = Vec::new();
+
+        let pre_script = tab.pre_request_script.text();
+        if !pre_script.trim().is_empty() {
+            events.push(PostmanEvent {
+                listen: "prerequest".to_string(),
+                script: Some(PostmanScript {
+                    r#type: Some("text/javascript".to_string()),
+                    exec: Some(PostmanScriptExec::from_string(&pre_script)),
+                }),
+            });
+        }
+
+        let post_script = tab.post_response_script.text();
+        if !post_script.trim().is_empty() {
+            events.push(PostmanEvent {
+                listen: "test".to_string(),
+                script: Some(PostmanScript {
+                    r#type: Some("text/javascript".to_string()),
+                    exec: Some(PostmanScriptExec::from_string(&post_script)),
+                }),
+            });
+        }
+
+        self.event = if events.is_empty() {
+            None
+        } else {
+            Some(events)
+        };
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -247,6 +360,28 @@ pub fn create_tab_from_request(
         "OPTIONS" => HttpMethod::OPTIONS,
         custom => HttpMethod::Custom(custom.to_string()),
     };
+
+    // import scripts (Pre-request and Post-response)
+    if let Some(events) = &node.event {
+        for event in events {
+            if let Some(script) = &event.script {
+                if let Some(exec) = &script.exec {
+                    let script_code = exec.to_string_contents();
+                    match event.listen.as_str() {
+                        "prerequest" => {
+                            tab.pre_request_script =
+                                iced::widget::text_editor::Content::with_text(&script_code);
+                        }
+                        "test" => {
+                            tab.post_response_script =
+                                iced::widget::text_editor::Content::with_text(&script_code);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
 
     if let Some(headers) = &node.request.header {
         tab.request_headers = headers

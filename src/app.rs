@@ -738,6 +738,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                         header: None,
                         body: None,
                     },
+                    event: None,
                 };
 
                 insert_nested_request(
