@@ -13,8 +13,8 @@
   - [ ] Overview
   - [ ] Authorization
   - [x] Scripts
-    - [ ] Pre-request script
-    - [ ] Post-response script
+    - [x] Pre-request script
+    - [x] Post-response script
   - [x] Variables
   - [ ] Run
 - [x] supports Postman v2.1 JSON file
