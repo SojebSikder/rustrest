@@ -4,6 +4,7 @@ mod app;
 mod collection;
 mod http_client;
 mod message;
+mod script_engine;
 mod tab;
 mod ui;
 mod utils;

@@ -12,7 +12,7 @@
 - [ ] collection root click to open collection root view 
   - [ ] Overview
   - [ ] Authorization
-  - [ ] Scripts
+  - [x] Scripts
     - [ ] Pre-request script
     - [ ] Post-response script
   - [x] Variables
