@@ -1,7 +1,7 @@
 use super::super::Tab;
 use super::super::components::kv_editor_pane;
 use super::super::messages::TabMessage;
-use super::super::types::{BodyType, RawType, RequestSubTab};
+use super::super::types::{BodyType, RawType, RequestSubTab, ScriptTab};
 use crate::http_client::HttpMethod;
 use iced::widget::{
     button, column, container, pick_list, radio, row, text, text_editor, text_input,
@@ -213,6 +213,58 @@ where
             };
 
             column![radio_bar, body_input].spacing(10).into()
+        }
+
+        RequestSubTab::Scripts => {
+            let mut radio_bar = row![].spacing(15).align_y(Alignment::Center);
+            for variant in ScriptTab::ALL.iter() {
+                let radio_btn = radio(variant.label(), *variant, Some(tab.script_tab), move |s| {
+                    wrap_msg(TabMessage::ScriptTabChanged(s))
+                });
+                radio_bar = radio_bar.push(radio_btn);
+            }
+
+            let script_input: Element<Message> = match tab.script_tab {
+                ScriptTab::PreRequest => {
+                    let editor = text_editor(&tab.pre_request_script)
+                        .on_action(move |action| {
+                            wrap_msg(TabMessage::PreRequestScriptChanged(action))
+                        })
+                        .height(Length::Fill)
+                        .padding(10);
+
+                    column![
+                        container(editor)
+                            .height(Length::Fill)
+                            .style(container::bordered_box)
+                    ]
+                    .spacing(8)
+                    .height(Length::Fill)
+                    .into()
+                }
+                ScriptTab::PostResponse => {
+                    let editor = text_editor(&tab.post_response_script)
+                        .on_action(move |action| {
+                            wrap_msg(TabMessage::PostResponseScriptChanged(action))
+                        })
+                        .height(Length::Fill)
+                        .padding(10);
+
+                    column![
+                        container(editor)
+                            .height(Length::Fill)
+                            .style(container::bordered_box)
+                    ]
+                    .spacing(8)
+                    .height(Length::Fill)
+                    .into()
+                }
+            };
+
+            column![radio_bar, script_input]
+                .spacing(10)
+                .height(Length::Fill)
+                .into()
         }
     };
 

@@ -2,7 +2,7 @@ use super::types::{
     BodyType, FormDataRow, FormDataType, KeyValuePair, RawType, RequestSubTab, ResponseSubTab,
     ResponseView,
 };
-use crate::http_client::HttpMethod;
+use crate::{http_client::HttpMethod, tab::types::ScriptTab};
 use iced::widget::text_editor;
 
 #[derive(Debug, Clone)]
@@ -45,6 +45,11 @@ pub enum TabMessage {
     AddCookieRow,
     RemoveCookieRow(usize),
     ResponseBodyEditorAction(iced::widget::text_editor::Action),
+
+    // scripts
+    ScriptTabChanged(ScriptTab),
+    PreRequestScriptChanged(text_editor::Action),
+    PostResponseScriptChanged(text_editor::Action),
 
     CancelRequest,
 }

@@ -381,21 +381,71 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 if let WorkspaceContent::CollectionRoot { .. } = tab_state.content {
                     return Task::none();
                 }
-
                 let tab = &mut tab_state.tab;
                 if tab.is_loading || tab.url.is_empty() {
                     return Task::none();
+                }
+
+                // build variable/header maps for the pre-request script
+                let mut script_vars: std::collections::HashMap<String, String> = app
+                    .active_env_index
+                    .and_then(|i| app.environments.get(i))
+                    .map(|e| {
+                        e.variables
+                            .iter()
+                            .filter(|v| v.is_active)
+                            .map(|v| (v.key.clone(), v.value.clone()))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                if let Some(c_id) = tab.collection_id {
+                    if let Some(col) = app.collections.iter().find(|c| c.id == c_id) {
+                        for kv in col.get_native_variables() {
+                            script_vars.insert(kv.key, kv.value);
+                        }
+                    }
+                }
+
+                let mut script_headers: std::collections::HashMap<String, String> = tab
+                    .request_headers
+                    .iter()
+                    .filter(|h| h.is_active)
+                    .map(|h| (h.key.clone(), h.value.clone()))
+                    .collect();
+
+                let pre_script_text = tab.pre_request_script.text();
+                if let Err(e) = crate::script_engine::ScriptRunner::run_pre_request(
+                    &pre_script_text,
+                    &mut script_vars,
+                    &mut script_headers,
+                ) {
+                    return Task::done(Message::ShowToast(e, ToastStatus::Error));
+                }
+
+                let mut effective_env = app
+                    .active_env_index
+                    .and_then(|i| app.environments.get(i))
+                    .cloned()
+                    .unwrap_or_else(|| Environment::new("__script"));
+
+                for (k, v) in &script_vars {
+                    if let Some(existing) =
+                        effective_env.variables.iter_mut().find(|kv| &kv.key == k)
+                    {
+                        existing.value = v.clone();
+                        existing.is_active = true;
+                    } else {
+                        let mut kv = KeyValuePair::new(k, v);
+                        kv.is_active = true;
+                        effective_env.variables.push(kv);
+                    }
                 }
 
                 let tab_id = tab.id;
                 tab.cancel_token = CancellationToken::new();
                 tab.is_loading = true;
                 tab.response = None;
-
-                let active_env = app
-                    .active_env_index
-                    .and_then(|idx| app.environments.get(idx))
-                    .cloned();
 
                 let collection_vars = tab
                     .collection_id
@@ -406,10 +456,19 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     final_url,
                     compiled_body,
                     compiled_form_data,
-                    filtered_headers,
+                    mut filtered_headers,
                     filtered_cookies,
                     compiled_auth,
-                ) = tab.compile_request_fields(&active_env, collection_vars.as_deref());
+                ) = tab.compile_request_fields(&Some(effective_env), collection_vars.as_deref());
+
+                // apply any header overrides the script made via pm.setHeader(...)
+                for (k, v) in script_headers {
+                    if let Some(existing) = filtered_headers.iter_mut().find(|(hk, _)| hk == &k) {
+                        existing.1 = v;
+                    } else {
+                        filtered_headers.push((k, v));
+                    }
+                }
 
                 return Task::perform(
                     send_request(
@@ -434,6 +493,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             if let Some(tab_state) = app.tabs.iter_mut().find(|t| t.tab.id == tab_id) {
                 let tab = &mut tab_state.tab;
                 tab.is_loading = false;
+
                 match &res {
                     Ok(resp) => {
                         let initial_body = match tab.response_view {
@@ -450,6 +510,62 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                             iced::widget::text_editor::Content::with_text(err_msg);
                     }
                 }
+
+                if let Ok(resp) = &res {
+                    let script_text = tab.post_response_script.text();
+                    if !script_text.trim().is_empty() {
+                        let base_vars: std::collections::HashMap<String, String> = app
+                            .active_env_index
+                            .and_then(|idx| app.environments.get(idx))
+                            .map(|e| {
+                                e.variables
+                                    .iter()
+                                    .filter(|v| v.is_active)
+                                    .map(|v| (v.key.clone(), v.value.clone()))
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+
+                        let exec_ctx = crate::script_engine::ScriptExecutionContext {
+                            variables: base_vars,
+                            request_headers: std::collections::HashMap::new(),
+                            response_status: resp.status,
+                            response_body: resp.body.clone(),
+                        };
+
+                        match crate::script_engine::ScriptRunner::run_post_response(
+                            &script_text,
+                            &exec_ctx,
+                        ) {
+                            Ok(updated_vars) => {
+                                if let Some(idx) = app.active_env_index {
+                                    if let Some(env) = app.environments.get_mut(idx) {
+                                        for (k, v) in updated_vars {
+                                            if let Some(existing) =
+                                                env.variables.iter_mut().find(|kv| kv.key == k)
+                                            {
+                                                existing.value = v;
+                                                existing.is_active = true;
+                                            } else {
+                                                let mut kv = KeyValuePair::new(&k, &v);
+                                                kv.is_active = true;
+                                                env.variables.push(kv);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                app.toast_manager.show(
+                                    e,
+                                    ToastStatus::Error,
+                                    std::time::Duration::from_secs(4),
+                                );
+                            }
+                        }
+                    }
+                }
+
                 tab.response = Some(res);
             }
             Task::none()
@@ -738,6 +854,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                         header: None,
                         body: None,
                     },
+                    event: None,
                 };
 
                 insert_nested_request(

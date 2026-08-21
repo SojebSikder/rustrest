@@ -140,6 +140,7 @@ pub fn insert_nested(items: &mut Vec<CollectionItem>, path: &[String]) {
             description: None,
             item: Vec::new(),
             protocol_profile_behavior: None,
+            event: None,
         }));
         return;
     }

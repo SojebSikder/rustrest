@@ -12,7 +12,9 @@
 - [ ] collection root click to open collection root view 
   - [ ] Overview
   - [ ] Authorization
-  - [ ] Scripts
+  - [x] Scripts
+    - [ ] Pre-request script
+    - [ ] Post-response script
   - [x] Variables
   - [ ] Run
 - [x] supports Postman v2.1 JSON file
