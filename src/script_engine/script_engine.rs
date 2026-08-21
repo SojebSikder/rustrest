@@ -28,7 +28,6 @@ impl ScriptRunner {
         let vars_rc = Rc::new(RefCell::new(variables.clone()));
         let hdrs_rc = Rc::new(RefCell::new(headers.clone()));
 
-        // 1. Pass `context.realm()` to `FunctionObjectBuilder::new`
         let get_var = {
             let vars = vars_rc.clone();
             FunctionObjectBuilder::new(context.realm(), unsafe {
@@ -91,7 +90,7 @@ impl ScriptRunner {
             .build()
         };
 
-        // 2. Attach callable JS functions as properties on `pm`
+        // Attach callable JS functions as properties on `pm`
         let pm_obj = ObjectInitializer::new(&mut context)
             .property(js_string!("getVariable"), get_var, Attribute::all())
             .property(js_string!("setVariable"), set_var, Attribute::all())
