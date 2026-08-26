@@ -5,10 +5,10 @@ use crate::collection::collection::{
 use crate::collection::env::Environment;
 use crate::http_client::send_request;
 use crate::message::Message;
-use crate::tab::types::KeyValuePair;
-use crate::tab::{Tab, TabMessage};
 use crate::ui::menu::menu::DropdownMenuState;
 use crate::ui::menu::menu_message::MenuMessage;
+use crate::ui::tab::types::{KeyValuePair, ResponseView};
+use crate::ui::tab::{Tab, TabMessage};
 use crate::ui::toast::toast::{ToastManager, ToastStatus};
 use crate::utils::{
     contains_request_node_by_id, format_json_or_fallback, insert_nested, insert_nested_request,
@@ -361,10 +361,8 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     tab_state.tab.response_view = view;
                     if let Some(Ok(resp)) = &tab_state.tab.response {
                         let body_text = match view {
-                            crate::tab::types::ResponseView::Json => {
-                                format_json_or_fallback(&resp.body)
-                            }
-                            crate::tab::types::ResponseView::Raw => resp.body.clone(),
+                            ResponseView::Json => format_json_or_fallback(&resp.body),
+                            ResponseView::Raw => resp.body.clone(),
                         };
                         tab_state.tab.response_body_editor =
                             iced::widget::text_editor::Content::with_text(&body_text);
@@ -501,10 +499,8 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 match &res {
                     Ok(resp) => {
                         let initial_body = match tab.response_view {
-                            crate::tab::types::ResponseView::Json => {
-                                format_json_or_fallback(&resp.body)
-                            }
-                            crate::tab::types::ResponseView::Raw => resp.body.clone(),
+                            ResponseView::Json => format_json_or_fallback(&resp.body),
+                            ResponseView::Raw => resp.body.clone(),
                         };
                         tab.response_body_editor =
                             iced::widget::text_editor::Content::with_text(&initial_body);

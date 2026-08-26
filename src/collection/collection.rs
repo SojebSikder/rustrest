@@ -1,6 +1,6 @@
 use crate::http_client::HttpMethod;
-use crate::tab::Tab;
-use crate::tab::types::{BodyType, FormDataRow, FormDataType, KeyValuePair, RequestSubTab};
+use crate::ui::tab::Tab;
+use crate::ui::tab::types::{BodyType, FormDataRow, FormDataType, KeyValuePair, RequestSubTab};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

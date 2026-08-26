@@ -5,7 +5,7 @@ use super::types::{
 };
 use crate::collection::env::Environment;
 use crate::http_client::{HttpMethod, HttpResponse};
-use crate::tab::types::ScriptTab;
+use crate::ui::tab::types::ScriptTab;
 use crate::{APP_NAME, APP_VERSION};
 use iced::widget::text_editor;
 use tokio_util::sync::CancellationToken;
@@ -264,12 +264,12 @@ impl Tab {
         env: &Option<Environment>,
         collection_vars: Option<&[KeyValuePair]>, // fallback variables parsed from the Postman Collection
     ) -> (
-        String,                              // URL
-        String,                              // Raw Body
-        Vec<crate::tab::types::FormDataRow>, // Form Data
-        Vec<(String, String)>,               // Headers
-        Vec<(String, String)>,               // Cookies
-        String,                              // Auth
+        String,                // URL
+        String,                // Raw Body
+        Vec<FormDataRow>,      // Form Data
+        Vec<(String, String)>, // Headers
+        Vec<(String, String)>, // Cookies
+        String,                // Auth
     ) {
         let resolve = |val: &str| -> String {
             if let Some(e) = env {
@@ -316,7 +316,7 @@ impl Tab {
         let resolved_form_data = self
             .body_form_data
             .iter()
-            .map(|row| crate::tab::types::FormDataRow {
+            .map(|row| FormDataRow {
                 is_active: row.is_active,
                 key: resolve(&row.key),
                 value: resolve(&row.value),

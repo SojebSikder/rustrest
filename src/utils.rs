@@ -1,6 +1,8 @@
 use crate::collection::collection::{
     CollectionItem, PostmanBody, PostmanBodyRow, PostmanFolder, PostmanHeader, PostmanUrl,
 };
+use crate::ui::tab::Tab;
+use crate::ui::tab::types::{BodyType, FormDataType};
 
 pub fn format_json_or_fallback(raw_body: &str) -> String {
     if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(raw_body) {
@@ -29,11 +31,7 @@ pub fn contains_request_node_by_id(items: &[CollectionItem], target_id: usize) -
 }
 
 // recursively updates node in the collection by its ID, syncing tab state with the request
-pub fn update_node(
-    items: &mut Vec<CollectionItem>,
-    target_id: usize,
-    tab: &crate::tab::Tab,
-) -> bool {
+pub fn update_node(items: &mut Vec<CollectionItem>, target_id: usize, tab: &Tab) -> bool {
     for item in items.iter_mut() {
         match item {
             CollectionItem::Request(req) => {
@@ -58,7 +56,7 @@ pub fn update_node(
 
                     // sync Request Body types conditionally
                     match tab.body_type {
-                        crate::tab::types::BodyType::Raw => {
+                        BodyType::Raw => {
                             let text_content = tab.request_body.text();
                             if !text_content.trim().is_empty() {
                                 req.request.body = Some(PostmanBody {
@@ -71,7 +69,7 @@ pub fn update_node(
                                 req.request.body = None;
                             }
                         }
-                        crate::tab::types::BodyType::FormData => {
+                        BodyType::FormData => {
                             req.request.body = Some(PostmanBody {
                                 mode: Some("formdata".to_string()),
                                 raw: None,
@@ -83,12 +81,8 @@ pub fn update_node(
                                             value: Some(r.value.clone()),
                                             disabled: Some(!r.is_active),
                                             r#type: Some(match r.field_type {
-                                                crate::tab::types::FormDataType::File => {
-                                                    "file".to_string()
-                                                }
-                                                crate::tab::types::FormDataType::Text => {
-                                                    "text".to_string()
-                                                }
+                                                FormDataType::File => "file".to_string(),
+                                                FormDataType::Text => "text".to_string(),
                                             }),
                                         })
                                         .collect(),

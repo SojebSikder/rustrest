@@ -1,9 +1,9 @@
 use crate::app::CollectionSubTab;
 use crate::collection::collection::PostmanRequestNode;
 use crate::http_client::HttpResponse;
-use crate::tab::TabMessage;
 use crate::ui::menu::menu::DropdownMessage;
 use crate::ui::menu::menu_message::MenuMessage;
+use crate::ui::tab::TabMessage;
 use crate::ui::toast::toast::ToastStatus;
 
 #[derive(Debug, Clone)]
