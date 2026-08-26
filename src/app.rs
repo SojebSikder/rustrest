@@ -5,10 +5,10 @@ use crate::collection::collection::{
 use crate::collection::env::Environment;
 use crate::http_client::send_request;
 use crate::message::Message;
-use crate::tab::types::KeyValuePair;
-use crate::tab::{Tab, TabMessage};
 use crate::ui::menu::menu::DropdownMenuState;
 use crate::ui::menu::menu_message::MenuMessage;
+use crate::ui::tab::types::{KeyValuePair, ResponseView};
+use crate::ui::tab::{Tab, TabMessage};
 use crate::ui::toast::toast::{ToastManager, ToastStatus};
 use crate::utils::{
     contains_request_node_by_id, format_json_or_fallback, insert_nested, insert_nested_request,
@@ -361,10 +361,8 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     tab_state.tab.response_view = view;
                     if let Some(Ok(resp)) = &tab_state.tab.response {
                         let body_text = match view {
-                            crate::tab::types::ResponseView::Json => {
-                                format_json_or_fallback(&resp.body)
-                            }
-                            crate::tab::types::ResponseView::Raw => resp.body.clone(),
+                            ResponseView::Json => format_json_or_fallback(&resp.body),
+                            ResponseView::Raw => resp.body.clone(),
                         };
                         tab_state.tab.response_body_editor =
                             iced::widget::text_editor::Content::with_text(&body_text);
@@ -376,6 +374,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             Task::none()
         }
 
+        // script engine used
         Message::SendPressed => {
             if let Some(tab_state) = app.tabs.get_mut(app.active_tab_index) {
                 if let WorkspaceContent::CollectionRoot { .. } = tab_state.content {
@@ -385,6 +384,8 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 if tab.is_loading || tab.url.is_empty() {
                     return Task::none();
                 }
+
+                tab.console_logs.clear();
 
                 // build variable/header maps for the pre-request script
                 let mut script_vars: std::collections::HashMap<String, String> = app
@@ -415,12 +416,13 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     .collect();
 
                 let pre_script_text = tab.pre_request_script.text();
-                if let Err(e) = crate::script_engine::ScriptRunner::run_pre_request(
+                match crate::script_engine::ScriptRunner::run_pre_request(
                     &pre_script_text,
                     &mut script_vars,
                     &mut script_headers,
                 ) {
-                    return Task::done(Message::ShowToast(e, ToastStatus::Error));
+                    Ok(logs) => tab.console_logs.extend(logs),
+                    Err(e) => return Task::done(Message::ShowToast(e, ToastStatus::Error)),
                 }
 
                 let mut effective_env = app
@@ -489,6 +491,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             Task::none()
         }
 
+        // script engine used
         Message::ResponseReceived(tab_id, res) => {
             if let Some(tab_state) = app.tabs.iter_mut().find(|t| t.tab.id == tab_id) {
                 let tab = &mut tab_state.tab;
@@ -497,10 +500,8 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 match &res {
                     Ok(resp) => {
                         let initial_body = match tab.response_view {
-                            crate::tab::types::ResponseView::Json => {
-                                format_json_or_fallback(&resp.body)
-                            }
-                            crate::tab::types::ResponseView::Raw => resp.body.clone(),
+                            ResponseView::Json => format_json_or_fallback(&resp.body),
+                            ResponseView::Raw => resp.body.clone(),
                         };
                         tab.response_body_editor =
                             iced::widget::text_editor::Content::with_text(&initial_body);
@@ -528,7 +529,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
 
                         let exec_ctx = crate::script_engine::ScriptExecutionContext {
                             variables: base_vars,
-                            request_headers: std::collections::HashMap::new(),
+                            // request_headers: std::collections::HashMap::new(),
                             response_status: resp.status,
                             response_body: resp.body.clone(),
                         };
@@ -537,7 +538,8 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                             &script_text,
                             &exec_ctx,
                         ) {
-                            Ok(updated_vars) => {
+                            Ok((updated_vars, logs)) => {
+                                tab.console_logs.extend(logs);
                                 if let Some(idx) = app.active_env_index {
                                     if let Some(env) = app.environments.get_mut(idx) {
                                         for (k, v) in updated_vars {

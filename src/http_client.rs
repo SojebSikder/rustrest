@@ -1,4 +1,4 @@
-use crate::tab::types::{FormDataRow, FormDataType};
+use crate::ui::tab::types::{BodyType, FormDataRow, FormDataType};
 use std::collections::HashMap;
 use std::fmt;
 use std::path::Path;
@@ -44,7 +44,7 @@ impl fmt::Display for HttpMethod {
 pub async fn send_request(
     url: String,
     method: HttpMethod,
-    body_type: crate::tab::types::BodyType,
+    body_type: BodyType,
     raw_body: String,
     form_data_list: Vec<FormDataRow>,
     binary_file_path: Option<String>,
@@ -104,7 +104,7 @@ pub async fn send_request(
     if method != HttpMethod::GET && method != HttpMethod::HEAD {
         match body_type {
             // handling files/fields matching multipart/form-data rules
-            crate::tab::types::BodyType::FormData => {
+            BodyType::FormData => {
                 let mut form = reqwest::multipart::Form::new();
                 let mut has_fields = false;
 
@@ -147,7 +147,7 @@ pub async fn send_request(
             }
 
             // handling raw stream binary uploads
-            crate::tab::types::BodyType::Binary => {
+            BodyType::Binary => {
                 if let Some(ref path_str) = binary_file_path {
                     let path = Path::new(path_str);
                     if path.exists() {

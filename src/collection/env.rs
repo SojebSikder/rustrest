@@ -1,4 +1,4 @@
-use crate::tab::types::KeyValuePair;
+use crate::ui::tab::types::KeyValuePair;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

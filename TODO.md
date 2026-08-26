@@ -57,6 +57,8 @@
   - [ ] show response network info including ssl
   - [ ] add wrap lines, filter, search, copy in body response
   - [ ] add context menu with copy
+- [x] Console
+- [ ] Terminal
 - [ ] Settings
   - [ ] general settings 
     - [ ] http version, request timeout, max response size, ssl certificate verification, disable cookies

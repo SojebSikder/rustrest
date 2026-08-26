@@ -2,7 +2,7 @@ use super::types::{
     BodyType, FormDataRow, FormDataType, KeyValuePair, RawType, RequestSubTab, ResponseSubTab,
     ResponseView,
 };
-use crate::{http_client::HttpMethod, tab::types::ScriptTab};
+use crate::{http_client::HttpMethod, ui::tab::types::ScriptTab};
 use iced::widget::text_editor;
 
 #[derive(Debug, Clone)]
