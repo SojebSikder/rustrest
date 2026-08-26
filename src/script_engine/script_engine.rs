@@ -7,7 +7,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 pub struct ScriptExecutionContext {
     pub variables: HashMap<String, String>,
-    pub request_headers: HashMap<String, String>,
+    // pub request_headers: HashMap<String, String>,
     pub response_body: String,
     pub response_status: u16,
 }

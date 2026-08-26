@@ -385,6 +385,8 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     return Task::none();
                 }
 
+                tab.console_logs.clear();
+
                 // build variable/header maps for the pre-request script
                 let mut script_vars: std::collections::HashMap<String, String> = app
                     .active_env_index
@@ -446,7 +448,6 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 tab.cancel_token = CancellationToken::new();
                 tab.is_loading = true;
                 tab.response = None;
-                tab.console_logs.clear();
 
                 let collection_vars = tab
                     .collection_id
@@ -528,7 +529,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
 
                         let exec_ctx = crate::script_engine::ScriptExecutionContext {
                             variables: base_vars,
-                            request_headers: std::collections::HashMap::new(),
+                            // request_headers: std::collections::HashMap::new(),
                             response_status: resp.status,
                             response_body: resp.body.clone(),
                         };
