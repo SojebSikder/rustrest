@@ -13,7 +13,7 @@ use tokio_util::sync::CancellationToken;
 #[derive(Debug, Clone)]
 pub struct Tab {
     pub id: usize,
-    pub collection_id: Option<usize>, // Tracks the parent collection context
+    pub collection_id: Option<usize>, // tracks the parent collection context
     pub request_id: Option<usize>,
     pub name: String,
     pub url: String,
@@ -38,6 +38,8 @@ pub struct Tab {
     pub response_body_editor: text_editor::Content,
     pub is_loading: bool,
     pub cancel_token: CancellationToken,
+    // console
+    pub console_logs: Vec<String>,
 }
 
 impl Tab {
@@ -79,6 +81,7 @@ impl Tab {
             is_loading: false,
             cancel_token: CancellationToken::new(),
             response_body_editor: text_editor::Content::with_text(""),
+            console_logs: Vec::new(),
         }
     }
 

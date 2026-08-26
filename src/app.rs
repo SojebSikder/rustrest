@@ -376,6 +376,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             Task::none()
         }
 
+        // script engine used
         Message::SendPressed => {
             if let Some(tab_state) = app.tabs.get_mut(app.active_tab_index) {
                 if let WorkspaceContent::CollectionRoot { .. } = tab_state.content {
@@ -415,12 +416,13 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     .collect();
 
                 let pre_script_text = tab.pre_request_script.text();
-                if let Err(e) = crate::script_engine::ScriptRunner::run_pre_request(
+                match crate::script_engine::ScriptRunner::run_pre_request(
                     &pre_script_text,
                     &mut script_vars,
                     &mut script_headers,
                 ) {
-                    return Task::done(Message::ShowToast(e, ToastStatus::Error));
+                    Ok(logs) => tab.console_logs.extend(logs),
+                    Err(e) => return Task::done(Message::ShowToast(e, ToastStatus::Error)),
                 }
 
                 let mut effective_env = app
@@ -446,6 +448,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 tab.cancel_token = CancellationToken::new();
                 tab.is_loading = true;
                 tab.response = None;
+                tab.console_logs.clear();
 
                 let collection_vars = tab
                     .collection_id
@@ -489,6 +492,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             Task::none()
         }
 
+        // script engine used
         Message::ResponseReceived(tab_id, res) => {
             if let Some(tab_state) = app.tabs.iter_mut().find(|t| t.tab.id == tab_id) {
                 let tab = &mut tab_state.tab;
@@ -537,7 +541,8 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                             &script_text,
                             &exec_ctx,
                         ) {
-                            Ok(updated_vars) => {
+                            Ok((updated_vars, logs)) => {
+                                tab.console_logs.extend(logs);
                                 if let Some(idx) = app.active_env_index {
                                     if let Some(env) = app.environments.get_mut(idx) {
                                         for (k, v) in updated_vars {
