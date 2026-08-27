@@ -9,7 +9,7 @@ You can use Git or any version control system to manage your collections.
 
 [Download Rustrest](https://github.com/SojebSikder/rustrest/releases)
 
-![Rustrest](screenshots/screenshot1.png)
+![Rustrest](screenshots/Screenshot1.png)
 
 ## Features
 - Native, Lightweight, and fastest boot time.
