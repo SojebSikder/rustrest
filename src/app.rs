@@ -71,20 +71,48 @@ pub struct Rustrest {
 
 impl Rustrest {
     pub fn sync_active_tab_to_collection(&mut self) {
-        if let Some(tab_state) = self.tabs.get(self.active_tab_index) {
-            if let (WorkspaceContent::HttpRequest, Some(req_id)) =
-                (&tab_state.content, tab_state.tab.request_id)
-            {
-                if let Some(col_id) = tab_state.tab.collection_id {
+        self.sync_tab_to_collection(self.active_tab_index);
+    }
+
+    /// pushes a tab's current in-memory state (name, headers, body, etc.)
+    /// back into the collection tree that owns it, so the sidebar and any
+    /// exported/saved output stay in sync with what's shown in the tab.
+    pub fn sync_tab_to_collection(&mut self, idx: usize) {
+        if let Some(tab_state) = self.tabs.get(idx) {
+            match &tab_state.content {
+                WorkspaceContent::HttpRequest => {
+                    if let (Some(req_id), Some(col_id)) =
+                        (tab_state.tab.request_id, tab_state.tab.collection_id)
+                    {
+                        if let Some(col) = self.collections.iter_mut().find(|c| c.id == col_id) {
+                            update_node(&mut col.item, req_id, &tab_state.tab);
+                        }
+                    }
+                }
+                WorkspaceContent::CollectionRoot { collection_id, .. } => {
+                    let col_id = *collection_id;
+                    let new_name = tab_state.tab.name.clone();
                     if let Some(col) = self.collections.iter_mut().find(|c| c.id == col_id) {
-                        update_node(&mut col.item, req_id, &tab_state.tab);
+                        col.info.name = new_name.clone();
+                    }
+                    // keep any other open CollectionRoot tabs for the same collection in sync
+                    for t in &mut self.tabs {
+                        if let WorkspaceContent::CollectionRoot {
+                            collection_id,
+                            collection_name,
+                            ..
+                        } = &mut t.content
+                        {
+                            if *collection_id == col_id {
+                                *collection_name = new_name.clone();
+                            }
+                        }
                     }
                 }
             }
         }
     }
 }
-
 pub fn init() -> (Rustrest, Task<Message>) {
     let mut demo_env = Environment::new("Default");
     if !demo_env.variables.is_empty() {
@@ -599,6 +627,8 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     };
                 }
             }
+
+            app.sync_tab_to_collection(idx);
             Task::none()
         }
 
