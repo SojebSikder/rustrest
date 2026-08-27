@@ -3,6 +3,9 @@ use super::types::{
     BodyType, FormDataRow, FormDataType, KeyValuePair, RawType, RequestSubTab, ResponseSubTab,
     ResponseView,
 };
+use crate::collection::collection::{
+    PostmanHeader, PostmanRequestDetails, PostmanRequestNode, PostmanUrl,
+};
 use crate::collection::env::Environment;
 use crate::http_client::{HttpMethod, HttpResponse};
 use crate::ui::tab::types::ScriptTab;
@@ -82,6 +85,35 @@ impl Tab {
             cancel_token: CancellationToken::new(),
             response_body_editor: text_editor::Content::with_text(""),
             console_logs: Vec::new(),
+        }
+    }
+
+    pub fn to_postman_request_node(&self, req_id: usize, name: &str) -> PostmanRequestNode {
+        let header = if self.request_headers.is_empty() {
+            None
+        } else {
+            Some(
+                self.request_headers
+                    .iter()
+                    .map(|h| PostmanHeader {
+                        key: h.key.clone(),
+                        value: h.value.clone(),
+                        disabled: Some(!h.is_active),
+                    })
+                    .collect(),
+            )
+        };
+
+        PostmanRequestNode {
+            id: req_id,
+            name: name.to_string(),
+            request: PostmanRequestDetails {
+                method: self.method.to_string(),
+                url: Some(PostmanUrl::String(self.url.clone())),
+                header,
+                body: None,
+            },
+            event: None,
         }
     }
 

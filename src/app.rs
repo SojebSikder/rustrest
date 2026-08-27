@@ -7,6 +7,7 @@ use crate::http_client::send_request;
 use crate::message::Message;
 use crate::ui::menu::menu::DropdownMenuState;
 use crate::ui::menu::menu_message::MenuMessage;
+use crate::ui::save_request_model::types::SaveRequestModalState;
 use crate::ui::tab::types::{KeyValuePair, ResponseView};
 use crate::ui::tab::{Tab, TabMessage};
 use crate::ui::toast::toast::{ToastManager, ToastStatus};
@@ -67,6 +68,7 @@ pub struct Rustrest {
 
     pub toast_manager: ToastManager,
     pub menu_state: DropdownMenuState,
+    pub save_request_model: Option<SaveRequestModalState>,
 }
 
 impl Rustrest {
@@ -141,6 +143,7 @@ pub fn init() -> (Rustrest, Task<Message>) {
             next_request_id_counter: 0,
             toast_manager: ToastManager::new(),
             menu_state: DropdownMenuState::new(),
+            save_request_model: None,
         },
         Task::none(),
     )
@@ -1058,5 +1061,122 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
 
         // exit the application
         Message::AppExit => iced::exit(),
+
+        // request model actions
+        Message::SaveRequestPressed(tab_idx) => {
+            if let Some(tab_state) = app.tabs.get(tab_idx) {
+                if matches!(tab_state.content, WorkspaceContent::HttpRequest) {
+                    let default_name = if tab_state.tab.name.trim().is_empty() {
+                        "Untitled Request".to_string()
+                    } else {
+                        tab_state.tab.name.clone()
+                    };
+
+                    app.save_request_model = Some(SaveRequestModalState {
+                        tab_index: tab_idx,
+                        request_name: default_name,
+                        selected_collection_id: tab_state
+                            .tab
+                            .collection_id
+                            .or_else(|| app.collections.first().map(|c| c.id)),
+                        selected_folder_path: Vec::new(),
+                    });
+                }
+            }
+            Task::none()
+        }
+
+        Message::SaveRequestModalCollectionSelected(col_id) => {
+            if let Some(modal) = app.save_request_model.as_mut() {
+                modal.selected_collection_id = Some(col_id);
+                modal.selected_folder_path.clear();
+            }
+            Task::none()
+        }
+
+        Message::SaveRequestModalFolderSelected(path) => {
+            if let Some(modal) = app.save_request_model.as_mut() {
+                modal.selected_folder_path = path;
+            }
+            Task::none()
+        }
+
+        Message::SaveRequestNameChanged(name) => {
+            if let Some(modal) = app.save_request_model.as_mut() {
+                modal.request_name = name;
+            }
+            Task::none()
+        }
+
+        Message::CloseSaveRequestModal => {
+            app.save_request_model = None;
+            Task::none()
+        }
+
+        Message::SaveRequestConfirmed => {
+            let Some(modal) = app.save_request_model.take() else {
+                return Task::none();
+            };
+            let Some(col_id) = modal.selected_collection_id else {
+                return Task::none();
+            };
+
+            let name = if modal.request_name.trim().is_empty() {
+                "Untitled Request".to_string()
+            } else {
+                modal.request_name.clone()
+            };
+
+            let already_linked = app
+                .tabs
+                .get(modal.tab_index)
+                .and_then(|t| t.tab.request_id)
+                .is_some();
+
+            if already_linked {
+                if let Some(tab_state) = app.tabs.get_mut(modal.tab_index) {
+                    tab_state.tab.name = name;
+                }
+                app.sync_tab_to_collection(modal.tab_index);
+                return Task::done(Message::ShowToast(
+                    "Request updated".to_string(),
+                    ToastStatus::Success,
+                ));
+            }
+
+            let req_id = app.next_request_id;
+            app.next_request_id += 1;
+
+            let request_node = if let Some(tab_state) = app.tabs.get_mut(modal.tab_index) {
+                tab_state.tab.name = name.clone();
+                tab_state.tab.request_id = Some(req_id);
+                tab_state.tab.collection_id = Some(col_id);
+                Some(tab_state.tab.to_postman_request_node(req_id, &name))
+            } else {
+                None
+            };
+
+            if let Some(request_node) = request_node {
+                if let Some(col) = app.collections.iter_mut().find(|c| c.id == col_id) {
+                    insert_nested_request(
+                        &mut col.item,
+                        &modal.selected_folder_path,
+                        CollectionItem::Request(request_node),
+                    );
+
+                    let col_name = col.info.name.clone();
+                    return Task::done(Message::ShowToast(
+                        format!("Request saved to '{}'", col_name),
+                        ToastStatus::Success,
+                    ));
+                }
+            }
+
+            Task::none()
+        }
+
+        Message::SaveActiveRequestShortcut => {
+            update(app, Message::SaveRequestPressed(app.active_tab_index))
+        } // end save_request_model actions
     }
 }

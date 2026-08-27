@@ -114,6 +114,15 @@ pub enum Message {
         folder_path: Vec<String>,
     },
 
+    // save request model action
+    SaveRequestPressed(usize), // tab index — opens the chooser
+    SaveRequestModalCollectionSelected(usize), // pick target collection
+    SaveRequestModalFolderSelected(Vec<String>), // pick target folder (optional)
+    SaveRequestNameChanged(String),
+    SaveRequestConfirmed,
+    CloseSaveRequestModal,
+
+    //
     ShowCollectionContextMenu(usize),
     ShowFolderContextMenu {
         collection_id: usize,
@@ -126,6 +135,8 @@ pub enum Message {
     CloseContextMenu,
 
     MenuInteraction(DropdownMessage<MenuMessage>),
+
+    SaveActiveRequestShortcut,
 
     ShowToast(String, ToastStatus),
     DismissToast(usize),

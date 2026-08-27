@@ -8,15 +8,15 @@ mod script_engine;
 mod ui;
 mod utils;
 
+use crate::ui::env_editor::render_env_editor;
+use crate::ui::menu::menu::{DropdownItem, MenuGroup, render_menu_bar, render_menu_overlay};
+use crate::ui::menu::menu_message::MenuMessage;
+use crate::ui::save_request_model::save_request_model::view_save_request_modal;
 use app::Rustrest;
 use iced::widget::{container, row, stack};
 use iced::{Alignment, Element, Length, Padding, Size};
 use iced::{Event, Subscription, event};
 use message::Message;
-
-use crate::ui::env_editor::render_env_editor;
-use crate::ui::menu::menu::{DropdownItem, MenuGroup, render_menu_bar, render_menu_overlay};
-use crate::ui::menu::menu_message::MenuMessage;
 
 const APP_NAME: &str = "Rustrest";
 const APP_VERSION: &str = "0.2.0";
@@ -34,7 +34,7 @@ pub fn main() -> iced::Result {
 
 pub fn subscription(app: &Rustrest) -> Subscription<Message> {
     // listen for mouse events only when a context menu is active
-    if app.active_context_menu.is_some() {
+    let context_menu_sub = if app.active_context_menu.is_some() {
         event::listen().map(|event| match event {
             Event::Mouse(iced::mouse::Event::ButtonPressed(iced::mouse::Button::Left)) => {
                 Message::CloseContextMenu
@@ -43,7 +43,19 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         })
     } else {
         Subscription::none()
-    }
+    };
+
+    // listen for save shortcut (Ctrl+S)
+    let save_shortcut = event::listen_with(|event, _status, _window| match event {
+        Event::Keyboard(iced::keyboard::Event::KeyPressed {
+            key: iced::keyboard::Key::Character(ref c),
+            modifiers,
+            ..
+        }) if modifiers.command() && c.as_str() == "s" => Some(Message::SaveActiveRequestShortcut),
+        _ => None,
+    });
+
+    Subscription::batch([context_menu_sub, save_shortcut])
 }
 
 fn view(app: &Rustrest) -> Element<'_, Message> {
@@ -90,6 +102,16 @@ fn view(app: &Rustrest) -> Element<'_, Message> {
             .align_y(Alignment::Center);
 
         main_interface_stack = main_interface_stack.push(env_overlay);
+    }
+
+    // save-request collection chooser modal overlay
+    if let Some(save_request_modal) = view_save_request_modal(app) {
+        let save_request_overlay = container(save_request_modal)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(Alignment::Center)
+            .align_y(Alignment::Center);
+        main_interface_stack = main_interface_stack.push(save_request_overlay);
     }
 
     // menu bar layer

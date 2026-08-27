@@ -2,6 +2,7 @@ pub mod collection_viewer;
 pub mod console_panel;
 pub mod env_editor;
 pub mod menu;
+pub mod save_request_model;
 pub mod sidebar;
 pub mod tab;
 pub mod toast;
