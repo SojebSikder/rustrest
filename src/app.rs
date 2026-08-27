@@ -1066,6 +1066,16 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         Message::SaveRequestPressed(tab_idx) => {
             if let Some(tab_state) = app.tabs.get(tab_idx) {
                 if matches!(tab_state.content, WorkspaceContent::HttpRequest) {
+                    // if this request is already saved into a collection, then
+                    // sync its current state back in place.
+                    if tab_state.tab.request_id.is_some() && tab_state.tab.collection_id.is_some() {
+                        app.sync_tab_to_collection(tab_idx);
+                        return Task::done(Message::ShowToast(
+                            "Request updated".to_string(),
+                            ToastStatus::Success,
+                        ));
+                    }
+
                     let default_name = if tab_state.tab.name.trim().is_empty() {
                         "Untitled Request".to_string()
                     } else {
