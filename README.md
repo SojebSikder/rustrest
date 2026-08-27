@@ -9,4 +9,12 @@ You can use Git or any version control system to manage your collections.
 
 [Download Rustrest](https://github.com/SojebSikder/rustrest/releases)
 
-![Rustrest](screenshots/screenshot1.jpg)
+![Rustrest](screenshots/screenshot1.png)
+
+## Features
+- Native, Lightweight, and fastest boot time.
+- **Fast**: Send request and get responses in real time.
+- **HTTP Methods**: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS and CUSTOM
+- **Test APIs** using test suites
+- **Local Vault**: Local storage for collections and other resources
+- And many more...
