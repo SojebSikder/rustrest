@@ -96,13 +96,15 @@ where
                     column![
                         view_toggle_bar,
                         container(
-                            text_editor(&tab.response_body_editor)
-                                .font(Font::MONOSPACE)
-                                .size(13)
-                                .height(Length::Fill)
-                                .on_action(move |act| wrap_msg(
-                                    TabMessage::ResponseBodyEditorAction(act)
-                                ))
+                            scrollable(
+                                text_editor(&tab.response_body_editor)
+                                    .font(Font::MONOSPACE)
+                                    .size(13)
+                                    .on_action(move |act| wrap_msg(
+                                        TabMessage::ResponseBodyEditorAction(act)
+                                    ))
+                            )
+                            .height(Length::Fill)
                         )
                         .style(container::bordered_box)
                         .width(Length::Fill)
