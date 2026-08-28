@@ -1,6 +1,4 @@
-use crate::collection::collection::{
-    CollectionItem, PostmanBody, PostmanBodyRow, PostmanFolder, PostmanHeader, PostmanUrl,
-};
+use crate::collection::collection::{CollectionItem, PostmanBody, PostmanBodyRow, PostmanFolder};
 use crate::ui::tab::Tab;
 use crate::ui::tab::types::{BodyType, FormDataType};
 
