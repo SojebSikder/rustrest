@@ -72,6 +72,20 @@ pub struct Rustrest {
 }
 
 impl Rustrest {
+    // syncs the collection tabs to the collection's current state,
+    // pushing any in-memory changes back into the collection tree.
+    pub fn sync_collection_tabs(&mut self, col_id: usize) {
+        for idx in 0..self.tabs.len() {
+            let belongs = match &self.tabs[idx].content {
+                WorkspaceContent::HttpRequest => self.tabs[idx].tab.collection_id == Some(col_id),
+                WorkspaceContent::CollectionRoot { collection_id, .. } => *collection_id == col_id,
+            };
+            if belongs {
+                self.sync_tab_to_collection(idx);
+            }
+        }
+    }
+
     pub fn sync_active_tab_to_collection(&mut self) {
         self.sync_tab_to_collection(self.active_tab_index);
     }
@@ -224,7 +238,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
 
         // simple inline disk overwrite action
         Message::SaveCollectionPressed(col_id) => {
-            app.sync_active_tab_to_collection();
+            app.sync_collection_tabs(col_id);
 
             if let Some(collection) = app.collections.iter().find(|c| c.id == col_id) {
                 if let Some(ref path) = collection.file_path {
@@ -253,6 +267,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         }
 
         Message::ExportCollectionPressed(col_id) => {
+            app.sync_collection_tabs(col_id);
             // find collection by internal ID
             if let Some(collection) = app.collections.iter().find(|c| c.id == col_id) {
                 match collection.to_postman_json() {
@@ -1186,7 +1201,18 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         }
 
         Message::SaveActiveRequestShortcut => {
-            update(app, Message::SaveRequestPressed(app.active_tab_index))
+            if let Some(tab_state) = app.tabs.get(app.active_tab_index) {
+                match &tab_state.content {
+                    WorkspaceContent::HttpRequest => {
+                        update(app, Message::SaveRequestPressed(app.active_tab_index))
+                    }
+                    WorkspaceContent::CollectionRoot { collection_id, .. } => {
+                        update(app, Message::SaveCollectionPressed(*collection_id))
+                    }
+                }
+            } else {
+                Task::none()
+            }
         } // end save_request_model actions
     }
 }

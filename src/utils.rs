@@ -36,23 +36,8 @@ pub fn update_node(items: &mut Vec<CollectionItem>, target_id: usize, tab: &Tab)
         match item {
             CollectionItem::Request(req) => {
                 if req.id == target_id {
-                    // sync Basic Fields
-                    req.name = tab.name.clone();
-                    req.request.method = tab.method.to_string();
-                    req.request.url = Some(PostmanUrl::String(tab.url.clone()));
-
-                    // sync Request Headers
-                    req.request.header = Some(
-                        tab.request_headers
-                            .iter()
-                            .filter(|h| !h.key.trim().is_empty())
-                            .map(|h| PostmanHeader {
-                                key: h.key.clone(),
-                                value: h.value.clone(),
-                                disabled: Some(!h.is_active),
-                            })
-                            .collect(),
-                    );
+                    // sync name / method / url / headers / pre-request and test scripts
+                    req.update_from_tab(tab);
 
                     // sync Request Body types conditionally
                     match tab.body_type {
