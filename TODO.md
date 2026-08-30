@@ -5,6 +5,7 @@
 - [ ] add more auth types
 - [ ] collection of requests with saved responses
 - [x] import collections postman (v2.1)
+- [x] save request temporary
 - [ ] add support for insomnia (v4, v5.1)
 - [ ] add support for open api
 - [ ] add support for swagger
