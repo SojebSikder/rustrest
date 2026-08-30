@@ -53,6 +53,7 @@ pub struct Rustrest {
     pub environments: Vec<Environment>,
     pub active_env_index: Option<usize>,
     pub editing_env_index: Option<usize>,
+    pub editing_env_name: bool,
     pub tabs: Vec<TabState>,
     pub active_tab_index: usize,
     pub next_tab_id: usize,
@@ -185,6 +186,7 @@ pub fn init() -> (Rustrest, Task<Message>) {
         toast_manager: ToastManager::new(),
         menu_state: DropdownMenuState::new(),
         save_request_model: None,
+        editing_env_name: false,
     };
 
     if let Some(saved) = crate::session::load() {
@@ -1060,11 +1062,13 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         // env actions
         Message::EditEnvironmentPressed(idx) => {
             app.editing_env_index = Some(idx);
+            app.editing_env_name = false; // reset on open
             Task::none()
         }
 
         Message::CloseEnvEditorPressed => {
             app.editing_env_index = None;
+            app.editing_env_name = false; // reset on close
             Task::none()
         }
 
@@ -1118,6 +1122,30 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             if let Some(env) = app.environments.get_mut(env_idx) {
                 if let Some(var) = env.variables.get_mut(var_idx) {
                     var.is_active = is_active;
+                }
+            }
+            Task::none()
+        }
+
+        Message::RenameEnvironmentPressed(idx) => {
+            if idx < app.environments.len() {
+                app.editing_env_name = true;
+            }
+            Task::none()
+        }
+
+        Message::EnvNameChanged(idx, new_name) => {
+            if let Some(env) = app.environments.get_mut(idx) {
+                env.name = new_name;
+            }
+            Task::none()
+        }
+
+        Message::SaveEnvNamePressed(idx) => {
+            app.editing_env_name = false;
+            if let Some(env) = app.environments.get_mut(idx) {
+                if env.name.trim().is_empty() {
+                    env.name = format!("Environment {}", idx + 1);
                 }
             }
             Task::none()

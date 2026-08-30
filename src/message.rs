@@ -53,6 +53,10 @@ pub enum Message {
         is_active: bool,
     },
 
+    RenameEnvironmentPressed(usize),
+    EnvNameChanged(usize, String),
+    SaveEnvNamePressed(usize),
+
     // collection viewer actions
     CollectionSubTabSelected(CollectionSubTab),
     CollectionVariableChanged {

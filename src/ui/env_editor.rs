@@ -7,9 +7,37 @@ pub fn render_env_editor(app: &Rustrest) -> Option<Element<'_, Message>> {
     let env_idx = app.editing_env_index?;
     let env = app.environments.get(env_idx)?;
 
-    // header with title and close button
+    // header with editable name, rename toggle, and close button
+    let name_display: Element<Message> = if app.editing_env_name {
+        text_input("Environment name...", &env.name)
+            .on_input(move |name| Message::EnvNameChanged(env_idx, name))
+            .on_submit(Message::SaveEnvNamePressed(env_idx))
+            .padding(4)
+            .size(16)
+            .width(Length::Fill)
+            .into()
+    } else {
+        text(format!("Environment: {}", env.name))
+            .size(16)
+            .width(Length::Fill)
+            .into()
+    };
+
+    let rename_btn: Element<Message> = if app.editing_env_name {
+        button(text("✓").size(12))
+            .on_press(Message::SaveEnvNamePressed(env_idx))
+            .style(button::primary)
+            .into()
+    } else {
+        button(text("✎").size(12))
+            .on_press(Message::RenameEnvironmentPressed(env_idx))
+            .style(button::secondary)
+            .into()
+    };
+
     let header = row![
-        text(format!("Environment: {}", env.name)).size(16),
+        name_display,
+        rename_btn,
         button(text("✕").size(12))
             .on_press(Message::CloseEnvEditorPressed)
             .style(button::secondary)
