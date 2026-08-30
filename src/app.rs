@@ -5,6 +5,7 @@ use crate::collection::collection::{
 use crate::collection::env::Environment;
 use crate::http_client::send_request;
 use crate::message::Message;
+use crate::session::{SavedSession, SavedTabEntry};
 use crate::ui::menu::menu::DropdownMenuState;
 use crate::ui::menu::menu_message::MenuMessage;
 use crate::ui::save_request_model::types::SaveRequestModalState;
@@ -72,6 +73,36 @@ pub struct Rustrest {
 }
 
 impl Rustrest {
+    pub fn build_session_snapshot(&self) -> SavedSession {
+        let tabs = self
+            .tabs
+            .iter()
+            .filter_map(|t| match &t.content {
+                WorkspaceContent::HttpRequest => {
+                    let req_id = t.tab.request_id.unwrap_or(0);
+                    let node = t.tab.to_postman_request_node(req_id, &t.tab.name);
+                    Some(SavedTabEntry::HttpRequest {
+                        request_id: t.tab.request_id,
+                        collection_id: t.tab.collection_id,
+                        node,
+                    })
+                }
+                WorkspaceContent::CollectionRoot { collection_id, .. } => {
+                    Some(SavedTabEntry::CollectionRoot {
+                        collection_id: *collection_id,
+                    })
+                }
+            })
+            .collect();
+
+        SavedSession {
+            tabs,
+            active_tab_index: self.active_tab_index,
+            next_tab_id: self.next_tab_id,
+            next_request_id: self.next_request_id,
+        }
+    }
+
     // syncs the collection tabs to the collection's current state,
     // pushing any in-memory changes back into the collection tree.
     pub fn sync_collection_tabs(&mut self, col_id: usize) {
@@ -129,38 +160,83 @@ impl Rustrest {
         }
     }
 }
+
 pub fn init() -> (Rustrest, Task<Message>) {
     let mut demo_env = Environment::new("Default");
     if !demo_env.variables.is_empty() {
         demo_env.variables[0].is_active = true;
     }
 
-    (
-        Rustrest {
-            collections: Vec::new(),
-            environments: vec![demo_env],
-            active_env_index: None,
-            tabs: vec![TabState {
-                tab: Tab::new(1),
-                content: WorkspaceContent::HttpRequest,
-                is_editing_name: false,
-            }],
-            active_tab_index: 0,
-            editing_env_index: None,
-            next_tab_id: 2,
-            next_request_id: 1,
-            editing_collection_id: None,
-            editing_folder_collection_id: None,
-            editing_folder_path: Vec::new(),
-            active_context_menu: None,
-            next_collection_id_counter: 0,
-            next_request_id_counter: 0,
-            toast_manager: ToastManager::new(),
-            menu_state: DropdownMenuState::new(),
-            save_request_model: None,
-        },
-        Task::none(),
-    )
+    let mut app = Rustrest {
+        collections: Vec::new(),
+        environments: vec![demo_env],
+        active_env_index: None,
+        tabs: vec![],
+        active_tab_index: 0,
+        editing_env_index: None,
+        next_tab_id: 2,
+        next_request_id: 1,
+        editing_collection_id: None,
+        editing_folder_collection_id: None,
+        editing_folder_path: Vec::new(),
+        active_context_menu: None,
+        next_collection_id_counter: 0,
+        next_request_id_counter: 0,
+        toast_manager: ToastManager::new(),
+        menu_state: DropdownMenuState::new(),
+        save_request_model: None,
+    };
+
+    if let Some(saved) = crate::session::load() {
+        for entry in saved.tabs {
+            match entry {
+                SavedTabEntry::HttpRequest {
+                    collection_id,
+                    request_id,
+                    node,
+                } => {
+                    let mut tab = create_tab_from_request(app.next_tab_id, &node, collection_id);
+                    tab.request_id = request_id;
+                    app.tabs.push(TabState {
+                        tab,
+                        content: WorkspaceContent::HttpRequest,
+                        is_editing_name: false,
+                    });
+                    app.next_tab_id += 1;
+                }
+                SavedTabEntry::CollectionRoot { collection_id } => {
+                    // only restore if the collection is still loaded/re-imported
+                    if let Some(col) = app.collections.iter().find(|c| c.id == collection_id) {
+                        let mut root_tab = Tab::new(app.next_tab_id);
+                        root_tab.name = col.info.name.clone();
+                        app.tabs.push(TabState {
+                            tab: root_tab,
+                            content: WorkspaceContent::CollectionRoot {
+                                collection_id,
+                                collection_name: col.info.name.clone(),
+                                active_sub_tab: CollectionSubTab::Variables,
+                            },
+                            is_editing_name: false,
+                        });
+                        app.next_tab_id += 1;
+                    }
+                }
+            }
+        }
+        app.active_tab_index = saved.active_tab_index.min(app.tabs.len().saturating_sub(1));
+        app.next_request_id = saved.next_request_id.max(app.next_request_id);
+    }
+
+    if app.tabs.is_empty() {
+        app.tabs.push(TabState {
+            tab: Tab::new(app.next_tab_id),
+            content: WorkspaceContent::HttpRequest,
+            is_editing_name: false,
+        });
+        app.next_tab_id += 1;
+    }
+
+    (app, Task::none())
 }
 
 pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
@@ -1069,14 +1145,6 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             Task::none()
         }
 
-        Message::DismissToast(id) => {
-            app.toast_manager.dismiss(id);
-            iced::Task::none()
-        }
-
-        // exit the application
-        Message::AppExit => iced::exit(),
-
         // request model actions
         Message::SaveRequestPressed(tab_idx) => {
             if let Some(tab_state) = app.tabs.get(tab_idx) {
@@ -1214,5 +1282,23 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 Task::none()
             }
         } // end save_request_model actions
+
+        // temporary data stores
+        Message::AutosaveTick => {
+            let snapshot = app.build_session_snapshot();
+            crate::session::save(&snapshot);
+            Task::none()
+        }
+
+        Message::DismissToast(id) => {
+            app.toast_manager.dismiss(id);
+            iced::Task::none()
+        }
+        // exit the application
+        Message::AppExit => {
+            let snapshot = app.build_session_snapshot();
+            crate::session::save(&snapshot);
+            iced::exit()
+        }
     }
 }

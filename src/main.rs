@@ -5,6 +5,7 @@ mod collection;
 mod http_client;
 mod message;
 mod script_engine;
+mod session;
 mod ui;
 mod utils;
 
@@ -25,6 +26,7 @@ pub fn main() -> iced::Result {
     iced::application(app::init, app::update, view)
         .title(|_: &Rustrest| format!("{} - API Testing Platform", APP_NAME))
         .subscription(subscription)
+        .exit_on_close_request(false)
         .window(iced::window::Settings {
             size: Size::new(1250.0, 850.0),
             ..Default::default()
@@ -55,7 +57,18 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         _ => None,
     });
 
-    Subscription::batch([context_menu_sub, save_shortcut])
+    // periodically every 5 seconds autosave of the in-progress session (draft tabs, active tab, etc.),
+    let autosave =
+        iced::time::every(std::time::Duration::from_secs(5)).map(|_| Message::AutosaveTick);
+
+    // catch the native window close button so we can flush the session
+    // before the process actually exits, instead of letting iced exit immediately
+    let close_requested = event::listen_with(|event, _status, _window| match event {
+        Event::Window(iced::window::Event::CloseRequested) => Some(Message::AppExit),
+        _ => None,
+    });
+
+    Subscription::batch([context_menu_sub, save_shortcut, autosave, close_requested])
 }
 
 fn view(app: &Rustrest) -> Element<'_, Message> {

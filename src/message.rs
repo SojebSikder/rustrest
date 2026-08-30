@@ -138,6 +138,9 @@ pub enum Message {
 
     SaveActiveRequestShortcut,
 
+    // temporary data stores
+    AutosaveTick,
+
     ShowToast(String, ToastStatus),
     DismissToast(usize),
 
