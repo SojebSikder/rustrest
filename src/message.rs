@@ -5,6 +5,7 @@ use crate::ui::menu::menu::DropdownMessage;
 use crate::ui::menu::menu_message::MenuMessage;
 use crate::ui::tab::TabMessage;
 use crate::ui::toast::toast::ToastStatus;
+use crate::updater::UpdateInfo;
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -147,6 +148,12 @@ pub enum Message {
 
     ShowToast(String, ToastStatus),
     DismissToast(usize),
+
+    // self update
+    CheckForUpdate,
+    UpdateCheckResult(Result<Option<UpdateInfo>, String>),
+    InstallUpdate,
+    UpdateInstallResult(Result<String, String>),
 
     AppExit,
     None,
