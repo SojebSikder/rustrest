@@ -7,6 +7,7 @@ mod message;
 mod script_engine;
 mod session;
 mod ui;
+mod updater;
 mod utils;
 
 use crate::ui::env_editor::render_env_editor;
@@ -83,7 +84,10 @@ fn view(app: &Rustrest) -> Element<'_, Message> {
         ),
         MenuGroup::new(
             "Help",
-            vec![DropdownItem::new("About", MenuMessage::HelpAbout)],
+            vec![
+                DropdownItem::new("Check for Updates", MenuMessage::CheckForUpdate),
+                DropdownItem::new("About", MenuMessage::HelpAbout),
+            ],
         ),
     ];
 

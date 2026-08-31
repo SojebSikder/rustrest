@@ -12,6 +12,7 @@ use crate::ui::save_request_model::types::SaveRequestModalState;
 use crate::ui::tab::types::{KeyValuePair, ResponseView};
 use crate::ui::tab::{Tab, TabMessage};
 use crate::ui::toast::toast::{ToastManager, ToastStatus};
+use crate::updater::{UpdateInfo, check_for_update, perform_update};
 use crate::utils::{
     contains_request_node_by_id, format_json_or_fallback, insert_nested, insert_nested_request,
     remove_nested, remove_nested_request, rename_nested_folder, update_node,
@@ -71,6 +72,8 @@ pub struct Rustrest {
     pub toast_manager: ToastManager,
     pub menu_state: DropdownMenuState,
     pub save_request_model: Option<SaveRequestModalState>,
+
+    pub available_update: Option<UpdateInfo>,
 }
 
 impl Rustrest {
@@ -187,6 +190,7 @@ pub fn init() -> (Rustrest, Task<Message>) {
         menu_state: DropdownMenuState::new(),
         save_request_model: None,
         editing_env_name: false,
+        available_update: None,
     };
 
     if let Some(saved) = crate::session::load() {
@@ -1164,6 +1168,9 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     MenuMessage::FileExit => {
                         return update(app, Message::AppExit);
                     }
+                    MenuMessage::CheckForUpdate => {
+                        return update(app, Message::CheckForUpdate);
+                    }
                     MenuMessage::HelpAbout => {
                         let version_info = format!("{} v{}", APP_NAME, APP_VERSION);
                         return update(app, Message::ShowToast(version_info, ToastStatus::Info));
@@ -1318,6 +1325,107 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             Task::none()
         }
 
+        // self update
+        Message::CheckForUpdate => iced::Task::perform(
+            async {
+                tokio::task::spawn_blocking(check_for_update)
+                    .await
+                    .unwrap_or_else(|e| Err(e.to_string()))
+            },
+            Message::UpdateCheckResult,
+        ),
+
+        Message::UpdateCheckResult(Ok(Some(info))) => {
+            let msg = format!("Update available: v{}", info.version);
+            app.available_update = Some(info);
+            let (id, duration) =
+                app.toast_manager
+                    .show(msg, ToastStatus::Info, std::time::Duration::from_secs(4));
+            iced::Task::perform(
+                async move {
+                    tokio::time::sleep(duration).await;
+                    id
+                },
+                Message::DismissToast,
+            )
+        }
+
+        Message::UpdateCheckResult(Ok(None)) => {
+            let (id, duration) = app.toast_manager.show(
+                "You're up to date.".to_string(),
+                ToastStatus::Info,
+                std::time::Duration::from_secs(4),
+            );
+            iced::Task::perform(
+                async move {
+                    tokio::time::sleep(duration).await;
+                    id
+                },
+                Message::DismissToast,
+            )
+        }
+
+        Message::UpdateCheckResult(Err(e)) => {
+            let (id, duration) = app.toast_manager.show(
+                format!("Update check failed: {e}"),
+                ToastStatus::Error,
+                std::time::Duration::from_secs(4),
+            );
+            iced::Task::perform(
+                async move {
+                    tokio::time::sleep(duration).await;
+                    id
+                },
+                Message::DismissToast,
+            )
+        }
+
+        Message::InstallUpdate => {
+            let (_id, _duration) = app.toast_manager.show(
+                "Downloading update…".to_string(),
+                ToastStatus::Info,
+                std::time::Duration::from_secs(4),
+            );
+            iced::Task::perform(
+                async {
+                    tokio::task::spawn_blocking(perform_update)
+                        .await
+                        .unwrap_or_else(|e| Err(e.to_string()))
+                },
+                Message::UpdateInstallResult,
+            )
+        }
+
+        Message::UpdateInstallResult(Ok(version)) => {
+            let (id, duration) = app.toast_manager.show(
+                format!("Updated to v{version}. Please restart the app."),
+                ToastStatus::Success,
+                std::time::Duration::from_secs(4),
+            );
+            iced::Task::perform(
+                async move {
+                    tokio::time::sleep(duration).await;
+                    id
+                },
+                Message::DismissToast,
+            )
+        }
+
+        Message::UpdateInstallResult(Err(e)) => {
+            let (id, duration) = app.toast_manager.show(
+                format!("Update failed: {e}"),
+                ToastStatus::Error,
+                std::time::Duration::from_secs(4),
+            );
+            iced::Task::perform(
+                async move {
+                    tokio::time::sleep(duration).await;
+                    id
+                },
+                Message::DismissToast,
+            )
+        }
+        // end self update
         Message::DismissToast(id) => {
             app.toast_manager.dismiss(id);
             iced::Task::none()
