@@ -247,6 +247,46 @@ pub fn init() -> (Rustrest, Task<Message>) {
     (app, Task::none())
 }
 
+fn persist_collection_if_known_location(
+    app: &mut Rustrest,
+    col_id: usize,
+    success_msg: String,
+) -> Task<Message> {
+    if let Some(collection) = app.collections.iter().find(|c| c.id == col_id) {
+        if let Some(ref dir) = collection.storage_dir {
+            return match crate::collection::dir_storage::save_collection_to_dir_clean(
+                collection, dir,
+            ) {
+                Ok(()) => Task::done(Message::ShowToast(success_msg, ToastStatus::Success)),
+                Err(err) => Task::done(Message::ShowToast(
+                    format!("Saved in memory, but failed to write to disk: {}", err),
+                    ToastStatus::Error,
+                )),
+            };
+        }
+
+        if let Some(ref path) = collection.file_path {
+            if let Ok(json_content) = collection.to_postman_json() {
+                let write_path = path.clone();
+                return Task::perform(
+                    async move { tokio::fs::write(write_path, json_content).await },
+                    move |result| match result {
+                        Ok(_) => Message::ShowToast(success_msg.clone(), ToastStatus::Success),
+                        Err(err) => Message::ShowToast(
+                            format!("Saved in memory, but failed to write to disk: {}", err),
+                            ToastStatus::Error,
+                        ),
+                    },
+                );
+            }
+        }
+    }
+
+    // no known location yet (brand new, never-saved collection) —
+    // nothing to flush to disk; just confirm the in-memory update.
+    Task::done(Message::ShowToast(success_msg, ToastStatus::Success))
+}
+
 pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
     match message {
         Message::None => Task::none(),
@@ -324,46 +364,23 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         Message::SaveCollectionPressed(col_id) => {
             app.sync_collection_tabs(col_id);
 
-            if let Some(collection) = app.collections.iter().find(|c| c.id == col_id) {
-                // directory-backed ("git folder") collections save as a file tree.
-                if let Some(ref dir) = collection.storage_dir {
-                    return match crate::collection::dir_storage::save_collection_to_dir_clean(
-                        collection, dir,
-                    ) {
-                        Ok(()) => iced::Task::done(Message::ShowToast(
-                            "Collection saved (git folder)".to_string(),
-                            ToastStatus::Success,
-                        )),
-                        Err(err) => iced::Task::done(Message::ShowToast(
-                            format!("Failed to save collection: {}", err),
-                            ToastStatus::Error,
-                        )),
-                    };
-                }
+            let has_known_location = app
+                .collections
+                .iter()
+                .find(|c| c.id == col_id)
+                .map(|c| c.storage_dir.is_some() || c.file_path.is_some())
+                .unwrap_or(false);
 
-                if let Some(ref path) = collection.file_path {
-                    if let Ok(json_content) = collection.to_postman_json() {
-                        let write_path = path.clone();
-                        return iced::Task::perform(
-                            async move { tokio::fs::write(write_path, json_content).await },
-                            |result| match result {
-                                Ok(_) => Message::ShowToast(
-                                    "Collection saved successfully".to_string(),
-                                    ToastStatus::Success,
-                                ),
-                                Err(err) => Message::ShowToast(
-                                    format!("Failed to save collection: {}", err),
-                                    ToastStatus::Error,
-                                ),
-                            },
-                        );
-                    }
-                } else {
-                    // if it has no file location yet, perform "Export"
-                    return iced::Task::done(Message::ExportCollectionPressed(col_id));
-                }
+            if !has_known_location {
+                // never been saved anywhere, behave like export (first-time save)
+                return iced::Task::done(Message::ExportCollectionPressed(col_id));
             }
-            iced::Task::none()
+
+            persist_collection_if_known_location(
+                app,
+                col_id,
+                "Collection saved successfully".to_string(),
+            )
         }
 
         // git
@@ -1282,14 +1299,18 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         Message::SaveRequestPressed(tab_idx) => {
             if let Some(tab_state) = app.tabs.get(tab_idx) {
                 if matches!(tab_state.content, WorkspaceContent::HttpRequest) {
-                    // if this request is already saved into a collection, then
-                    // sync its current state back in place.
-                    if tab_state.tab.request_id.is_some() && tab_state.tab.collection_id.is_some() {
+                    // if this request is already saved into a collection, sync its
+                    // current state back in place and flush the collection to disk
+                    // if it already has a known save location (git folder / file).
+                    if let (Some(_req_id), Some(col_id)) =
+                        (tab_state.tab.request_id, tab_state.tab.collection_id)
+                    {
                         app.sync_tab_to_collection(tab_idx);
-                        return Task::done(Message::ShowToast(
+                        return persist_collection_if_known_location(
+                            app,
+                            col_id,
                             "Request updated".to_string(),
-                            ToastStatus::Success,
-                        ));
+                        );
                     }
 
                     let default_name = if tab_state.tab.name.trim().is_empty() {
@@ -1364,10 +1385,11 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     tab_state.tab.name = name;
                 }
                 app.sync_tab_to_collection(modal.tab_index);
-                return Task::done(Message::ShowToast(
+                return persist_collection_if_known_location(
+                    app,
+                    col_id,
                     "Request updated".to_string(),
-                    ToastStatus::Success,
-                ));
+                );
             }
 
             let req_id = app.next_request_id;
