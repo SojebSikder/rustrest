@@ -247,6 +247,46 @@ pub fn init() -> (Rustrest, Task<Message>) {
     (app, Task::none())
 }
 
+fn persist_collection_if_known_location(
+    app: &mut Rustrest,
+    col_id: usize,
+    success_msg: String,
+) -> Task<Message> {
+    if let Some(collection) = app.collections.iter().find(|c| c.id == col_id) {
+        if let Some(ref dir) = collection.storage_dir {
+            return match crate::collection::dir_storage::save_collection_to_dir_clean(
+                collection, dir,
+            ) {
+                Ok(()) => Task::done(Message::ShowToast(success_msg, ToastStatus::Success)),
+                Err(err) => Task::done(Message::ShowToast(
+                    format!("Saved in memory, but failed to write to disk: {}", err),
+                    ToastStatus::Error,
+                )),
+            };
+        }
+
+        if let Some(ref path) = collection.file_path {
+            if let Ok(json_content) = collection.to_postman_json() {
+                let write_path = path.clone();
+                return Task::perform(
+                    async move { tokio::fs::write(write_path, json_content).await },
+                    move |result| match result {
+                        Ok(_) => Message::ShowToast(success_msg.clone(), ToastStatus::Success),
+                        Err(err) => Message::ShowToast(
+                            format!("Saved in memory, but failed to write to disk: {}", err),
+                            ToastStatus::Error,
+                        ),
+                    },
+                );
+            }
+        }
+    }
+
+    // no known location yet (brand new, never-saved collection) —
+    // nothing to flush to disk; just confirm the in-memory update.
+    Task::done(Message::ShowToast(success_msg, ToastStatus::Success))
+}
+
 pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
     match message {
         Message::None => Task::none(),
@@ -324,32 +364,101 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         Message::SaveCollectionPressed(col_id) => {
             app.sync_collection_tabs(col_id);
 
-            if let Some(collection) = app.collections.iter().find(|c| c.id == col_id) {
-                if let Some(ref path) = collection.file_path {
-                    if let Ok(json_content) = collection.to_postman_json() {
-                        let write_path = path.clone();
-                        return iced::Task::perform(
-                            async move { tokio::fs::write(write_path, json_content).await },
-                            |result| match result {
-                                Ok(_) => Message::ShowToast(
-                                    "Collection saved successfully".to_string(),
-                                    ToastStatus::Success,
-                                ),
-                                Err(err) => Message::ShowToast(
-                                    format!("Failed to save collection: {}", err),
-                                    ToastStatus::Error,
-                                ),
-                            },
-                        );
-                    }
-                } else {
-                    // if it has no file location yet, perform "Export"
-                    return iced::Task::done(Message::ExportCollectionPressed(col_id));
-                }
+            let has_known_location = app
+                .collections
+                .iter()
+                .find(|c| c.id == col_id)
+                .map(|c| c.storage_dir.is_some() || c.file_path.is_some())
+                .unwrap_or(false);
+
+            if !has_known_location {
+                // never been saved anywhere, behave like export (first-time save)
+                return iced::Task::done(Message::ExportCollectionPressed(col_id));
             }
-            iced::Task::none()
+
+            persist_collection_if_known_location(
+                app,
+                col_id,
+                "Collection saved successfully".to_string(),
+            )
         }
 
+        // git
+        // Point an existing (or new) collection at a git-friendly folder on disk.
+        Message::InitGitCollectionPressed(col_id) => iced::Task::perform(
+            async {
+                rfd::AsyncFileDialog::new()
+                    .set_title("Choose folder for git collection")
+                    .pick_folder()
+                    .await
+                    .map(|h| h.path().to_path_buf())
+            },
+            move |path| Message::GitCollectionDirChosen(col_id, path),
+        ),
+
+        Message::GitCollectionDirChosen(col_id, Some(dir)) => {
+            app.sync_collection_tabs(col_id);
+            if let Some(collection) = app.collections.iter_mut().find(|c| c.id == col_id) {
+                collection.storage_dir = Some(dir.clone());
+                match crate::collection::dir_storage::save_collection_to_dir_clean(collection, &dir)
+                {
+                    Ok(()) => {
+                        return Task::done(Message::ShowToast(
+                            format!("Collection now stored at {:?}", dir),
+                            ToastStatus::Success,
+                        ));
+                    }
+                    Err(e) => {
+                        return Task::done(Message::ShowToast(
+                            format!("Failed to initialize git folder: {e}"),
+                            ToastStatus::Error,
+                        ));
+                    }
+                }
+            }
+            Task::none()
+        }
+        Message::GitCollectionDirChosen(_, None) => Task::none(),
+
+        // Import: pick a folder, try to load it as a directory-backed collection.
+        Message::ImportGitCollectionPressed => iced::Task::perform(
+            async {
+                let dir = rfd::AsyncFileDialog::new()
+                    .set_title("Open git collection folder")
+                    .pick_folder()
+                    .await
+                    .map(|h| h.path().to_path_buf());
+
+                match dir {
+                    Some(path) => {
+                        let result =
+                            crate::collection::dir_storage::load_collection_from_dir(&path);
+                        (Some(path), result)
+                    }
+                    None => (None, Err("No folder selected".to_string())),
+                }
+            },
+            |(path, result)| Message::GitCollectionLoaded(path, result),
+        ),
+
+        Message::GitCollectionLoaded(Some(path), Ok(mut collection)) => {
+            let col_name = collection.info.name.clone();
+            collection.id = app.next_tab_id;
+            app.next_tab_id += 1;
+            collection.assign_request_ids(&mut app.next_request_id);
+            app.collections.push(collection);
+
+            Task::done(Message::ShowToast(
+                format!("Collection '{}' loaded from {:?}", col_name, path),
+                ToastStatus::Success,
+            ))
+        }
+        Message::GitCollectionLoaded(_, Err(e)) => Task::done(Message::ShowToast(
+            format!("Failed to load git collection: {e}"),
+            ToastStatus::Error,
+        )),
+        Message::GitCollectionLoaded(None, _) => Task::none(),
+        // end git
         Message::ExportCollectionPressed(col_id) => {
             app.sync_collection_tabs(col_id);
             // find collection by internal ID
@@ -866,6 +975,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 item: Vec::new(),
                 variable: Some(Vec::new()),
                 file_path: None,
+                storage_dir: None,
             };
             app.collections.push(new_col);
             Task::none()
@@ -1167,6 +1277,9 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     MenuMessage::FileOpen => {
                         return update(app, Message::ImportCollectionPressed);
                     }
+                    MenuMessage::FileOpenGitFolder => {
+                        return update(app, Message::ImportGitCollectionPressed);
+                    }
                     MenuMessage::FileExit => {
                         return update(app, Message::AppExit);
                     }
@@ -1186,14 +1299,18 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         Message::SaveRequestPressed(tab_idx) => {
             if let Some(tab_state) = app.tabs.get(tab_idx) {
                 if matches!(tab_state.content, WorkspaceContent::HttpRequest) {
-                    // if this request is already saved into a collection, then
-                    // sync its current state back in place.
-                    if tab_state.tab.request_id.is_some() && tab_state.tab.collection_id.is_some() {
+                    // if this request is already saved into a collection, sync its
+                    // current state back in place and flush the collection to disk
+                    // if it already has a known save location (git folder / file).
+                    if let (Some(_req_id), Some(col_id)) =
+                        (tab_state.tab.request_id, tab_state.tab.collection_id)
+                    {
                         app.sync_tab_to_collection(tab_idx);
-                        return Task::done(Message::ShowToast(
+                        return persist_collection_if_known_location(
+                            app,
+                            col_id,
                             "Request updated".to_string(),
-                            ToastStatus::Success,
-                        ));
+                        );
                     }
 
                     let default_name = if tab_state.tab.name.trim().is_empty() {
@@ -1268,10 +1385,11 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     tab_state.tab.name = name;
                 }
                 app.sync_tab_to_collection(modal.tab_index);
-                return Task::done(Message::ShowToast(
+                return persist_collection_if_known_location(
+                    app,
+                    col_id,
                     "Request updated".to_string(),
-                    ToastStatus::Success,
-                ));
+                );
             }
 
             let req_id = app.next_request_id;

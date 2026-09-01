@@ -121,6 +121,10 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
                         },
                     ),
                     ("Save Collection", Message::SaveCollectionPressed(col_id)),
+                    (
+                        "Save as git folder...",
+                        Message::InitGitCollectionPressed(col_id),
+                    ),
                     ("Export As...", Message::ExportCollectionPressed(col_id)),
                     ("Delete", Message::DeleteCollectionPressed(col_id)),
                 ]);

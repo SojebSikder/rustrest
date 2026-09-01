@@ -79,6 +79,7 @@ fn view(app: &Rustrest) -> Element<'_, Message> {
             vec![
                 DropdownItem::new("New Collection", MenuMessage::FileNew),
                 DropdownItem::new("Import Collection", MenuMessage::FileOpen),
+                DropdownItem::new("Import Git Folder...", MenuMessage::FileOpenGitFolder),
                 DropdownItem::new("Exit", MenuMessage::FileExit),
             ],
         ),
