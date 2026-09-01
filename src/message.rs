@@ -1,5 +1,5 @@
 use crate::app::CollectionSubTab;
-use crate::collection::collection::PostmanRequestNode;
+use crate::collection::collection::{PostmanCollection, PostmanRequestNode};
 use crate::http_client::HttpResponse;
 use crate::ui::menu::menu::DropdownMessage;
 use crate::ui::menu::menu_message::MenuMessage;
@@ -138,10 +138,18 @@ pub enum Message {
         request_id: usize,
     },
     CloseContextMenu,
-
     MenuInteraction(DropdownMessage<MenuMessage>),
-
     SaveActiveRequestShortcut,
+
+    // git
+    InitGitCollectionPressed(usize), // "Save as git folder" on a collection
+    GitCollectionDirChosen(usize, Option<std::path::PathBuf>),
+    ImportGitCollectionPressed,
+    GitCollectionLoaded(
+        Option<std::path::PathBuf>,
+        Result<PostmanCollection, String>,
+    ),
+    // end git
 
     // temporary data stores
     AutosaveTick,

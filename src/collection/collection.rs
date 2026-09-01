@@ -11,6 +11,9 @@ pub struct PostmanCollection {
     #[serde(skip)]
     pub file_path: Option<std::path::PathBuf>,
 
+    #[serde(skip)]
+    pub storage_dir: Option<std::path::PathBuf>,
+
     pub info: CollectionInfo,
     pub item: Vec<CollectionItem>,
     pub variable: Option<Vec<PostmanVariable>>,

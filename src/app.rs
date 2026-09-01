@@ -325,6 +325,22 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             app.sync_collection_tabs(col_id);
 
             if let Some(collection) = app.collections.iter().find(|c| c.id == col_id) {
+                // directory-backed ("git folder") collections save as a file tree.
+                if let Some(ref dir) = collection.storage_dir {
+                    return match crate::collection::dir_storage::save_collection_to_dir_clean(
+                        collection, dir,
+                    ) {
+                        Ok(()) => iced::Task::done(Message::ShowToast(
+                            "Collection saved (git folder)".to_string(),
+                            ToastStatus::Success,
+                        )),
+                        Err(err) => iced::Task::done(Message::ShowToast(
+                            format!("Failed to save collection: {}", err),
+                            ToastStatus::Error,
+                        )),
+                    };
+                }
+
                 if let Some(ref path) = collection.file_path {
                     if let Ok(json_content) = collection.to_postman_json() {
                         let write_path = path.clone();
@@ -350,6 +366,82 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             iced::Task::none()
         }
 
+        // git
+        // Point an existing (or new) collection at a git-friendly folder on disk.
+        Message::InitGitCollectionPressed(col_id) => iced::Task::perform(
+            async {
+                rfd::AsyncFileDialog::new()
+                    .set_title("Choose folder for git collection")
+                    .pick_folder()
+                    .await
+                    .map(|h| h.path().to_path_buf())
+            },
+            move |path| Message::GitCollectionDirChosen(col_id, path),
+        ),
+
+        Message::GitCollectionDirChosen(col_id, Some(dir)) => {
+            app.sync_collection_tabs(col_id);
+            if let Some(collection) = app.collections.iter_mut().find(|c| c.id == col_id) {
+                collection.storage_dir = Some(dir.clone());
+                match crate::collection::dir_storage::save_collection_to_dir_clean(collection, &dir)
+                {
+                    Ok(()) => {
+                        return Task::done(Message::ShowToast(
+                            format!("Collection now stored at {:?}", dir),
+                            ToastStatus::Success,
+                        ));
+                    }
+                    Err(e) => {
+                        return Task::done(Message::ShowToast(
+                            format!("Failed to initialize git folder: {e}"),
+                            ToastStatus::Error,
+                        ));
+                    }
+                }
+            }
+            Task::none()
+        }
+        Message::GitCollectionDirChosen(_, None) => Task::none(),
+
+        // Import: pick a folder, try to load it as a directory-backed collection.
+        Message::ImportGitCollectionPressed => iced::Task::perform(
+            async {
+                let dir = rfd::AsyncFileDialog::new()
+                    .set_title("Open git collection folder")
+                    .pick_folder()
+                    .await
+                    .map(|h| h.path().to_path_buf());
+
+                match dir {
+                    Some(path) => {
+                        let result =
+                            crate::collection::dir_storage::load_collection_from_dir(&path);
+                        (Some(path), result)
+                    }
+                    None => (None, Err("No folder selected".to_string())),
+                }
+            },
+            |(path, result)| Message::GitCollectionLoaded(path, result),
+        ),
+
+        Message::GitCollectionLoaded(Some(path), Ok(mut collection)) => {
+            let col_name = collection.info.name.clone();
+            collection.id = app.next_tab_id;
+            app.next_tab_id += 1;
+            collection.assign_request_ids(&mut app.next_request_id);
+            app.collections.push(collection);
+
+            Task::done(Message::ShowToast(
+                format!("Collection '{}' loaded from {:?}", col_name, path),
+                ToastStatus::Success,
+            ))
+        }
+        Message::GitCollectionLoaded(_, Err(e)) => Task::done(Message::ShowToast(
+            format!("Failed to load git collection: {e}"),
+            ToastStatus::Error,
+        )),
+        Message::GitCollectionLoaded(None, _) => Task::none(),
+        // end git
         Message::ExportCollectionPressed(col_id) => {
             app.sync_collection_tabs(col_id);
             // find collection by internal ID
@@ -866,6 +958,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 item: Vec::new(),
                 variable: Some(Vec::new()),
                 file_path: None,
+                storage_dir: None,
             };
             app.collections.push(new_col);
             Task::none()
