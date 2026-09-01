@@ -21,7 +21,7 @@ use iced::{Event, Subscription, event};
 use message::Message;
 
 const APP_NAME: &str = "Rustrest";
-const APP_VERSION: &str = "0.2.1";
+const APP_VERSION: &str = "0.1.1";
 
 pub fn main() -> iced::Result {
     iced::application(app::init, app::update, view)
