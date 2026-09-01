@@ -1260,6 +1260,9 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     MenuMessage::FileOpen => {
                         return update(app, Message::ImportCollectionPressed);
                     }
+                    MenuMessage::FileOpenGitFolder => {
+                        return update(app, Message::ImportGitCollectionPressed);
+                    }
                     MenuMessage::FileExit => {
                         return update(app, Message::AppExit);
                     }
