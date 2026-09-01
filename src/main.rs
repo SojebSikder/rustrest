@@ -95,7 +95,10 @@ fn view(app: &Rustrest) -> Element<'_, Message> {
 
     let sidebar = ui::sidebar::render_sidebar(app);
     let workbench = ui::workspace::render_workbench(app);
-    let toast_layer = app.toast_manager.view(|id| Message::DismissToast(id));
+    // let toast_layer = app.toast_manager.view(|id| Message::DismissToast(id));
+    let toast_layer = app
+        .toast_manager
+        .view(Message::DismissToast, Message::ToastActionPressed);
 
     let base_layout = row![sidebar, workbench]
         .spacing(15)

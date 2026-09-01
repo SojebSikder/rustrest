@@ -74,6 +74,7 @@ pub struct Rustrest {
     pub save_request_model: Option<SaveRequestModalState>,
 
     pub available_update: Option<UpdateInfo>,
+    pub update_toast_id: Option<usize>,
 }
 
 impl Rustrest {
@@ -191,6 +192,7 @@ pub fn init() -> (Rustrest, Task<Message>) {
         save_request_model: None,
         editing_env_name: false,
         available_update: None,
+        update_toast_id: None,
     };
 
     if let Some(saved) = crate::session::load() {
@@ -1338,9 +1340,14 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         Message::UpdateCheckResult(Ok(Some(info))) => {
             let msg = format!("Update available: v{}", info.version);
             app.available_update = Some(info);
-            let (id, duration) =
-                app.toast_manager
-                    .show(msg, ToastStatus::Info, std::time::Duration::from_secs(4));
+            let (id, duration) = app.toast_manager.show_with_action(
+                msg,
+                ToastStatus::Info,
+                std::time::Duration::from_secs(4),
+                "Update",
+            );
+
+            app.update_toast_id = Some(id);
             iced::Task::perform(
                 async move {
                     tokio::time::sleep(duration).await;
@@ -1348,6 +1355,15 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 },
                 Message::DismissToast,
             )
+        }
+
+        Message::ToastActionPressed(id) => {
+            if app.update_toast_id == Some(id) {
+                app.update_toast_id = None;
+                app.toast_manager.dismiss(id);
+                return update(app, Message::InstallUpdate);
+            }
+            Task::none()
         }
 
         Message::UpdateCheckResult(Ok(None)) => {

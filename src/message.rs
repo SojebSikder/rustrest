@@ -148,6 +148,7 @@ pub enum Message {
 
     ShowToast(String, ToastStatus),
     DismissToast(usize),
+    ToastActionPressed(usize),
 
     // self update
     CheckForUpdate,
