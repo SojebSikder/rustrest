@@ -70,7 +70,22 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         _ => None,
     });
 
-    Subscription::batch([context_menu_sub, save_shortcut, autosave, close_requested])
+    // tracks the cursor position so context menus can be anchored where they
+    // were triggered
+    let cursor_tracker = event::listen_with(|event, _status, _window| match event {
+        Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
+            Some(Message::CursorMoved(position))
+        }
+        _ => None,
+    });
+
+    Subscription::batch([
+        context_menu_sub,
+        save_shortcut,
+        autosave,
+        close_requested,
+        cursor_tracker,
+    ])
 }
 
 fn view(app: &Rustrest) -> Element<'_, Message> {
@@ -142,6 +157,11 @@ fn view(app: &Rustrest) -> Element<'_, Message> {
     // dropdown menu overlay
     if let Some(overlay) = render_menu_overlay(&app.menu_state, &menu_structure) {
         main_interface_stack = main_interface_stack.push(overlay.map(Message::MenuInteraction));
+    }
+
+    // sidebar item context menu overlay
+    if let Some(overlay) = ui::sidebar::render_context_menu_overlay(app) {
+        main_interface_stack = main_interface_stack.push(overlay);
     }
 
     stack![main_interface_stack, toast_layer].into()

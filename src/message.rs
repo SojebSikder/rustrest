@@ -135,9 +135,11 @@ pub enum Message {
     },
     ShowRequestContextMenu {
         collection_id: usize,
+        folder_path: Vec<String>,
         request_id: usize,
     },
     CloseContextMenu,
+    CursorMoved(iced::Point),
     MenuInteraction(DropdownMessage<MenuMessage>),
     SaveActiveRequestShortcut,
 

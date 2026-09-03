@@ -3,7 +3,8 @@ use crate::collection::collection::CollectionItem;
 use crate::message::Message;
 use iced::Padding;
 use iced::widget::{
-    Column, button, column, container, mouse_area, pick_list, row, scrollable, text, text_input,
+    Column, button, column, container, mouse_area, opaque, pick_list, row, scrollable, text,
+    text_input,
 };
 use iced::{Alignment, Element, Font, Length};
 
@@ -67,9 +68,6 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
             let col_id = col.id;
             let is_editing_col = app.editing_collection_id == Some(col_id);
 
-            // determine if this collection's context menu dropdown is open
-            let show_dropdown = matches!(&app.active_context_menu, Some(crate::app::ContextMenu::Collection(id)) if *id == col_id);
-
             let collection_header_title: Element<'_, Message> = if is_editing_col {
                 row![
                     text_input("Collection Name...", &col.info.name)
@@ -103,34 +101,6 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
 
             let mut col_tree = column![collection_header_title].spacing(4);
 
-            if show_dropdown && !is_editing_col {
-                let dropdown = render_dropdown(vec![
-                    ("Rename", Message::RenameCollectionPressed(col_id)),
-                    (
-                        "New Folder",
-                        Message::AddFolderPressed {
-                            collection_id: col_id,
-                            parent_folder_path: Vec::new(),
-                        },
-                    ),
-                    (
-                        "New Request",
-                        Message::AddRequestPressed {
-                            collection_id: col_id,
-                            parent_folder_path: Vec::new(),
-                        },
-                    ),
-                    ("Save Collection", Message::SaveCollectionPressed(col_id)),
-                    (
-                        "Save as git folder...",
-                        Message::InitGitCollectionPressed(col_id),
-                    ),
-                    ("Export As...", Message::ExportCollectionPressed(col_id)),
-                    ("Delete", Message::DeleteCollectionPressed(col_id)),
-                ]);
-                col_tree = col_tree.push(dropdown);
-            }
-
             for item in &col.item {
                 col_tree = render_sidebar_item(app, col_tree, item, col_id, Vec::new());
             }
@@ -159,16 +129,10 @@ fn render_sidebar_item<'a>(
 
             let path_for_change = current_path.clone();
             let path_for_save = current_path.clone();
-            let path_for_rename_trigger = current_path.clone();
-            let path_for_add_folder = current_path.clone();
-            let path_for_add_req = current_path.clone();
-            let path_for_delete = current_path.clone();
             let path_for_right_click = current_path.clone();
 
             let is_editing_folder = app.editing_folder_collection_id == Some(collection_id)
                 && app.editing_folder_path == current_path;
-
-            let show_dropdown = matches!(&app.active_context_menu, Some(crate::app::ContextMenu::Folder { col_id, path }) if *col_id == collection_id && *path == current_path);
 
             let folder_title: Element<'_, Message> = if is_editing_folder {
                 row![
@@ -210,40 +174,6 @@ fn render_sidebar_item<'a>(
                 left: 10.0,
             });
 
-            if show_dropdown && !is_editing_folder {
-                let dropdown = render_dropdown(vec![
-                    (
-                        "Rename",
-                        Message::RenameFolderPressed {
-                            collection_id,
-                            folder_path: path_for_rename_trigger,
-                        },
-                    ),
-                    (
-                        "New Folder",
-                        Message::AddFolderPressed {
-                            collection_id,
-                            parent_folder_path: path_for_add_folder,
-                        },
-                    ),
-                    (
-                        "New Request",
-                        Message::AddRequestPressed {
-                            collection_id,
-                            parent_folder_path: path_for_add_req,
-                        },
-                    ),
-                    (
-                        "Delete",
-                        Message::DeleteFolderPressed {
-                            collection_id,
-                            folder_path: path_for_delete,
-                        },
-                    ),
-                ]);
-                folder_layout = folder_layout.push(dropdown);
-            }
-
             for sub in &folder.item {
                 folder_layout = render_sidebar_item(
                     app,
@@ -258,12 +188,10 @@ fn render_sidebar_item<'a>(
         CollectionItem::Request(req_node) => {
             let req_clone = req_node.clone();
             let label = format!("{} - {}", req_node.request.method, req_node.name);
-            let path_for_delete_req = current_path.clone();
+            let path_for_right_click = current_path.clone();
             let req_id = req_node.id;
 
-            let show_dropdown = matches!(&app.active_context_menu, Some(crate::app::ContextMenu::Request { col_id, req_id: id }) if *col_id == collection_id && *id == req_id);
-
-            let mut req_layout = column![
+            let req_layout = column![
                 mouse_area(
                     container(
                         button(text(label).size(13))
@@ -280,25 +208,124 @@ fn render_sidebar_item<'a>(
                 )
                 .on_right_press(Message::ShowRequestContextMenu {
                     collection_id,
+                    folder_path: path_for_right_click,
                     request_id: req_id,
                 })
             ];
 
-            if show_dropdown {
-                let dropdown = render_dropdown(vec![(
-                    "Delete",
-                    Message::DeleteRequestPressed {
-                        collection_id,
-                        parent_folder_path: path_for_delete_req,
-                        request_id: req_id,
-                    },
-                )]);
-                req_layout = req_layout.push(dropdown);
-            }
-
             layout.push(req_layout)
         }
     }
+}
+
+pub fn render_context_menu_overlay<'a>(app: &Rustrest) -> Option<Element<'a, Message>> {
+    let context_menu = app.active_context_menu.as_ref()?;
+
+    // suppress the panel while the targeted item is mid-rename, since its
+    // row is showing a text input instead of the label the menu anchors to
+    let is_editing = match context_menu {
+        crate::app::ContextMenu::Collection(id) => app.editing_collection_id == Some(*id),
+        crate::app::ContextMenu::Folder { col_id, path } => {
+            app.editing_folder_collection_id == Some(*col_id) && app.editing_folder_path == *path
+        }
+        crate::app::ContextMenu::Request { .. } => false,
+    };
+    if is_editing {
+        return None;
+    }
+
+    let options: Vec<(&'a str, Message)> = match context_menu {
+        crate::app::ContextMenu::Collection(id) => {
+            let col_id = *id;
+            vec![
+                ("Rename", Message::RenameCollectionPressed(col_id)),
+                (
+                    "New Folder",
+                    Message::AddFolderPressed {
+                        collection_id: col_id,
+                        parent_folder_path: Vec::new(),
+                    },
+                ),
+                (
+                    "New Request",
+                    Message::AddRequestPressed {
+                        collection_id: col_id,
+                        parent_folder_path: Vec::new(),
+                    },
+                ),
+                ("Save Collection", Message::SaveCollectionPressed(col_id)),
+                (
+                    "Save as git folder...",
+                    Message::InitGitCollectionPressed(col_id),
+                ),
+                ("Export As...", Message::ExportCollectionPressed(col_id)),
+                ("Delete", Message::DeleteCollectionPressed(col_id)),
+            ]
+        }
+        crate::app::ContextMenu::Folder { col_id, path } => {
+            let collection_id = *col_id;
+            vec![
+                (
+                    "Rename",
+                    Message::RenameFolderPressed {
+                        collection_id,
+                        folder_path: path.clone(),
+                    },
+                ),
+                (
+                    "New Folder",
+                    Message::AddFolderPressed {
+                        collection_id,
+                        parent_folder_path: path.clone(),
+                    },
+                ),
+                (
+                    "New Request",
+                    Message::AddRequestPressed {
+                        collection_id,
+                        parent_folder_path: path.clone(),
+                    },
+                ),
+                (
+                    "Delete",
+                    Message::DeleteFolderPressed {
+                        collection_id,
+                        folder_path: path.clone(),
+                    },
+                ),
+            ]
+        }
+        crate::app::ContextMenu::Request {
+            col_id,
+            folder_path,
+            req_id,
+        } => vec![(
+            "Delete",
+            Message::DeleteRequestPressed {
+                collection_id: *col_id,
+                parent_folder_path: folder_path.clone(),
+                request_id: *req_id,
+            },
+        )],
+    };
+
+    let dropdown = render_dropdown(options);
+    let pos = app.context_menu_position;
+
+    // spacer trick: pad down/right to the captured cursor position so the
+    // panel appears to float at the click site instead of shifting layout.
+    Some(
+        column![
+            container(text("")).height(Length::Fixed(pos.y)),
+            row![
+                container(text("")).width(Length::Fixed(pos.x)),
+                opaque(dropdown)
+            ]
+        ]
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into(),
+    )
 }
 
 fn render_dropdown<'a>(options: Vec<(&'a str, Message)>) -> Element<'a, Message> {

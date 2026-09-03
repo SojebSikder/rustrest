@@ -47,7 +47,11 @@ pub struct TabState {
 pub enum ContextMenu {
     Collection(usize),
     Folder { col_id: usize, path: Vec<String> },
-    Request { col_id: usize, req_id: usize },
+    Request {
+        col_id: usize,
+        folder_path: Vec<String>,
+        req_id: usize,
+    },
 }
 
 pub struct Rustrest {
@@ -66,6 +70,8 @@ pub struct Rustrest {
     pub editing_folder_collection_id: Option<usize>,
     pub editing_folder_path: Vec<String>,
     pub active_context_menu: Option<ContextMenu>,
+    pub context_menu_position: iced::Point,
+    pub cursor_position: iced::Point,
 
     pub next_collection_id_counter: usize,
     pub next_request_id_counter: usize,
@@ -186,6 +192,8 @@ pub fn init() -> (Rustrest, Task<Message>) {
         editing_folder_collection_id: None,
         editing_folder_path: Vec::new(),
         active_context_menu: None,
+        context_menu_position: iced::Point::ORIGIN,
+        cursor_position: iced::Point::ORIGIN,
         next_collection_id_counter: 0,
         next_request_id_counter: 0,
         toast_manager: ToastManager::new(),
@@ -1130,6 +1138,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         // context menu
         Message::ShowCollectionContextMenu(col_id) => {
             app.active_context_menu = Some(ContextMenu::Collection(col_id));
+            app.context_menu_position = app.cursor_position;
             Task::none()
         }
 
@@ -1141,22 +1150,31 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 col_id: collection_id,
                 path: folder_path,
             });
+            app.context_menu_position = app.cursor_position;
             Task::none()
         }
 
         Message::ShowRequestContextMenu {
             collection_id,
+            folder_path,
             request_id,
         } => {
             app.active_context_menu = Some(ContextMenu::Request {
                 col_id: collection_id,
+                folder_path,
                 req_id: request_id,
             });
+            app.context_menu_position = app.cursor_position;
             Task::none()
         }
 
         Message::CloseContextMenu => {
             app.active_context_menu = None;
+            Task::none()
+        }
+
+        Message::CursorMoved(position) => {
+            app.cursor_position = position;
             Task::none()
         }
 
