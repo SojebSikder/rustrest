@@ -72,6 +72,7 @@ pub struct Rustrest {
     pub active_context_menu: Option<ContextMenu>,
     pub context_menu_position: iced::Point,
     pub cursor_position: iced::Point,
+    pub last_tab_name_click: Option<(usize, std::time::Instant)>,
 
     pub next_collection_id_counter: usize,
     pub next_request_id_counter: usize,
@@ -194,6 +195,7 @@ pub fn init() -> (Rustrest, Task<Message>) {
         active_context_menu: None,
         context_menu_position: iced::Point::ORIGIN,
         cursor_position: iced::Point::ORIGIN,
+        last_tab_name_click: None,
         next_collection_id_counter: 0,
         next_request_id_counter: 0,
         toast_manager: ToastManager::new(),
@@ -822,8 +824,26 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         }
 
         Message::TabNameDoubleClick(idx) => {
-            if let Some(tab_state) = app.tabs.get_mut(idx) {
-                tab_state.is_editing_name = true;
+            const DOUBLE_CLICK_THRESHOLD: std::time::Duration =
+                std::time::Duration::from_millis(400);
+
+            if idx < app.tabs.len() {
+                app.active_tab_index = idx;
+            }
+
+            let is_double_click = matches!(
+                app.last_tab_name_click,
+                Some((last_idx, last_time))
+                    if last_idx == idx && last_time.elapsed() < DOUBLE_CLICK_THRESHOLD
+            );
+
+            if is_double_click {
+                app.last_tab_name_click = None;
+                if let Some(tab_state) = app.tabs.get_mut(idx) {
+                    tab_state.is_editing_name = true;
+                }
+            } else {
+                app.last_tab_name_click = Some((idx, std::time::Instant::now()));
             }
             Task::none()
         }
