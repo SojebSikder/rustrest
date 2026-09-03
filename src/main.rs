@@ -12,7 +12,9 @@ mod updater;
 mod utils;
 
 use crate::ui::env_editor::render_env_editor;
-use crate::ui::menu::menu::{DropdownItem, MenuGroup, render_menu_bar, render_menu_overlay};
+use crate::ui::menu::menu::{
+    DropdownItem, DropdownMessage, MenuGroup, render_menu_bar, render_menu_overlay,
+};
 use crate::ui::menu::menu_message::MenuMessage;
 use crate::ui::save_request_model::save_request_model::view_save_request_modal;
 use app::Rustrest;
@@ -37,13 +39,23 @@ pub fn main() -> iced::Result {
 }
 
 pub fn subscription(app: &Rustrest) -> Subscription<Message> {
-    // listen for mouse events only when a context menu is active
     let context_menu_sub = if app.active_context_menu.is_some() {
-        event::listen().map(|event| match event {
-            Event::Mouse(iced::mouse::Event::ButtonPressed(iced::mouse::Button::Left)) => {
-                Message::CloseContextMenu
+        event::listen_with(|event, _status, _window| match event {
+            Event::Mouse(iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left)) => {
+                Some(Message::CloseContextMenu)
             }
-            _ => Message::None,
+            _ => None,
+        })
+    } else {
+        Subscription::none()
+    };
+
+    let menu_bar_sub = if app.menu_state.open_index.is_some() {
+        event::listen_with(|event, _status, _window| match event {
+            Event::Mouse(iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left)) => {
+                Some(Message::MenuInteraction(DropdownMessage::Close))
+            }
+            _ => None,
         })
     } else {
         Subscription::none()
@@ -81,6 +93,7 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
 
     Subscription::batch([
         context_menu_sub,
+        menu_bar_sub,
         save_shortcut,
         autosave,
         close_requested,
