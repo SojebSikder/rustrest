@@ -19,6 +19,8 @@ pub enum Message {
     TabNameDoubleClick(usize),
     TabNameChanged(usize, String),
     TabNameSave(usize),
+    TabRenameBlur,
+    TabRenameInputHover(bool),
     ImportCollectionPressed,
     ExportCollectionPressed(usize),
 

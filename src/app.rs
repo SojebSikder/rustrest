@@ -73,6 +73,7 @@ pub struct Rustrest {
     pub context_menu_position: iced::Point,
     pub cursor_position: iced::Point,
     pub last_tab_name_click: Option<(usize, std::time::Instant)>,
+    pub tab_rename_input_hovered: bool,
 
     pub next_collection_id_counter: usize,
     pub next_request_id_counter: usize,
@@ -196,6 +197,7 @@ pub fn init() -> (Rustrest, Task<Message>) {
         context_menu_position: iced::Point::ORIGIN,
         cursor_position: iced::Point::ORIGIN,
         last_tab_name_click: None,
+        tab_rename_input_hovered: false,
         next_collection_id_counter: 0,
         next_request_id_counter: 0,
         toast_manager: ToastManager::new(),
@@ -296,6 +298,23 @@ fn persist_collection_if_known_location(
     // no known location yet (brand new, never-saved collection) —
     // nothing to flush to disk; just confirm the in-memory update.
     Task::done(Message::ShowToast(success_msg, ToastStatus::Success))
+}
+
+fn finalize_tab_rename(app: &mut Rustrest, idx: usize) {
+    if let Some(tab_state) = app.tabs.get_mut(idx) {
+        tab_state.is_editing_name = false;
+        if tab_state.tab.name.trim().is_empty() {
+            tab_state.tab.name = match &tab_state.content {
+                WorkspaceContent::HttpRequest => "Untitled Request".to_string(),
+                WorkspaceContent::CollectionRoot {
+                    collection_name, ..
+                } => collection_name.clone(),
+            };
+        }
+    }
+
+    app.tab_rename_input_hovered = false;
+    app.sync_tab_to_collection(idx);
 }
 
 pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
@@ -842,6 +861,9 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 if let Some(tab_state) = app.tabs.get_mut(idx) {
                     tab_state.is_editing_name = true;
                 }
+                // the double click happened right on the name, so the
+                // cursor is over the input the moment it appears
+                app.tab_rename_input_hovered = true;
             } else {
                 app.last_tab_name_click = Some((idx, std::time::Instant::now()));
             }
@@ -856,19 +878,21 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         }
 
         Message::TabNameSave(idx) => {
-            if let Some(tab_state) = app.tabs.get_mut(idx) {
-                tab_state.is_editing_name = false;
-                if tab_state.tab.name.trim().is_empty() {
-                    tab_state.tab.name = match &tab_state.content {
-                        WorkspaceContent::HttpRequest => "Untitled Request".to_string(),
-                        WorkspaceContent::CollectionRoot {
-                            collection_name, ..
-                        } => collection_name.clone(),
-                    };
+            finalize_tab_rename(app, idx);
+            Task::none()
+        }
+
+        Message::TabRenameBlur => {
+            if !app.tab_rename_input_hovered {
+                if let Some(idx) = app.tabs.iter().position(|t| t.is_editing_name) {
+                    finalize_tab_rename(app, idx);
                 }
             }
+            Task::none()
+        }
 
-            app.sync_tab_to_collection(idx);
+        Message::TabRenameInputHover(is_hovered) => {
+            app.tab_rename_input_hovered = is_hovered;
             Task::none()
         }
 

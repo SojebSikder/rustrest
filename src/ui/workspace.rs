@@ -1,7 +1,7 @@
 use crate::app::{Rustrest, WorkspaceContent};
 use crate::http_client::HttpMethod;
 use crate::message::Message;
-use iced::widget::{button, column, row, text, text_input};
+use iced::widget::{button, column, mouse_area, row, text, text_input};
 use iced::{Alignment, Element, Length};
 
 pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
@@ -29,12 +29,16 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
         };
 
         let tab_content: Element<Message> = if tab_state.is_editing_name {
-            text_input("", &tab.name)
-                .on_input(move |txt| Message::TabNameChanged(idx, txt))
-                .on_submit(Message::TabNameSave(idx))
-                .size(13)
-                .width(Length::Fixed(100.0))
-                .into()
+            mouse_area(
+                text_input("", &tab.name)
+                    .on_input(move |txt| Message::TabNameChanged(idx, txt))
+                    .on_submit(Message::TabNameSave(idx))
+                    .size(13)
+                    .width(Length::Fixed(100.0)),
+            )
+            .on_enter(Message::TabRenameInputHover(true))
+            .on_exit(Message::TabRenameInputHover(false))
+            .into()
         } else {
             button(text(&tab.name).size(13))
                 .on_press(Message::TabNameDoubleClick(idx))

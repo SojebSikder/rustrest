@@ -91,6 +91,19 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         _ => None,
     });
 
+    // if a tab name is mid-rename and the user clicks anywhere else, commit
+    // and close the rename UI instead of leaving it open until Enter is hit
+    let tab_rename_sub = if app.tabs.iter().any(|t| t.is_editing_name) {
+        event::listen_with(|event, _status, _window| match event {
+            Event::Mouse(iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left)) => {
+                Some(Message::TabRenameBlur)
+            }
+            _ => None,
+        })
+    } else {
+        Subscription::none()
+    };
+
     Subscription::batch([
         context_menu_sub,
         menu_bar_sub,
@@ -98,6 +111,7 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         autosave,
         close_requested,
         cursor_tracker,
+        tab_rename_sub,
     ])
 }
 
