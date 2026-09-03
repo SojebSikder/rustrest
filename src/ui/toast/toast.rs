@@ -1,6 +1,45 @@
+use crate::message::Message;
 use iced::widget::{button, column, container, row, text};
 use iced::{Alignment, Border, Color, Length};
 use std::time::{Duration, Instant};
+
+pub const TOAST_DURATION: Duration = Duration::from_secs(4);
+
+/// Shows a toast and returns the `Task` that dismisses it once its duration elapses.
+pub fn show_and_schedule(
+    manager: &mut ToastManager,
+    message: impl Into<String>,
+    status: ToastStatus,
+    duration: Duration,
+) -> iced::Task<Message> {
+    let (id, duration) = manager.show(message, status, duration);
+    iced::Task::perform(
+        async move {
+            tokio::time::sleep(duration).await;
+            id
+        },
+        Message::DismissToast,
+    )
+}
+
+/// Same as `show_and_schedule`, but with an action button
+pub fn show_with_action_and_schedule(
+    manager: &mut ToastManager,
+    message: impl Into<String>,
+    status: ToastStatus,
+    duration: Duration,
+    action_label: impl Into<String>,
+) -> (usize, iced::Task<Message>) {
+    let (id, duration) = manager.show_with_action(message, status, duration, action_label);
+    let task = iced::Task::perform(
+        async move {
+            tokio::time::sleep(duration).await;
+            id
+        },
+        Message::DismissToast,
+    );
+    (id, task)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToastStatus {

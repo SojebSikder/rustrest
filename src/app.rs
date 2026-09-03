@@ -1,8 +1,9 @@
 use crate::collection::collection::{
     CollectionInfo, CollectionItem, PostmanCollection, PostmanRequestDetails, PostmanRequestNode,
-    PostmanUrl, PostmanVariable, create_tab_from_request,
+    PostmanUrl, PostmanVariable,
 };
 use crate::collection::env::Environment;
+use crate::collection_adapter::create_tab_from_request;
 use crate::http_client::send_request;
 use crate::message::Message;
 use crate::session::{SavedSession, SavedTabEntry};
@@ -711,21 +712,18 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     }
                 }
 
-                return Task::perform(
-                    send_request(
-                        final_url,
-                        tab.method.clone(),
-                        tab.body_type,
-                        compiled_body,
-                        compiled_form_data,
-                        tab.binary_file_path.clone(),
-                        filtered_headers,
-                        filtered_cookies,
-                        compiled_auth,
-                        tab.cancel_token.clone(),
-                    ),
-                    move |res| Message::ResponseReceived(tab_id, res),
-                );
+                let spec = crate::http_client::RequestSpec::new(final_url, tab.method.clone())
+                    .body_type(tab.body_type)
+                    .raw_body(compiled_body)
+                    .form_data(compiled_form_data)
+                    .binary_file_path(tab.binary_file_path.clone())
+                    .headers(filtered_headers)
+                    .cookies(filtered_cookies)
+                    .auth_raw(compiled_auth);
+
+                return Task::perform(send_request(spec, tab.cancel_token.clone()), move |res| {
+                    Message::ResponseReceived(tab_id, res)
+                });
             }
             Task::none()
         }
@@ -797,11 +795,14 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                                 }
                             }
                             Err(e) => {
-                                app.toast_manager.show(
+                                let toast_task = crate::ui::toast::toast::show_and_schedule(
+                                    &mut app.toast_manager,
                                     e,
                                     ToastStatus::Error,
-                                    std::time::Duration::from_secs(4),
+                                    crate::ui::toast::toast::TOAST_DURATION,
                                 );
+                                tab.response = Some(res);
+                                return toast_task;
                             }
                         }
                     }
@@ -1159,21 +1160,12 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             Task::none()
         }
 
-        Message::ShowToast(msg, status) => {
-            // Call the manager to register the toast
-            let (id, duration) =
-                app.toast_manager
-                    .show(msg, status, std::time::Duration::from_secs(4));
-
-            // Create the asynchronous task to dismiss it when the timer expires
-            iced::Task::perform(
-                async move {
-                    tokio::time::sleep(duration).await;
-                    id
-                },
-                Message::DismissToast,
-            )
-        }
+        Message::ShowToast(msg, status) => crate::ui::toast::toast::show_and_schedule(
+            &mut app.toast_manager,
+            msg,
+            status,
+            crate::ui::toast::toast::TOAST_DURATION,
+        ),
 
         // env actions
         Message::EditEnvironmentPressed(idx) => {
@@ -1458,21 +1450,16 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         Message::UpdateCheckResult(Ok(Some(info))) => {
             let msg = format!("Update available: v{}", info.version);
             app.available_update = Some(info);
-            let (id, duration) = app.toast_manager.show_with_action(
+            let (id, task) = crate::ui::toast::toast::show_with_action_and_schedule(
+                &mut app.toast_manager,
                 msg,
                 ToastStatus::Info,
-                std::time::Duration::from_secs(4),
+                crate::ui::toast::toast::TOAST_DURATION,
                 "Update",
             );
 
             app.update_toast_id = Some(id);
-            iced::Task::perform(
-                async move {
-                    tokio::time::sleep(duration).await;
-                    id
-                },
-                Message::DismissToast,
-            )
+            task
         }
 
         Message::ToastActionPressed(id) => {
@@ -1484,81 +1471,51 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             Task::none()
         }
 
-        Message::UpdateCheckResult(Ok(None)) => {
-            let (id, duration) = app.toast_manager.show(
-                "You're up to date.".to_string(),
-                ToastStatus::Info,
-                std::time::Duration::from_secs(4),
-            );
-            iced::Task::perform(
-                async move {
-                    tokio::time::sleep(duration).await;
-                    id
-                },
-                Message::DismissToast,
-            )
-        }
+        Message::UpdateCheckResult(Ok(None)) => crate::ui::toast::toast::show_and_schedule(
+            &mut app.toast_manager,
+            "You're up to date.".to_string(),
+            ToastStatus::Info,
+            crate::ui::toast::toast::TOAST_DURATION,
+        ),
 
-        Message::UpdateCheckResult(Err(e)) => {
-            let (id, duration) = app.toast_manager.show(
-                format!("Update check failed: {e}"),
-                ToastStatus::Error,
-                std::time::Duration::from_secs(4),
-            );
-            iced::Task::perform(
-                async move {
-                    tokio::time::sleep(duration).await;
-                    id
-                },
-                Message::DismissToast,
-            )
-        }
+        Message::UpdateCheckResult(Err(e)) => crate::ui::toast::toast::show_and_schedule(
+            &mut app.toast_manager,
+            format!("Update check failed: {e}"),
+            ToastStatus::Error,
+            crate::ui::toast::toast::TOAST_DURATION,
+        ),
 
         Message::InstallUpdate => {
-            let (_id, _duration) = app.toast_manager.show(
+            let toast_task = crate::ui::toast::toast::show_and_schedule(
+                &mut app.toast_manager,
                 "Downloading update…".to_string(),
                 ToastStatus::Info,
-                std::time::Duration::from_secs(4),
+                crate::ui::toast::toast::TOAST_DURATION,
             );
-            iced::Task::perform(
+            let update_task = iced::Task::perform(
                 async {
                     tokio::task::spawn_blocking(perform_update)
                         .await
                         .unwrap_or_else(|e| Err(e.to_string()))
                 },
                 Message::UpdateInstallResult,
-            )
+            );
+            iced::Task::batch([toast_task, update_task])
         }
 
-        Message::UpdateInstallResult(Ok(version)) => {
-            let (id, duration) = app.toast_manager.show(
-                format!("Updated to v{version}. Please restart the app."),
-                ToastStatus::Success,
-                std::time::Duration::from_secs(4),
-            );
-            iced::Task::perform(
-                async move {
-                    tokio::time::sleep(duration).await;
-                    id
-                },
-                Message::DismissToast,
-            )
-        }
+        Message::UpdateInstallResult(Ok(version)) => crate::ui::toast::toast::show_and_schedule(
+            &mut app.toast_manager,
+            format!("Updated to v{version}. Please restart the app."),
+            ToastStatus::Success,
+            crate::ui::toast::toast::TOAST_DURATION,
+        ),
 
-        Message::UpdateInstallResult(Err(e)) => {
-            let (id, duration) = app.toast_manager.show(
-                format!("Update failed: {e}"),
-                ToastStatus::Error,
-                std::time::Duration::from_secs(4),
-            );
-            iced::Task::perform(
-                async move {
-                    tokio::time::sleep(duration).await;
-                    id
-                },
-                Message::DismissToast,
-            )
-        }
+        Message::UpdateInstallResult(Err(e)) => crate::ui::toast::toast::show_and_schedule(
+            &mut app.toast_manager,
+            format!("Update failed: {e}"),
+            ToastStatus::Error,
+            crate::ui::toast::toast::TOAST_DURATION,
+        ),
         // end self update
         Message::DismissToast(id) => {
             app.toast_manager.dismiss(id);

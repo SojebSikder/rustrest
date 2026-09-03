@@ -2,6 +2,7 @@
 
 mod app;
 mod collection;
+mod collection_adapter;
 mod http_client;
 mod message;
 mod script_engine;
@@ -21,7 +22,7 @@ use iced::{Event, Subscription, event};
 use message::Message;
 
 const APP_NAME: &str = "Rustrest";
-const APP_VERSION: &str = "0.1.1";
+const APP_VERSION: &str = "0.1.2";
 
 pub fn main() -> iced::Result {
     iced::application(app::init, app::update, view)

@@ -1,3 +1,1 @@
-pub mod script_engine;
-
-pub use script_engine::{ScriptExecutionContext, ScriptRunner};
+pub use rustrest_core::script_engine::{ScriptExecutionContext, ScriptRunner};

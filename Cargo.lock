@@ -3593,7 +3593,6 @@ checksum = "eddd3ca559203180a307f12d114c268abf583f59b03cb906fd0b3ff8646c1147"
 dependencies = [
  "base64 0.22.1",
  "bytes",
- "futures-channel",
  "futures-core",
  "futures-util",
  "http",
@@ -3839,13 +3838,12 @@ dependencies = [
 
 [[package]]
 name = "rustrest"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
- "boa_engine",
- "dirs",
  "iced",
  "reqwest 0.12.28",
  "rfd",
+ "rustrest-core",
  "self_update",
  "serde",
  "serde_json",
@@ -3853,6 +3851,19 @@ dependencies = [
  "tokio-util",
  "url",
  "urlencoding",
+]
+
+[[package]]
+name = "rustrest-core"
+version = "0.1.1"
+dependencies = [
+ "boa_engine",
+ "dirs",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]
