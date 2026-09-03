@@ -81,6 +81,7 @@ pub fn create_tab_from_request(
         .unwrap_or_default();
     tab.collection_id = collection_id;
     tab.request_id = Some(node.id);
+    tab.sync_params_from_url();
 
     tab.method = match node.request.method.to_uppercase().as_str() {
         "GET" => HttpMethod::GET,

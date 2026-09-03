@@ -117,40 +117,42 @@ impl Tab {
         }
     }
 
+    /// rebuilds `request_params` from the query string of `self.url`
+    pub fn sync_params_from_url(&mut self) {
+        if let Ok(parsed_url) = url::Url::parse(&self.url)
+            .or_else(|_| url::Url::parse(&format!("http://localhost/{}", self.url)))
+        {
+            let inactive_params: Vec<(String, String)> = self
+                .request_params
+                .iter()
+                .filter(|p| !p.is_active)
+                .map(|p| (p.key.clone(), p.value.clone()))
+                .collect();
+
+            self.request_params.clear();
+            for (key, value) in parsed_url.query_pairs() {
+                let k = key.into_owned();
+                let v = value.into_owned();
+
+                let is_active = !inactive_params.iter().any(|(ik, iv)| ik == &k && iv == &v);
+
+                let mut kv = KeyValuePair::new(&k, &v);
+                kv.is_active = is_active;
+                self.request_params.push(kv);
+            }
+
+            if self.request_params.is_empty() || !self.request_params.last().unwrap().key.is_empty()
+            {
+                self.request_params.push(KeyValuePair::new("", ""));
+            }
+        }
+    }
+
     pub fn update(&mut self, message: TabMessage) {
         match message {
             TabMessage::UrlChanged(new_url) => {
-                self.url = new_url.clone();
-
-                if let Ok(parsed_url) = url::Url::parse(&new_url)
-                    .or_else(|_| url::Url::parse(&format!("http://localhost/{}", new_url)))
-                {
-                    let inactive_params: Vec<(String, String)> = self
-                        .request_params
-                        .iter()
-                        .filter(|p| !p.is_active)
-                        .map(|p| (p.key.clone(), p.value.clone()))
-                        .collect();
-
-                    self.request_params.clear();
-                    for (key, value) in parsed_url.query_pairs() {
-                        let k = key.into_owned();
-                        let v = value.into_owned();
-
-                        let is_active =
-                            !inactive_params.iter().any(|(ik, iv)| ik == &k && iv == &v);
-
-                        let mut kv = KeyValuePair::new(&k, &v);
-                        kv.is_active = is_active;
-                        self.request_params.push(kv);
-                    }
-
-                    if self.request_params.is_empty()
-                        || !self.request_params.last().unwrap().key.is_empty()
-                    {
-                        self.request_params.push(KeyValuePair::new("", ""));
-                    }
-                }
+                self.url = new_url;
+                self.sync_params_from_url();
             }
 
             TabMessage::ParamRowChanged(index, kv) => {
