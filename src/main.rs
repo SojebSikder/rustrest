@@ -12,6 +12,7 @@ mod updater;
 mod utils;
 mod workspace;
 
+use crate::ui::console_panel::{render_console_bar, render_console_panel};
 use crate::ui::env_editor::render_env_editor;
 use crate::ui::menu::menu::{
     DropdownItem, DropdownMessage, MenuGroup, render_menu_bar, render_menu_overlay,
@@ -20,7 +21,7 @@ use crate::ui::menu::menu_message::MenuMessage;
 use crate::ui::resize_handle::{DividerOrientation, resize_handle};
 use crate::ui::save_request_model::save_request_model::view_save_request_modal;
 use app::Rustrest;
-use iced::widget::{container, row, stack};
+use iced::widget::{column, container, row, stack};
 use iced::{Alignment, Element, Length, Padding, Size};
 use iced::{Event, Subscription, event};
 use message::{Message, ResizeKind};
@@ -163,7 +164,30 @@ fn view(app: &Rustrest) -> Element<'_, Message> {
         .toast_manager
         .view(Message::DismissToast, Message::ToastActionPressed);
 
-    let base_layout = row![sidebar, sidebar_resize_handle, workbench]
+    let console_bar = render_console_bar(&app.console_logs, app.console_collapsed);
+
+    let mut workbench_column = column![workbench, console_bar]
+        .spacing(10)
+        .width(Length::Fill)
+        .height(Length::Fill);
+
+    if !app.console_collapsed {
+        let console_resize_handle = resize_handle(
+            DividerOrientation::Horizontal,
+            Message::ResizeDragStarted(ResizeKind::ConsolePanel),
+        );
+        let console_content = container(render_console_panel(&app.console_logs))
+            .height(Length::Fixed(app.console_panel_height))
+            .width(Length::Fill)
+            .padding(10)
+            .style(container::bordered_box);
+
+        workbench_column = workbench_column
+            .push(console_resize_handle)
+            .push(console_content);
+    }
+
+    let base_layout = row![sidebar, sidebar_resize_handle, workbench_column]
         .spacing(10)
         .padding(Padding {
             top: 44.0,

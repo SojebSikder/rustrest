@@ -41,8 +41,6 @@ pub struct Tab {
     pub response_body_editor: text_editor::Content,
     pub is_loading: bool,
     pub cancel_token: CancellationToken,
-    // console
-    pub console_logs: Vec<String>,
 }
 
 impl Tab {
@@ -84,7 +82,6 @@ impl Tab {
             is_loading: false,
             cancel_token: CancellationToken::new(),
             response_body_editor: text_editor::Content::with_text(""),
-            console_logs: Vec::new(),
         }
     }
 

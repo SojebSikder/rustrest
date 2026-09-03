@@ -53,6 +53,7 @@ pub struct ResizeDrag {
 
 pub const SIDEBAR_WIDTH_RANGE: (f32, f32) = (180.0, 520.0);
 pub const REQUEST_PANE_HEIGHT_RANGE: (f32, f32) = (120.0, 700.0);
+pub const CONSOLE_PANEL_HEIGHT_RANGE: (f32, f32) = (120.0, 500.0);
 
 pub enum ContextMenu {
     Collection(usize),
@@ -107,6 +108,11 @@ pub struct Rustrest {
     pub sidebar_width: f32,
     pub request_pane_height: f32,
     pub resize_drag: Option<ResizeDrag>,
+
+    // console panel (global, bottom bar)
+    pub console_logs: Vec<String>,
+    pub console_collapsed: bool,
+    pub console_panel_height: f32,
 }
 
 impl Rustrest {
@@ -314,6 +320,9 @@ pub fn init() -> (Rustrest, Task<Message>) {
         sidebar_width: 260.0,
         request_pane_height: 320.0,
         resize_drag: None,
+        console_logs: Vec::new(),
+        console_collapsed: true,
+        console_panel_height: 220.0,
     };
 
     let load_errors = if let Some(manifest) = crate::workspace::load() {
@@ -848,7 +857,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     return Task::none();
                 }
 
-                tab.console_logs.clear();
+                app.console_logs.clear();
 
                 // build variable/header maps for the pre-request script
                 let mut script_vars: std::collections::HashMap<String, String> = app
@@ -884,7 +893,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     &mut script_vars,
                     &mut script_headers,
                 ) {
-                    Ok(logs) => tab.console_logs.extend(logs),
+                    Ok(logs) => app.console_logs.extend(logs),
                     Err(e) => return Task::done(Message::ShowToast(e, ToastStatus::Error)),
                 }
 
@@ -999,7 +1008,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                             &exec_ctx,
                         ) {
                             Ok((updated_vars, logs)) => {
-                                tab.console_logs.extend(logs);
+                                app.console_logs.extend(logs);
                                 if let Some(idx) = app.active_env_index {
                                     if let Some(env) = app.environments.get_mut(idx) {
                                         for (k, v) in updated_vars {
@@ -1424,6 +1433,11 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                         app.request_pane_height = (drag.start_size + delta)
                             .clamp(REQUEST_PANE_HEIGHT_RANGE.0, REQUEST_PANE_HEIGHT_RANGE.1);
                     }
+                    ResizeKind::ConsolePanel => {
+                        let delta = drag.start_cursor.y - position.y;
+                        app.console_panel_height = (drag.start_size + delta)
+                            .clamp(CONSOLE_PANEL_HEIGHT_RANGE.0, CONSOLE_PANEL_HEIGHT_RANGE.1);
+                    }
                 }
             }
             app.cursor_position = position;
@@ -1434,6 +1448,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             let start_size = match kind {
                 ResizeKind::Sidebar => app.sidebar_width,
                 ResizeKind::RequestPane => app.request_pane_height,
+                ResizeKind::ConsolePanel => app.console_panel_height,
             };
             app.resize_drag = Some(ResizeDrag {
                 kind,
@@ -1445,6 +1460,16 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
 
         Message::ResizeDragEnded => {
             app.resize_drag = None;
+            Task::none()
+        }
+
+        Message::ToggleConsolePanel => {
+            app.console_collapsed = !app.console_collapsed;
+            Task::none()
+        }
+
+        Message::ClearConsoleLogs => {
+            app.console_logs.clear();
             Task::none()
         }
 

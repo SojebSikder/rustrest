@@ -11,6 +11,7 @@ use crate::updater::UpdateInfo;
 pub enum ResizeKind {
     Sidebar,
     RequestPane,
+    ConsolePanel,
 }
 
 #[derive(Debug, Clone)]
@@ -162,6 +163,10 @@ pub enum Message {
     // panel resizing
     ResizeDragStarted(ResizeKind),
     ResizeDragEnded,
+
+    // console panel
+    ToggleConsolePanel,
+    ClearConsoleLogs,
 
     // git
     InitGitCollectionPressed(usize), // "Save as git folder" on a collection

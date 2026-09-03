@@ -111,16 +111,14 @@ pub enum ResponseSubTab {
     Cookies,
     Headers,
     TestResults,
-    Console,
 }
 
 impl ResponseSubTab {
-    pub const ALL: [ResponseSubTab; 5] = [
+    pub const ALL: [ResponseSubTab; 4] = [
         ResponseSubTab::Body,
         ResponseSubTab::Cookies,
         ResponseSubTab::Headers,
         ResponseSubTab::TestResults,
-        ResponseSubTab::Console,
     ];
 
     pub fn label(&self) -> &str {
@@ -129,7 +127,6 @@ impl ResponseSubTab {
             ResponseSubTab::Cookies => "Cookies",
             ResponseSubTab::Headers => "Headers",
             ResponseSubTab::TestResults => "Test Results",
-            ResponseSubTab::Console => "Console",
         }
     }
 }

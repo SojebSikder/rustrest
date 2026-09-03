@@ -1,5 +1,30 @@
-use iced::widget::{column, container, row, scrollable, text};
+use crate::message::Message;
+use iced::widget::{Space, button, column, container, row, scrollable, text};
 use iced::{Alignment, Element, Font, Length};
+
+/// render the bottom bar header strip: title + log count, expand/collapse toggle, and a clear button.
+pub fn render_console_bar<'a>(logs: &'a [String], collapsed: bool) -> Element<'a, Message> {
+    let toggle_icon = if collapsed { "▸" } else { "▾" };
+    let label = if logs.is_empty() {
+        "Console".to_string()
+    } else {
+        format!("Console ({})", logs.len())
+    };
+
+    row![
+        button(text(format!("{} {}", toggle_icon, label)).size(13))
+            .style(button::text)
+            .padding([4, 6])
+            .on_press(Message::ToggleConsolePanel),
+        Space::new().width(Length::Fill),
+        button(text("Clear").size(12))
+            .style(button::text)
+            .padding([4, 6])
+            .on_press(Message::ClearConsoleLogs),
+    ]
+    .align_y(Alignment::Center)
+    .into()
+}
 
 /// render console log panel from a list of log lines.
 pub fn render_console_panel<'a, Message>(logs: &'a [String]) -> Element<'a, Message>

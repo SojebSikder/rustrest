@@ -1,7 +1,6 @@
 use super::super::Tab;
 use super::super::messages::TabMessage;
 use super::super::types::{ResponseSubTab, ResponseView};
-use crate::ui::console_panel::render_console_panel;
 use iced::widget::{
     Space, button, column, container, pick_list, row, scrollable, text, text_editor,
 };
@@ -46,7 +45,6 @@ where
                 ResponseSubTab::Cookies,
                 ResponseSubTab::Headers,
                 ResponseSubTab::TestResults,
-                ResponseSubTab::Console,
             ];
             let mut resp_tab_bar = row![].spacing(4).align_y(Alignment::Center);
 
@@ -57,13 +55,6 @@ where
                     ResponseSubTab::Cookies => "Cookies".to_string(),
                     ResponseSubTab::Headers => "Headers".to_string(),
                     ResponseSubTab::TestResults => "Test Results".to_string(),
-                    ResponseSubTab::Console => {
-                        if tab.console_logs.is_empty() {
-                            "Console".to_string()
-                        } else {
-                            format!("Console ({})", tab.console_logs.len())
-                        }
-                    }
                 };
 
                 let mut resp_btn = button(text(tab_label).size(13)).padding([6, 12]);
@@ -304,7 +295,6 @@ where
                         .into()
                 }
 
-                ResponseSubTab::Console => render_console_panel(&tab.console_logs),
             };
 
             column![postman_header, dynamic_pane].spacing(12).into()
