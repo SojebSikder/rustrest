@@ -10,6 +10,7 @@ mod session;
 mod ui;
 mod updater;
 mod utils;
+mod workspace;
 
 use crate::ui::env_editor::render_env_editor;
 use crate::ui::menu::menu::{

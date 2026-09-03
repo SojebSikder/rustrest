@@ -9,6 +9,8 @@ use iced::widget::{
 use iced::{Alignment, Element, Font, Length};
 
 pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
+    let workspace_selector = render_workspace_selector(app);
+
     let env_options: Vec<String> = app.environments.iter().map(|e| e.name.clone()).collect();
     let current_env_selection = app
         .active_env_index
@@ -55,7 +57,7 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
         left: 0.0,
     });
 
-    let mut sidebar_contents = column![env_selector].spacing(10);
+    let mut sidebar_contents = column![workspace_selector, env_selector].spacing(10);
 
     if app.collections.is_empty() {
         sidebar_contents = sidebar_contents.push(
@@ -113,6 +115,75 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
         .height(Length::Fill)
         .padding(10)
         .style(container::bordered_box)
+        .into()
+}
+
+fn render_workspace_selector(app: &Rustrest) -> Element<'_, Message> {
+    let active_id = app.active_workspace_id;
+    let active_name = app
+        .workspaces
+        .iter()
+        .find(|w| w.id == active_id)
+        .map(|w| w.name.clone());
+
+    let is_editing = app.editing_workspace_id == Some(active_id);
+
+    let content: Element<'_, Message> = if is_editing {
+        let current_name = active_name.clone().unwrap_or_default();
+        row![
+            text_input("Workspace Name...", &current_name)
+                .on_input(move |txt| Message::WorkspaceNameChanged(active_id, txt))
+                .on_submit(Message::SaveWorkspaceNamePressed(active_id))
+                .width(Length::Fixed(120.0))
+                .padding(2),
+            button(text("💾").size(11))
+                .on_press(Message::SaveWorkspaceNamePressed(active_id))
+                .style(button::text)
+        ]
+        .spacing(5)
+        .align_y(Alignment::Center)
+        .into()
+    } else {
+        let workspace_options: Vec<String> =
+            app.workspaces.iter().map(|w| w.name.clone()).collect();
+
+        let mut ws_row = row![
+            pick_list(workspace_options, active_name, |selected| {
+                Message::WorkspaceSelected(selected)
+            })
+            .placeholder("Workspace")
+            .width(Length::Fixed(140.0)),
+            button(text("+").size(14))
+                .on_press(Message::CreateWorkspacePressed)
+                .padding([4, 8])
+                .style(button::secondary),
+            button(text("✎").size(12))
+                .on_press(Message::RenameWorkspacePressed(active_id))
+                .padding([4, 6])
+                .style(button::secondary),
+        ]
+        .spacing(6)
+        .align_y(Alignment::Center);
+
+        if app.workspaces.len() > 1 {
+            ws_row = ws_row.push(
+                button(text("✕").size(12))
+                    .on_press(Message::DeleteWorkspacePressed(active_id))
+                    .padding([4, 6])
+                    .style(button::danger),
+            );
+        }
+
+        ws_row.into()
+    };
+
+    container(content)
+        .padding(Padding {
+            top: 0.0,
+            right: 0.0,
+            bottom: 5.0,
+            left: 0.0,
+        })
         .into()
 }
 

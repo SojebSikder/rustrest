@@ -60,6 +60,14 @@ pub enum Message {
     EnvNameChanged(usize, String),
     SaveEnvNamePressed(usize),
 
+    // workspace actions
+    WorkspaceSelected(String),
+    CreateWorkspacePressed,
+    DeleteWorkspacePressed(usize),
+    RenameWorkspacePressed(usize),
+    WorkspaceNameChanged(usize, String),
+    SaveWorkspaceNamePressed(usize),
+
     // collection viewer actions
     CollectionSubTabSelected(CollectionSubTab),
     CollectionVariableChanged {

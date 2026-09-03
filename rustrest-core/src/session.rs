@@ -2,7 +2,7 @@ use crate::collection::model::PostmanRequestNode;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SavedTabEntry {
     HttpRequest {
         request_id: Option<usize>,
@@ -14,7 +14,7 @@ pub enum SavedTabEntry {
     },
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SavedSession {
     pub tabs: Vec<SavedTabEntry>,
     pub active_tab_index: usize,

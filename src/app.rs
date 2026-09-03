@@ -18,6 +18,7 @@ use crate::utils::{
     contains_request_node_by_id, format_json_or_fallback, insert_nested, insert_nested_request,
     remove_nested, remove_nested_request, rename_nested_folder, update_node,
 };
+use crate::workspace::{CollectionSource, SavedWorkspace, WorkspaceManifest};
 use crate::{APP_NAME, APP_VERSION};
 use iced::Task;
 use tokio_util::sync::CancellationToken;
@@ -46,7 +47,10 @@ pub struct TabState {
 
 pub enum ContextMenu {
     Collection(usize),
-    Folder { col_id: usize, path: Vec<String> },
+    Folder {
+        col_id: usize,
+        path: Vec<String>,
+    },
     Request {
         col_id: usize,
         folder_path: Vec<String>,
@@ -64,6 +68,11 @@ pub struct Rustrest {
     pub active_tab_index: usize,
     pub next_tab_id: usize,
     pub next_request_id: usize,
+
+    pub workspaces: Vec<SavedWorkspace>,
+    pub active_workspace_id: usize,
+    pub next_workspace_id: usize,
+    pub editing_workspace_id: Option<usize>,
 
     // Rename state management tracks
     pub editing_collection_id: Option<usize>,
@@ -115,6 +124,89 @@ impl Rustrest {
             next_tab_id: self.next_tab_id,
             next_request_id: self.next_request_id,
         }
+    }
+
+    /// builds a `SavedWorkspace` record for the currently active workspace
+    /// from the live app state. Collections that were never saved to a file
+    /// or git folder have no known location to reload from, so they're
+    /// dropped from the snapshot
+    pub fn snapshot_active_workspace(&self) -> (SavedWorkspace, usize) {
+        let mut collection_sources = Vec::new();
+        let mut dropped = 0;
+        for c in &self.collections {
+            if let Some(dir) = &c.storage_dir {
+                collection_sources.push(CollectionSource::Dir(dir.clone()));
+            } else if let Some(path) = &c.file_path {
+                collection_sources.push(CollectionSource::File(path.clone()));
+            } else {
+                dropped += 1;
+            }
+        }
+
+        let name = self
+            .workspaces
+            .iter()
+            .find(|w| w.id == self.active_workspace_id)
+            .map(|w| w.name.clone())
+            .unwrap_or_else(|| "Workspace".to_string());
+
+        let ws = SavedWorkspace {
+            id: self.active_workspace_id,
+            name,
+            collection_sources,
+            environments: self.environments.clone(),
+            active_env_index: self.active_env_index,
+            session: self.build_session_snapshot(),
+        };
+        (ws, dropped)
+    }
+
+    /// snapshots the active workspace and writes it back into `self.workspaces`
+    pub fn commit_active_workspace_snapshot(&mut self) -> usize {
+        let (ws, dropped) = self.snapshot_active_workspace();
+        if let Some(existing) = self.workspaces.iter_mut().find(|w| w.id == ws.id) {
+            *existing = ws;
+        } else {
+            self.workspaces.push(ws);
+        }
+        dropped
+    }
+
+    pub fn build_workspace_manifest(&self) -> WorkspaceManifest {
+        WorkspaceManifest {
+            workspaces: self.workspaces.clone(),
+            active_workspace_id: self.active_workspace_id,
+            next_workspace_id: self.next_workspace_id,
+        }
+    }
+
+    /// makes `ws` the live workspace: clears current collections/tabs, reloads
+    /// `ws`'s collections from their remembered file/folder locations, adopts
+    /// its environments and restores its tabs
+    pub fn apply_workspace(&mut self, ws: &SavedWorkspace) -> Vec<String> {
+        self.collections.clear();
+        self.tabs.clear();
+        self.active_tab_index = 0;
+
+        let mut errors = Vec::new();
+        for source in &ws.collection_sources {
+            match load_collection_from_source(source) {
+                Ok(mut collection) => {
+                    collection.id = self.next_tab_id;
+                    self.next_tab_id += 1;
+                    collection.assign_request_ids(&mut self.next_request_id);
+                    self.collections.push(collection);
+                }
+                Err(err) => errors.push(err),
+            }
+        }
+
+        self.environments = ws.environments.clone();
+        self.active_env_index = ws.active_env_index;
+
+        restore_session_into_app(self, &ws.session);
+
+        errors
     }
 
     // syncs the collection tabs to the collection's current state,
@@ -176,20 +268,19 @@ impl Rustrest {
 }
 
 pub fn init() -> (Rustrest, Task<Message>) {
-    let mut demo_env = Environment::new("Default");
-    if !demo_env.variables.is_empty() {
-        demo_env.variables[0].is_active = true;
-    }
-
     let mut app = Rustrest {
         collections: Vec::new(),
-        environments: vec![demo_env],
+        environments: Vec::new(),
         active_env_index: None,
         tabs: vec![],
         active_tab_index: 0,
         editing_env_index: None,
         next_tab_id: 2,
         next_request_id: 1,
+        workspaces: Vec::new(),
+        active_workspace_id: 1,
+        next_workspace_id: 2,
+        editing_workspace_id: None,
         editing_collection_id: None,
         editing_folder_collection_id: None,
         editing_folder_path: Vec::new(),
@@ -208,45 +299,45 @@ pub fn init() -> (Rustrest, Task<Message>) {
         update_toast_id: None,
     };
 
-    if let Some(saved) = crate::session::load() {
-        for entry in saved.tabs {
-            match entry {
-                SavedTabEntry::HttpRequest {
-                    collection_id,
-                    request_id,
-                    node,
-                } => {
-                    let mut tab = create_tab_from_request(app.next_tab_id, &node, collection_id);
-                    tab.request_id = request_id;
-                    app.tabs.push(TabState {
-                        tab,
-                        content: WorkspaceContent::HttpRequest,
-                        is_editing_name: false,
-                    });
-                    app.next_tab_id += 1;
-                }
-                SavedTabEntry::CollectionRoot { collection_id } => {
-                    // only restore if the collection is still loaded/re-imported
-                    if let Some(col) = app.collections.iter().find(|c| c.id == collection_id) {
-                        let mut root_tab = Tab::new(app.next_tab_id);
-                        root_tab.name = col.info.name.clone();
-                        app.tabs.push(TabState {
-                            tab: root_tab,
-                            content: WorkspaceContent::CollectionRoot {
-                                collection_id,
-                                collection_name: col.info.name.clone(),
-                                active_sub_tab: CollectionSubTab::Variables,
-                            },
-                            is_editing_name: false,
-                        });
-                        app.next_tab_id += 1;
-                    }
-                }
-            }
+    let load_errors = if let Some(manifest) = crate::workspace::load() {
+        app.workspaces = manifest.workspaces;
+        app.active_workspace_id = manifest.active_workspace_id;
+        app.next_workspace_id = manifest.next_workspace_id;
+
+        if app.workspaces.is_empty() {
+            let default_ws = default_workspace(1, None);
+            app.workspaces.push(default_ws);
+            app.active_workspace_id = 1;
+            app.next_workspace_id = 2;
         }
-        app.active_tab_index = saved.active_tab_index.min(app.tabs.len().saturating_sub(1));
-        app.next_request_id = saved.next_request_id.max(app.next_request_id);
-    }
+
+        let active = app
+            .workspaces
+            .iter()
+            .find(|w| w.id == app.active_workspace_id)
+            .or_else(|| app.workspaces.first())
+            .cloned();
+
+        match active {
+            Some(active) => {
+                app.active_workspace_id = active.id;
+                app.apply_workspace(&active)
+            }
+            None => Vec::new(),
+        }
+    } else {
+        // first run, or upgrading from a pre-workspace install: best-effort
+        // migrate any tabs from the legacy session.json into a new default
+        // workspace, then persist the manifest so this only runs once.
+        let legacy_session = crate::session::load();
+        let default_ws = default_workspace(1, legacy_session);
+        app.workspaces = vec![default_ws.clone()];
+        app.active_workspace_id = 1;
+        app.next_workspace_id = 2;
+        let errors = app.apply_workspace(&default_ws);
+        crate::workspace::save(&app.build_workspace_manifest());
+        errors
+    };
 
     if app.tabs.is_empty() {
         app.tabs.push(TabState {
@@ -257,7 +348,93 @@ pub fn init() -> (Rustrest, Task<Message>) {
         app.next_tab_id += 1;
     }
 
-    (app, Task::none())
+    let startup_task = if load_errors.is_empty() {
+        Task::none()
+    } else {
+        Task::batch(
+            load_errors
+                .into_iter()
+                .map(|err| Task::done(Message::ShowToast(err, ToastStatus::Error))),
+        )
+    };
+
+    (app, startup_task)
+}
+
+fn default_workspace(id: usize, legacy_session: Option<SavedSession>) -> SavedWorkspace {
+    let mut demo_env = Environment::new("Default");
+    if !demo_env.variables.is_empty() {
+        demo_env.variables[0].is_active = true;
+    }
+
+    SavedWorkspace {
+        id,
+        name: "Default".to_string(),
+        collection_sources: Vec::new(),
+        environments: vec![demo_env],
+        active_env_index: None,
+        session: legacy_session.unwrap_or(SavedSession {
+            tabs: Vec::new(),
+            active_tab_index: 0,
+            next_tab_id: 0,
+            next_request_id: 0,
+        }),
+    }
+}
+
+fn load_collection_from_source(source: &CollectionSource) -> Result<PostmanCollection, String> {
+    match source {
+        CollectionSource::File(path) => {
+            let content = std::fs::read_to_string(path)
+                .map_err(|e| format!("Failed to read {:?}: {e}", path))?;
+            let mut collection = serde_json::from_str::<PostmanCollection>(&content)
+                .map_err(|e| format!("Failed to parse {:?}: {e}", path))?;
+            collection.file_path = Some(path.clone());
+            Ok(collection)
+        }
+        CollectionSource::Dir(dir) => crate::collection::dir_storage::load_collection_from_dir(dir),
+    }
+}
+
+/// restores tabs from a saved session into `app`
+fn restore_session_into_app(app: &mut Rustrest, saved: &SavedSession) {
+    for entry in &saved.tabs {
+        match entry {
+            SavedTabEntry::HttpRequest {
+                collection_id,
+                request_id,
+                node,
+            } => {
+                let mut tab = create_tab_from_request(app.next_tab_id, node, *collection_id);
+                tab.request_id = *request_id;
+                app.tabs.push(TabState {
+                    tab,
+                    content: WorkspaceContent::HttpRequest,
+                    is_editing_name: false,
+                });
+                app.next_tab_id += 1;
+            }
+            SavedTabEntry::CollectionRoot { collection_id } => {
+                let collection_id = *collection_id;
+                if let Some(col) = app.collections.iter().find(|c| c.id == collection_id) {
+                    let mut root_tab = Tab::new(app.next_tab_id);
+                    root_tab.name = col.info.name.clone();
+                    app.tabs.push(TabState {
+                        tab: root_tab,
+                        content: WorkspaceContent::CollectionRoot {
+                            collection_id,
+                            collection_name: col.info.name.clone(),
+                            active_sub_tab: CollectionSubTab::Variables,
+                        },
+                        is_editing_name: false,
+                    });
+                    app.next_tab_id += 1;
+                }
+            }
+        }
+    }
+    app.active_tab_index = saved.active_tab_index.min(app.tabs.len().saturating_sub(1));
+    app.next_request_id = saved.next_request_id.max(app.next_request_id);
 }
 
 fn persist_collection_if_known_location(
@@ -1321,6 +1498,145 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             Task::none()
         }
 
+        // workspace actions
+        Message::WorkspaceSelected(name) => {
+            let target_id = app.workspaces.iter().find(|w| w.name == name).map(|w| w.id);
+            let Some(target_id) = target_id else {
+                return Task::none();
+            };
+            if target_id == app.active_workspace_id {
+                return Task::none();
+            }
+
+            let dropped = app.commit_active_workspace_snapshot();
+            crate::workspace::save(&app.build_workspace_manifest());
+
+            let target = app.workspaces.iter().find(|w| w.id == target_id).cloned();
+            let Some(target) = target else {
+                return Task::none();
+            };
+
+            let load_errors = app.apply_workspace(&target);
+            app.active_workspace_id = target_id;
+
+            let mut tasks = vec![Task::done(Message::ShowToast(
+                format!("Switched to workspace '{}'", target.name),
+                ToastStatus::Success,
+            ))];
+            if dropped > 0 {
+                tasks.push(Task::done(Message::ShowToast(
+                    format!(
+                        "{dropped} unsaved collection(s) weren't carried over — save them to disk first to keep them across workspace switches"
+                    ),
+                    ToastStatus::Info,
+                )));
+            }
+            tasks.extend(
+                load_errors
+                    .into_iter()
+                    .map(|err| Task::done(Message::ShowToast(err, ToastStatus::Error))),
+            );
+            Task::batch(tasks)
+        }
+
+        Message::CreateWorkspacePressed => {
+            app.commit_active_workspace_snapshot();
+            crate::workspace::save(&app.build_workspace_manifest());
+
+            let new_id = app.next_workspace_id;
+            app.next_workspace_id += 1;
+
+            let mut env = Environment::new("Default");
+            if !env.variables.is_empty() {
+                env.variables[0].is_active = true;
+            }
+
+            let new_ws = SavedWorkspace {
+                id: new_id,
+                name: format!("Workspace {new_id}"),
+                collection_sources: Vec::new(),
+                environments: vec![env],
+                active_env_index: None,
+                session: SavedSession {
+                    tabs: Vec::new(),
+                    active_tab_index: 0,
+                    next_tab_id: 0,
+                    next_request_id: 0,
+                },
+            };
+            app.workspaces.push(new_ws.clone());
+            app.apply_workspace(&new_ws);
+            app.active_workspace_id = new_id;
+            crate::workspace::save(&app.build_workspace_manifest());
+
+            Task::done(Message::ShowToast(
+                format!("Created workspace '{}'", new_ws.name),
+                ToastStatus::Success,
+            ))
+        }
+
+        Message::DeleteWorkspacePressed(id) => {
+            if app.workspaces.len() <= 1 {
+                return Task::done(Message::ShowToast(
+                    "Can't delete the only workspace".to_string(),
+                    ToastStatus::Error,
+                ));
+            }
+
+            let deleted_name = app
+                .workspaces
+                .iter()
+                .find(|w| w.id == id)
+                .map(|w| w.name.clone());
+            app.workspaces.retain(|w| w.id != id);
+
+            let mut load_errors = Vec::new();
+            if id == app.active_workspace_id {
+                if let Some(next) = app.workspaces.first().cloned() {
+                    load_errors = app.apply_workspace(&next);
+                    app.active_workspace_id = next.id;
+                }
+            }
+            crate::workspace::save(&app.build_workspace_manifest());
+
+            let mut tasks = Vec::new();
+            if let Some(name) = deleted_name {
+                tasks.push(Task::done(Message::ShowToast(
+                    format!("Deleted workspace '{name}'"),
+                    ToastStatus::Success,
+                )));
+            }
+            tasks.extend(
+                load_errors
+                    .into_iter()
+                    .map(|err| Task::done(Message::ShowToast(err, ToastStatus::Error))),
+            );
+            Task::batch(tasks)
+        }
+
+        Message::RenameWorkspacePressed(id) => {
+            app.editing_workspace_id = Some(id);
+            Task::none()
+        }
+
+        Message::WorkspaceNameChanged(id, new_name) => {
+            if let Some(ws) = app.workspaces.iter_mut().find(|w| w.id == id) {
+                ws.name = new_name;
+            }
+            Task::none()
+        }
+
+        Message::SaveWorkspaceNamePressed(id) => {
+            app.editing_workspace_id = None;
+            if let Some(ws) = app.workspaces.iter_mut().find(|w| w.id == id) {
+                if ws.name.trim().is_empty() {
+                    ws.name = format!("Workspace {id}");
+                }
+            }
+            crate::workspace::save(&app.build_workspace_manifest());
+            Task::none()
+        }
+
         // menu actions
         Message::MenuInteraction(dropdown_msg) => {
             if let Some(menu_action) = app.menu_state.update(dropdown_msg) {
@@ -1494,8 +1810,8 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
 
         // temporary data stores
         Message::AutosaveTick => {
-            let snapshot = app.build_session_snapshot();
-            crate::session::save(&snapshot);
+            app.commit_active_workspace_snapshot();
+            crate::workspace::save(&app.build_workspace_manifest());
             Task::none()
         }
 
@@ -1585,8 +1901,8 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         }
         // exit the application
         Message::AppExit => {
-            let snapshot = app.build_session_snapshot();
-            crate::session::save(&snapshot);
+            app.commit_active_workspace_snapshot();
+            crate::workspace::save(&app.build_workspace_manifest());
             iced::exit()
         }
     }
