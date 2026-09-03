@@ -6,6 +6,7 @@ mod views;
 
 pub use state::Tab;
 
+use crate::ui::resize_handle::{DividerOrientation, resize_handle};
 use iced::widget::{column, container};
 use iced::{Element, Length};
 pub use messages::TabMessage;
@@ -15,6 +16,8 @@ impl Tab {
         &self,
         wrap_msg: impl Fn(TabMessage) -> Message + Copy + 'static,
         on_send: Message,
+        request_pane_height: f32,
+        on_resize_start: Message,
     ) -> Element<'_, Message>
     where
         Message: Clone + 'static,
@@ -25,7 +28,8 @@ impl Tab {
 
         column![
             request_bar,
-            configuration_pane,
+            container(configuration_pane).height(Length::Fixed(request_pane_height)),
+            resize_handle(DividerOrientation::Horizontal, on_resize_start),
             container(response_content)
                 .height(Length::Fill)
                 .width(Length::Fill)
@@ -34,7 +38,7 @@ impl Tab {
         ]
         .height(Length::Fill)
         .width(Length::Fill)
-        .spacing(18)
+        .spacing(10)
         .into()
     }
 }

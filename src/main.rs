@@ -17,12 +17,13 @@ use crate::ui::menu::menu::{
     DropdownItem, DropdownMessage, MenuGroup, render_menu_bar, render_menu_overlay,
 };
 use crate::ui::menu::menu_message::MenuMessage;
+use crate::ui::resize_handle::{DividerOrientation, resize_handle};
 use crate::ui::save_request_model::save_request_model::view_save_request_modal;
 use app::Rustrest;
 use iced::widget::{container, row, stack};
 use iced::{Alignment, Element, Length, Padding, Size};
 use iced::{Event, Subscription, event};
-use message::Message;
+use message::{Message, ResizeKind};
 
 const APP_NAME: &str = "Rustrest";
 const APP_VERSION: &str = "0.1.2";
@@ -105,6 +106,18 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         Subscription::none()
     };
 
+    // while a panel divider is being dragged, release the drag on mouse-up
+    let resize_drag_sub = if app.resize_drag.is_some() {
+        event::listen_with(|event, _status, _window| match event {
+            Event::Mouse(iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left)) => {
+                Some(Message::ResizeDragEnded)
+            }
+            _ => None,
+        })
+    } else {
+        Subscription::none()
+    };
+
     Subscription::batch([
         context_menu_sub,
         menu_bar_sub,
@@ -113,6 +126,7 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         close_requested,
         cursor_tracker,
         tab_rename_sub,
+        resize_drag_sub,
     ])
 }
 
@@ -139,14 +153,18 @@ fn view(app: &Rustrest) -> Element<'_, Message> {
     let menu_strip = render_menu_bar(&menu_structure).map(Message::MenuInteraction);
 
     let sidebar = ui::sidebar::render_sidebar(app);
+    let sidebar_resize_handle = resize_handle(
+        DividerOrientation::Vertical,
+        Message::ResizeDragStarted(ResizeKind::Sidebar),
+    );
     let workbench = ui::workspace::render_workbench(app);
-    // let toast_layer = app.toast_manager.view(|id| Message::DismissToast(id));
+
     let toast_layer = app
         .toast_manager
         .view(Message::DismissToast, Message::ToastActionPressed);
 
-    let base_layout = row![sidebar, workbench]
-        .spacing(15)
+    let base_layout = row![sidebar, sidebar_resize_handle, workbench]
+        .spacing(10)
         .padding(Padding {
             top: 44.0,
             left: 15.0,

@@ -111,7 +111,7 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
     }
 
     container(scrollable(sidebar_contents))
-        .width(Length::Fixed(260.0))
+        .width(Length::Fixed(app.sidebar_width))
         .height(Length::Fill)
         .padding(10)
         .style(container::bordered_box)

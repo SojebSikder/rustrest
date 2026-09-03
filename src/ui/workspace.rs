@@ -1,6 +1,6 @@
 use crate::app::{Rustrest, WorkspaceContent};
 use crate::http_client::HttpMethod;
-use crate::message::Message;
+use crate::message::{Message, ResizeKind};
 use iced::widget::{button, column, mouse_area, row, text, text_input};
 use iced::{Alignment, Element, Length};
 
@@ -80,9 +80,12 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
 
     // collection root UI, routed into the active workspace window
     let tab_view: Element<Message> = match &active_tab_state.content {
-        WorkspaceContent::HttpRequest => active_tab_state
-            .tab
-            .view(Message::ActiveTabMessage, Message::SendPressed),
+        WorkspaceContent::HttpRequest => active_tab_state.tab.view(
+            Message::ActiveTabMessage,
+            Message::SendPressed,
+            app.request_pane_height,
+            Message::ResizeDragStarted(ResizeKind::RequestPane),
+        ),
 
         WorkspaceContent::CollectionRoot {
             collection_id,

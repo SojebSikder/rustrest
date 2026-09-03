@@ -5,7 +5,7 @@ use crate::collection::collection::{
 use crate::collection::env::Environment;
 use crate::collection_adapter::create_tab_from_request;
 use crate::http_client::send_request;
-use crate::message::Message;
+use crate::message::{Message, ResizeKind};
 use crate::session::{SavedSession, SavedTabEntry};
 use crate::ui::menu::menu::DropdownMenuState;
 use crate::ui::menu::menu_message::MenuMessage;
@@ -44,6 +44,15 @@ pub struct TabState {
     pub content: WorkspaceContent,
     pub is_editing_name: bool,
 }
+
+pub struct ResizeDrag {
+    pub kind: ResizeKind,
+    pub start_cursor: iced::Point,
+    pub start_size: f32,
+}
+
+pub const SIDEBAR_WIDTH_RANGE: (f32, f32) = (180.0, 520.0);
+pub const REQUEST_PANE_HEIGHT_RANGE: (f32, f32) = (120.0, 700.0);
 
 pub enum ContextMenu {
     Collection(usize),
@@ -93,6 +102,11 @@ pub struct Rustrest {
 
     pub available_update: Option<UpdateInfo>,
     pub update_toast_id: Option<usize>,
+
+    // panel resizing
+    pub sidebar_width: f32,
+    pub request_pane_height: f32,
+    pub resize_drag: Option<ResizeDrag>,
 }
 
 impl Rustrest {
@@ -297,6 +311,9 @@ pub fn init() -> (Rustrest, Task<Message>) {
         editing_env_name: false,
         available_update: None,
         update_toast_id: None,
+        sidebar_width: 260.0,
+        request_pane_height: 320.0,
+        resize_drag: None,
     };
 
     let load_errors = if let Some(manifest) = crate::workspace::load() {
@@ -1395,7 +1412,39 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         }
 
         Message::CursorMoved(position) => {
+            if let Some(drag) = &app.resize_drag {
+                match drag.kind {
+                    ResizeKind::Sidebar => {
+                        let delta = position.x - drag.start_cursor.x;
+                        app.sidebar_width = (drag.start_size + delta)
+                            .clamp(SIDEBAR_WIDTH_RANGE.0, SIDEBAR_WIDTH_RANGE.1);
+                    }
+                    ResizeKind::RequestPane => {
+                        let delta = position.y - drag.start_cursor.y;
+                        app.request_pane_height = (drag.start_size + delta)
+                            .clamp(REQUEST_PANE_HEIGHT_RANGE.0, REQUEST_PANE_HEIGHT_RANGE.1);
+                    }
+                }
+            }
             app.cursor_position = position;
+            Task::none()
+        }
+
+        Message::ResizeDragStarted(kind) => {
+            let start_size = match kind {
+                ResizeKind::Sidebar => app.sidebar_width,
+                ResizeKind::RequestPane => app.request_pane_height,
+            };
+            app.resize_drag = Some(ResizeDrag {
+                kind,
+                start_cursor: app.cursor_position,
+                start_size,
+            });
+            Task::none()
+        }
+
+        Message::ResizeDragEnded => {
+            app.resize_drag = None;
             Task::none()
         }
 

@@ -7,6 +7,12 @@ use crate::ui::tab::TabMessage;
 use crate::ui::toast::toast::ToastStatus;
 use crate::updater::UpdateInfo;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResizeKind {
+    Sidebar,
+    RequestPane,
+}
+
 #[derive(Debug, Clone)]
 pub enum Message {
     TabSelected(usize),
@@ -152,6 +158,10 @@ pub enum Message {
     CursorMoved(iced::Point),
     MenuInteraction(DropdownMessage<MenuMessage>),
     SaveActiveRequestShortcut,
+
+    // panel resizing
+    ResizeDragStarted(ResizeKind),
+    ResizeDragEnded,
 
     // git
     InitGitCollectionPressed(usize), // "Save as git folder" on a collection
