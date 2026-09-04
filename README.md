@@ -62,4 +62,4 @@ cargo run --release
 - And many more...
 
 ## Contribute
-See [CONTRIBUTING.md](CONTRIBUTING.md) for details on how to contribute to RustRest.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for details on how to contribute to Rustrest.

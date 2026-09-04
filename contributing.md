@@ -1,6 +1,6 @@
-# Contributing to RustRest
+# Contributing to Rustrest
 
-First off, thank you for considering contributing to **RustRest**! It’s contributions like yours that make RustRest a great native desktop API client.
+First off, thank you for considering contributing to **Rustrest**! It’s contributions like yours that make Rustrest a great native desktop API client.
 
 Please take a moment to review this document to ensure a smooth contribution process.
 
@@ -20,7 +20,7 @@ Before creating a bug report, please check the [Issue Tracker](https://github.co
 
 When creating a bug report, please include:
 * **Operating System & Architecture** (e.g., Ubuntu 24.04 x86_64, macOS Sonoma ARM64, Windows 11).
-* **RustRest Version** (or commit hash).
+* **Rustrest Version** (or commit hash).
 * **Steps to Reproduce** the issue clearly.
 * **Expected vs. Actual Behavior**.
 * **Log Output or Screenshots** (if applicable).
@@ -29,7 +29,7 @@ When creating a bug report, please include:
 
 Feature requests are always welcome! When suggesting a new feature:
 * Provide a clear and descriptive title.
-* Explain **why** this feature would be useful to RustRest users.
+* Explain **why** this feature would be useful to Rustrest users.
 * Describe **how** you envision the feature working (UI mockups or workflow descriptions are appreciated).
 
 ### 3. Submitting Pull Requests (PRs)
@@ -102,4 +102,4 @@ feat(ui): add tab key navigation for request headers table
 
 ## License
 
-By contributing to RustRest, you agree that your contributions will be licensed under the project's [MIT License](LICENSE).
+By contributing to Rustrest, you agree that your contributions will be licensed under the project's [MIT License](LICENSE).
