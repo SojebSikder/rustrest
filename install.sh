@@ -57,8 +57,8 @@ main() {
 
   if [ -z "$VERSION" ]; then
     info "Looking up latest release..."
-    VERSION="$(curl --proto '=https' --tlsv1.2 -sSf "https://api.github.com/repos/${REPO}/releases/latest" \
-      | grep -m1 '"tag_name":' | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')"
+    VERSION="$(curl --proto '=https' --tlsv1.2 -sS -o /dev/null -w '%{redirect_url}' \
+      "https://github.com/${REPO}/releases/latest" | sed -E 's#.*/tag/##')"
     [ -n "$VERSION" ] || error "could not determine the latest release version"
   fi
 
