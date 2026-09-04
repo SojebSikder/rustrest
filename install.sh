@@ -12,12 +12,13 @@
 #   VERSION      Release tag to install, e.g. "v0.1.2" (default: latest release)
 #   INSTALL_DIR  Directory to install the binary into (default: "$HOME/.local/bin")
 
-set -euo pipefail
+set -eu
 
 REPO="SojebSikder/rustrest"
 BINARY_NAME="rustrest"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 VERSION="${VERSION:-}"
+tmp_dir=""
 
 info() { printf '\033[1;34m==>\033[0m %s\n' "$1"; }
 error() { printf '\033[1;31merror:\033[0m %s\n' "$1" >&2; exit 1; }
@@ -51,7 +52,7 @@ main() {
   need_cmd tar
   need_cmd mktemp
 
-  local target archive_name checksum_cmd tmp_dir archive_path checksum_path expected_sum actual_sum extracted_bin
+  local target archive_name checksum_cmd archive_path checksum_path expected_sum actual_sum extracted_bin
 
   target="$(detect_target)"
 
