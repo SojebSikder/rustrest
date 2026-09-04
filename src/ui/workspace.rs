@@ -1,13 +1,24 @@
 use crate::app::{Rustrest, WorkspaceContent};
 use crate::http_client::HttpMethod;
 use crate::message::{Message, ResizeKind};
-use iced::widget::{button, column, mouse_area, row, text, text_input};
+use iced::widget::{Id, Space, button, column, mouse_area, row, scrollable, text, text_input};
 use iced::{Alignment, Element, Length};
 
+/// id of the horizontally-scrolling tab strip, used to snap it to the newest tab whenever one is added
+pub fn tab_bar_scroll_id() -> Id {
+    Id::new("tab-bar-scroll")
+}
+
 pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
+    let env_selector = super::sidebar::render_env_selector(app);
+
     if app.tabs.is_empty() {
-        return iced::widget::text("No active requests open. Click a sidebar item or hit '+'.")
-            .into();
+        return column![
+            row![Space::new().width(Length::Fill), env_selector].align_y(Alignment::Center),
+            iced::widget::text("No active requests open. Click a sidebar item or hit '+'.")
+        ]
+        .spacing(15)
+        .into();
     }
 
     let mut tab_bar = row![].spacing(5).align_y(Alignment::Center);
@@ -76,6 +87,19 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
 
     tab_bar = tab_bar.push(add_tab_btn);
 
+    // tabs scroll horizontally within their own lane so a growing tab count
+    // never squeezes or overlaps the fixed-width env selector on the right
+    let tabs_scroll = scrollable(tab_bar)
+        .direction(scrollable::Direction::Horizontal(
+            scrollable::Scrollbar::new().width(4).scroller_width(4),
+        ))
+        .width(Length::Fill)
+        .id(tab_bar_scroll_id());
+
+    let tab_bar_row = row![tabs_scroll, env_selector]
+        .spacing(10)
+        .align_y(Alignment::Center);
+
     let active_tab_state = &app.tabs[app.active_tab_index];
 
     // collection root UI, routed into the active workspace window
@@ -99,5 +123,5 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
         ),
     };
 
-    column![tab_bar, tab_view].spacing(15).into()
+    column![tab_bar_row, tab_view].spacing(15).into()
 }

@@ -746,6 +746,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
 
             if let Some(idx) = existing_tab_idx {
                 app.active_tab_index = idx;
+                Task::none()
             } else if let Some(col) = app.collections.iter().find(|c| c.id == col_id) {
                 let mut root_tab = Tab::new(app.next_tab_id);
                 root_tab.name = col.info.name.clone();
@@ -761,8 +762,10 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 });
                 app.next_tab_id += 1;
                 app.active_tab_index = app.tabs.len() - 1;
+                iced::widget::operation::snap_to_end(crate::ui::workspace::tab_bar_scroll_id())
+            } else {
+                Task::none()
             }
-            Task::none()
         }
 
         Message::SidebarRequestClicked(req_node) => {
@@ -773,6 +776,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
 
             if let Some(idx) = existing_tab_idx {
                 app.active_tab_index = idx;
+                Task::none()
             } else {
                 let associated_collection_id = app
                     .collections
@@ -790,8 +794,8 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 });
                 app.next_tab_id += 1;
                 app.active_tab_index = app.tabs.len() - 1;
+                iced::widget::operation::snap_to_end(crate::ui::workspace::tab_bar_scroll_id())
             }
-            Task::none()
         }
 
         Message::TabSelected(index) => {
@@ -809,7 +813,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             });
             app.active_tab_index = app.tabs.len() - 1;
             app.next_tab_id += 1;
-            Task::none()
+            iced::widget::operation::snap_to_end(crate::ui::workspace::tab_bar_scroll_id())
         }
 
         Message::CloseTabPressed(index) => {

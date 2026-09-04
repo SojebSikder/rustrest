@@ -153,6 +153,16 @@ fn view(app: &Rustrest) -> Element<'_, Message> {
 
     let menu_strip = render_menu_bar(&menu_structure).map(Message::MenuInteraction);
 
+    let workspace_selector = ui::sidebar::render_workspace_selector(app);
+    let top_bar = container(row![workspace_selector].align_y(Alignment::Center))
+        .width(Length::Fill)
+        .padding(Padding {
+            top: 0.0,
+            left: 0.0,
+            right: 0.0,
+            bottom: 10.0,
+        });
+
     let sidebar = ui::sidebar::render_sidebar(app);
     let sidebar_resize_handle = resize_handle(
         DividerOrientation::Vertical,
@@ -187,8 +197,12 @@ fn view(app: &Rustrest) -> Element<'_, Message> {
             .push(console_content);
     }
 
-    let base_layout = row![sidebar, sidebar_resize_handle, workbench_column]
+    let content_row = row![sidebar, sidebar_resize_handle, workbench_column]
         .spacing(10)
+        .width(Length::Fill)
+        .height(Length::Fill);
+
+    let base_layout = column![top_bar, content_row]
         .padding(Padding {
             top: 44.0,
             left: 15.0,

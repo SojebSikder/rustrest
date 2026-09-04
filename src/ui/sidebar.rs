@@ -9,55 +9,7 @@ use iced::widget::{
 use iced::{Alignment, Element, Font, Length};
 
 pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
-    let workspace_selector = render_workspace_selector(app);
-
-    let env_options: Vec<String> = app.environments.iter().map(|e| e.name.clone()).collect();
-    let current_env_selection = app
-        .active_env_index
-        .and_then(|idx| app.environments.get(idx))
-        .map(|e| e.name.clone());
-
-    // build environment selector row with controls
-    let mut env_row = row![
-        pick_list(env_options, current_env_selection, |selected| {
-            Message::EnvSelected(Some(selected))
-        })
-        .placeholder("No Environment")
-        .width(Length::Fixed(140.0)),
-        // add Environment button
-        button(text("+").size(14))
-            .on_press(Message::CreateEnvironmentPressed)
-            .padding([4, 8])
-            .style(button::secondary)
-    ]
-    .spacing(6)
-    .align_y(Alignment::Center);
-
-    // show Edit and Delete buttons if an active environment is selected
-    if let Some(active_idx) = app.active_env_index {
-        env_row = env_row
-            .push(
-                button(text("⚙️").size(12))
-                    .on_press(Message::EditEnvironmentPressed(active_idx))
-                    .padding([4, 6])
-                    .style(button::secondary),
-            )
-            .push(
-                button(text("✕").size(12))
-                    .on_press(Message::DeleteEnvironmentPressed(active_idx))
-                    .padding([4, 6])
-                    .style(button::danger),
-            );
-    }
-
-    let env_selector = container(env_row).padding(Padding {
-        top: 5.0,
-        right: 0.0,
-        bottom: 10.0,
-        left: 0.0,
-    });
-
-    let mut sidebar_contents = column![workspace_selector, env_selector].spacing(10);
+    let mut sidebar_contents = column![].spacing(10);
 
     if app.collections.is_empty() {
         sidebar_contents = sidebar_contents.push(
@@ -118,7 +70,57 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
         .into()
 }
 
-fn render_workspace_selector(app: &Rustrest) -> Element<'_, Message> {
+pub fn render_env_selector(app: &Rustrest) -> Element<'_, Message> {
+    let env_options: Vec<String> = app.environments.iter().map(|e| e.name.clone()).collect();
+    let current_env_selection = app
+        .active_env_index
+        .and_then(|idx| app.environments.get(idx))
+        .map(|e| e.name.clone());
+
+    // build environment selector row with controls
+    let mut env_row = row![
+        pick_list(env_options, current_env_selection, |selected| {
+            Message::EnvSelected(Some(selected))
+        })
+        .placeholder("No Environment")
+        .width(Length::Fixed(140.0)),
+        // add Environment button
+        button(text("+").size(14))
+            .on_press(Message::CreateEnvironmentPressed)
+            .padding([4, 8])
+            .style(button::secondary)
+    ]
+    .spacing(6)
+    .align_y(Alignment::Center);
+
+    // show Edit and Delete buttons if an active environment is selected
+    if let Some(active_idx) = app.active_env_index {
+        env_row = env_row
+            .push(
+                button(text("⚙️").size(12))
+                    .on_press(Message::EditEnvironmentPressed(active_idx))
+                    .padding([4, 6])
+                    .style(button::secondary),
+            )
+            .push(
+                button(text("✕").size(12))
+                    .on_press(Message::DeleteEnvironmentPressed(active_idx))
+                    .padding([4, 6])
+                    .style(button::danger),
+            );
+    }
+
+    container(env_row)
+        .padding(Padding {
+            top: 0.0,
+            right: 0.0,
+            bottom: 0.0,
+            left: 0.0,
+        })
+        .into()
+}
+
+pub fn render_workspace_selector(app: &Rustrest) -> Element<'_, Message> {
     let active_id = app.active_workspace_id;
     let active_name = app
         .workspaces
