@@ -99,7 +99,8 @@ pub fn remove_nested(items: &mut Vec<CollectionItem>, path: &[String]) {
         return;
     };
     if let Some(target) = find_folder_items_mut(items, parent_path) {
-        target.retain(|item| !matches!(item, CollectionItem::Folder(folder) if folder.name == *last));
+        target
+            .retain(|item| !matches!(item, CollectionItem::Folder(folder) if folder.name == *last));
     }
 }
 

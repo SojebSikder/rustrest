@@ -294,7 +294,6 @@ where
                         .height(Length::Fill)
                         .into()
                 }
-
             };
 
             column![postman_header, dynamic_pane].spacing(12).into()
