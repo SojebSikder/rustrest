@@ -18,6 +18,40 @@ Modern API clients like Postman or Insomnia carry massive resource overhead. Rus
 
 ![Rustrest](screenshots/Screenshot1.png)
 
+## Installation
+
+### Linux / macOS
+
+Run the install script to download the latest release, verify its checksum, and install the `rustrest` binary to `~/.local/bin`:
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/SojebSikder/rustrest/main/install.sh | sh
+```
+
+Make sure `~/.local/bin` is on your `PATH`, then run:
+
+```bash
+rustrest
+```
+
+You can pin a specific version or change the install directory via environment variables:
+
+```bash
+VERSION=v0.1.2 INSTALL_DIR="$HOME/bin" curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/SojebSikder/rustrest/main/install.sh | sh
+```
+
+### Windows
+
+Download the `.zip` from the [Releases page](https://github.com/SojebSikder/rustrest/releases), extract it, and run `rustrest.exe`.
+
+### Build from source
+
+```bash
+git clone https://github.com/SojebSikder/rustrest.git
+cd rustrest
+cargo run --release
+```
+
 ## Features
 - Native, Lightweight, and instant startup time.
 - **Fast**: Send request and get responses in real time.
@@ -26,3 +60,6 @@ Modern API clients like Postman or Insomnia carry massive resource overhead. Rus
 - **Local Vault**: Local storage for collections and other resources
 - **Git-native**: Collaborate via Git or any other version control system
 - And many more...
+
+## Contribute
+See [CONTRIBUTING.md](CONTRIBUTING.md) for details on how to contribute to RustRest.
