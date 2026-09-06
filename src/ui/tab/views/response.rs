@@ -1,6 +1,7 @@
 use super::super::Tab;
 use super::super::messages::TabMessage;
 use super::super::types::{ResponseSubTab, ResponseView};
+use crate::ui::context_menu::{TabFieldTarget, with_context_menu};
 use iced::widget::{
     Space, button, column, container, pick_list, row, scrollable, text, text_editor,
 };
@@ -84,22 +85,27 @@ where
 
                     let view_toggle_bar = row![view_dropdown].spacing(8).align_y(Alignment::Center);
 
+                    let response_editor = with_context_menu(
+                        text_editor(&tab.response_body_editor)
+                            .font(Font::MONOSPACE)
+                            .size(13)
+                            .on_action(move |act| {
+                                wrap_msg(TabMessage::ResponseBodyEditorAction(act))
+                            }),
+                        wrap_msg(TabMessage::ShowFieldContextMenu(
+                            TabFieldTarget::ResponseBodyEditor,
+                            tab.response_body_editor
+                                .selection()
+                                .unwrap_or_else(|| tab.response_body_editor.text()),
+                        )),
+                    );
+
                     column![
                         view_toggle_bar,
-                        container(
-                            scrollable(
-                                text_editor(&tab.response_body_editor)
-                                    .font(Font::MONOSPACE)
-                                    .size(13)
-                                    .on_action(move |act| wrap_msg(
-                                        TabMessage::ResponseBodyEditorAction(act)
-                                    ))
-                            )
+                        container(scrollable(response_editor).height(Length::Fill))
+                            .style(container::bordered_box)
+                            .width(Length::Fill)
                             .height(Length::Fill)
-                        )
-                        .style(container::bordered_box)
-                        .width(Length::Fill)
-                        .height(Length::Fill)
                     ]
                     .spacing(8)
                     .height(Length::Fill)

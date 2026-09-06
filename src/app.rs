@@ -7,6 +7,7 @@ use crate::collection_adapter::create_tab_from_request;
 use crate::http_client::send_request;
 use crate::message::{Message, ResizeKind};
 use crate::session::{SavedSession, SavedTabEntry};
+use crate::ui::context_menu::{ContextMenu, FieldTarget, apply_field_paste};
 use crate::ui::menu::menu::DropdownMenuState;
 use crate::ui::menu::menu_message::MenuMessage;
 use crate::ui::save_request_model::types::SaveRequestModalState;
@@ -54,19 +55,6 @@ pub struct ResizeDrag {
 pub const SIDEBAR_WIDTH_RANGE: (f32, f32) = (180.0, 520.0);
 pub const REQUEST_PANE_HEIGHT_RANGE: (f32, f32) = (120.0, 700.0);
 pub const CONSOLE_PANEL_HEIGHT_RANGE: (f32, f32) = (120.0, 500.0);
-
-pub enum ContextMenu {
-    Collection(usize),
-    Folder {
-        col_id: usize,
-        path: Vec<String>,
-    },
-    Request {
-        col_id: usize,
-        folder_path: Vec<String>,
-        req_id: usize,
-    },
-}
 
 pub struct Rustrest {
     pub collections: Vec<PostmanCollection>,
@@ -837,6 +825,14 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         }
 
         Message::ActiveTabMessage(tab_msg) => {
+            if let TabMessage::ShowFieldContextMenu(target, value) = tab_msg {
+                app.active_context_menu = Some(ContextMenu::TextField {
+                    target: FieldTarget::Tab(target),
+                    current_value: value,
+                });
+                app.context_menu_position = app.cursor_position;
+                return Task::none();
+            }
             if let Some(tab_state) = app.tabs.get_mut(app.active_tab_index) {
                 if let TabMessage::ResponseViewChanged(view) = tab_msg {
                     tab_state.tab.response_view = view;
@@ -1481,6 +1477,34 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
 
         Message::CloseContextMenu => {
             app.active_context_menu = None;
+            Task::none()
+        }
+
+        Message::ShowTextFieldContextMenu(target, current_value) => {
+            app.active_context_menu = Some(ContextMenu::TextField {
+                target,
+                current_value,
+            });
+            app.context_menu_position = app.cursor_position;
+            Task::none()
+        }
+
+        Message::CopyToClipboard(text) => {
+            app.active_context_menu = None;
+            iced::clipboard::write(text)
+        }
+
+        Message::PasteIntoField(target) => {
+            app.active_context_menu = None;
+            iced::clipboard::read().map(move |clipboard_text| {
+                Message::TextFieldPasteResolved(target.clone(), clipboard_text)
+            })
+        }
+
+        Message::TextFieldPasteResolved(target, clipboard_text) => {
+            if let Some(text) = clipboard_text {
+                apply_field_paste(app, target, text);
+            }
             Task::none()
         }
 

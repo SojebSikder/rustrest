@@ -1,6 +1,7 @@
 use crate::app::CollectionSubTab;
 use crate::collection::collection::{PostmanCollection, PostmanRequestNode};
 use crate::http_client::HttpResponse;
+use crate::ui::context_menu::FieldTarget;
 use crate::ui::menu::menu::DropdownMessage;
 use crate::ui::menu::menu_message::MenuMessage;
 use crate::ui::tab::TabMessage;
@@ -157,6 +158,13 @@ pub enum Message {
     },
     CloseContextMenu,
     CursorMoved(iced::Point),
+
+    // reusable text field context menu (Copy/Paste)
+    ShowTextFieldContextMenu(FieldTarget, String),
+    CopyToClipboard(String),
+    PasteIntoField(FieldTarget),
+    TextFieldPasteResolved(FieldTarget, Option<String>),
+
     MenuInteraction(DropdownMessage<MenuMessage>),
     SaveActiveRequestShortcut,
 

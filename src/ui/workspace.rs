@@ -1,6 +1,7 @@
 use crate::app::{Rustrest, WorkspaceContent};
 use crate::http_client::HttpMethod;
 use crate::message::{Message, ResizeKind};
+use crate::ui::context_menu::{FieldTarget, with_context_menu};
 use iced::widget::{Id, Space, button, column, mouse_area, row, scrollable, text, text_input};
 use iced::{Alignment, Element, Length};
 
@@ -40,13 +41,14 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
         };
 
         let tab_content: Element<Message> = if tab_state.is_editing_name {
-            mouse_area(
+            mouse_area(with_context_menu(
                 text_input("", &tab.name)
                     .on_input(move |txt| Message::TabNameChanged(idx, txt))
                     .on_submit(Message::TabNameSave(idx))
                     .size(13)
                     .width(Length::Fixed(100.0)),
-            )
+                Message::ShowTextFieldContextMenu(FieldTarget::TabName(idx), tab.name.clone()),
+            ))
             .on_enter(Message::TabRenameInputHover(true))
             .on_exit(Message::TabRenameInputHover(false))
             .into()

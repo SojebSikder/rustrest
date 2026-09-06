@@ -1,6 +1,7 @@
 use crate::app::CollectionSubTab;
 use crate::collection::collection::PostmanCollection;
 use crate::message::Message;
+use crate::ui::context_menu::{FieldTarget, with_context_menu};
 use iced::widget::{button, checkbox, column, container, row, scrollable, text, text_input};
 use iced::{Alignment, Element, Length, Theme};
 
@@ -75,22 +76,40 @@ pub fn render_collection_root(
                                     is_active: checked,
                                 }
                             }),
-                            text_input("Variable key...", &key_str)
-                                .on_input(move |new_key| Message::CollectionVariableChanged {
-                                    collection_id,
-                                    index: idx,
-                                    key: new_key,
-                                    value: val_str_for_key_input.clone(),
-                                })
-                                .width(Length::FillPortion(2)),
-                            text_input("Value...", &val_str)
-                                .on_input(move |new_val| Message::CollectionVariableChanged {
-                                    collection_id,
-                                    index: idx,
-                                    key: key_str_for_val_input.clone(),
-                                    value: new_val,
-                                })
-                                .width(Length::FillPortion(3)),
+                            with_context_menu(
+                                text_input("Variable key...", &key_str)
+                                    .on_input(move |new_key| Message::CollectionVariableChanged {
+                                        collection_id,
+                                        index: idx,
+                                        key: new_key,
+                                        value: val_str_for_key_input.clone(),
+                                    })
+                                    .width(Length::FillPortion(2)),
+                                Message::ShowTextFieldContextMenu(
+                                    FieldTarget::CollectionVarKey {
+                                        collection_id,
+                                        index: idx,
+                                    },
+                                    key_str.clone(),
+                                ),
+                            ),
+                            with_context_menu(
+                                text_input("Value...", &val_str)
+                                    .on_input(move |new_val| Message::CollectionVariableChanged {
+                                        collection_id,
+                                        index: idx,
+                                        key: key_str_for_val_input.clone(),
+                                        value: new_val,
+                                    })
+                                    .width(Length::FillPortion(3)),
+                                Message::ShowTextFieldContextMenu(
+                                    FieldTarget::CollectionVarValue {
+                                        collection_id,
+                                        index: idx,
+                                    },
+                                    val_str.clone(),
+                                ),
+                            ),
                             button(text("X")).style(button::danger).on_press(
                                 Message::DeleteCollectionVariablePressed(collection_id, idx)
                             ),

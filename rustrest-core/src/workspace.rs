@@ -1,6 +1,6 @@
+use crate::KeyValuePair;
 use crate::collection::env::Environment;
 use crate::session::SavedSession;
-use crate::KeyValuePair;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 

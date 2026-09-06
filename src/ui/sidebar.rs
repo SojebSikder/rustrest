@@ -1,10 +1,10 @@
 use crate::app::Rustrest;
 use crate::collection::collection::CollectionItem;
 use crate::message::Message;
+use crate::ui::context_menu::{FieldTarget, with_context_menu};
 use iced::Padding;
 use iced::widget::{
-    Column, button, column, container, mouse_area, opaque, pick_list, row, scrollable, text,
-    text_input,
+    Column, button, column, container, mouse_area, pick_list, row, scrollable, text, text_input,
 };
 use iced::{Alignment, Element, Font, Length};
 
@@ -24,11 +24,17 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
 
             let collection_header_title: Element<'_, Message> = if is_editing_col {
                 row![
-                    text_input("Collection Name...", &col.info.name)
-                        .on_input(move |txt| Message::CollectionNameChanged(col_id, txt))
-                        .on_submit(Message::SaveCollectionNamePressed(col_id))
-                        .width(Length::Fixed(120.0))
-                        .padding(2),
+                    with_context_menu(
+                        text_input("Collection Name...", &col.info.name)
+                            .on_input(move |txt| Message::CollectionNameChanged(col_id, txt))
+                            .on_submit(Message::SaveCollectionNamePressed(col_id))
+                            .width(Length::Fixed(120.0))
+                            .padding(2),
+                        Message::ShowTextFieldContextMenu(
+                            FieldTarget::CollectionName(col_id),
+                            col.info.name.clone(),
+                        ),
+                    ),
                     button(text("💾").size(11))
                         .on_press(Message::SaveCollectionNamePressed(col_id))
                         .style(button::text)
@@ -133,11 +139,17 @@ pub fn render_workspace_selector(app: &Rustrest) -> Element<'_, Message> {
     let content: Element<'_, Message> = if is_editing {
         let current_name = active_name.clone().unwrap_or_default();
         row![
-            text_input("Workspace Name...", &current_name)
-                .on_input(move |txt| Message::WorkspaceNameChanged(active_id, txt))
-                .on_submit(Message::SaveWorkspaceNamePressed(active_id))
-                .width(Length::Fixed(120.0))
-                .padding(2),
+            with_context_menu(
+                text_input("Workspace Name...", &current_name)
+                    .on_input(move |txt| Message::WorkspaceNameChanged(active_id, txt))
+                    .on_submit(Message::SaveWorkspaceNamePressed(active_id))
+                    .width(Length::Fixed(120.0))
+                    .padding(2),
+                Message::ShowTextFieldContextMenu(
+                    FieldTarget::WorkspaceName(active_id),
+                    current_name.clone(),
+                ),
+            ),
             button(text("💾").size(11))
                 .on_press(Message::SaveWorkspaceNamePressed(active_id))
                 .style(button::text)
@@ -209,18 +221,27 @@ fn render_sidebar_item<'a>(
 
             let folder_title: Element<'_, Message> = if is_editing_folder {
                 row![
-                    text_input("Folder Name...", &folder.name)
-                        .on_input(move |txt| Message::FolderNameChanged {
-                            collection_id,
-                            folder_path: path_for_change.clone(),
-                            new_name: txt,
-                        })
-                        .on_submit(Message::SaveFolderNamePressed {
-                            collection_id,
-                            folder_path: path_for_save.clone(),
-                        })
-                        .width(Length::Fixed(110.0))
-                        .padding(2),
+                    with_context_menu(
+                        text_input("Folder Name...", &folder.name)
+                            .on_input(move |txt| Message::FolderNameChanged {
+                                collection_id,
+                                folder_path: path_for_change.clone(),
+                                new_name: txt,
+                            })
+                            .on_submit(Message::SaveFolderNamePressed {
+                                collection_id,
+                                folder_path: path_for_save.clone(),
+                            })
+                            .width(Length::Fixed(110.0))
+                            .padding(2),
+                        Message::ShowTextFieldContextMenu(
+                            FieldTarget::FolderName {
+                                collection_id,
+                                folder_path: path_for_right_click.clone(),
+                            },
+                            folder.name.clone(),
+                        ),
+                    ),
                     button(text("💾").size(10))
                         .on_press(Message::SaveFolderNamePressed {
                             collection_id,
@@ -291,137 +312,4 @@ fn render_sidebar_item<'a>(
     }
 }
 
-pub fn render_context_menu_overlay<'a>(app: &Rustrest) -> Option<Element<'a, Message>> {
-    let context_menu = app.active_context_menu.as_ref()?;
-
-    // suppress the panel while the targeted item is mid-rename, since its
-    // row is showing a text input instead of the label the menu anchors to
-    let is_editing = match context_menu {
-        crate::app::ContextMenu::Collection(id) => app.editing_collection_id == Some(*id),
-        crate::app::ContextMenu::Folder { col_id, path } => {
-            app.editing_folder_collection_id == Some(*col_id) && app.editing_folder_path == *path
-        }
-        crate::app::ContextMenu::Request { .. } => false,
-    };
-    if is_editing {
-        return None;
-    }
-
-    let options: Vec<(&'a str, Message)> = match context_menu {
-        crate::app::ContextMenu::Collection(id) => {
-            let col_id = *id;
-            vec![
-                ("Rename", Message::RenameCollectionPressed(col_id)),
-                (
-                    "New Folder",
-                    Message::AddFolderPressed {
-                        collection_id: col_id,
-                        parent_folder_path: Vec::new(),
-                    },
-                ),
-                (
-                    "New Request",
-                    Message::AddRequestPressed {
-                        collection_id: col_id,
-                        parent_folder_path: Vec::new(),
-                    },
-                ),
-                ("Save Collection", Message::SaveCollectionPressed(col_id)),
-                (
-                    "Save as git folder...",
-                    Message::InitGitCollectionPressed(col_id),
-                ),
-                ("Export As...", Message::ExportCollectionPressed(col_id)),
-                ("Delete", Message::DeleteCollectionPressed(col_id)),
-            ]
-        }
-        crate::app::ContextMenu::Folder { col_id, path } => {
-            let collection_id = *col_id;
-            vec![
-                (
-                    "Rename",
-                    Message::RenameFolderPressed {
-                        collection_id,
-                        folder_path: path.clone(),
-                    },
-                ),
-                (
-                    "New Folder",
-                    Message::AddFolderPressed {
-                        collection_id,
-                        parent_folder_path: path.clone(),
-                    },
-                ),
-                (
-                    "New Request",
-                    Message::AddRequestPressed {
-                        collection_id,
-                        parent_folder_path: path.clone(),
-                    },
-                ),
-                (
-                    "Delete",
-                    Message::DeleteFolderPressed {
-                        collection_id,
-                        folder_path: path.clone(),
-                    },
-                ),
-            ]
-        }
-        crate::app::ContextMenu::Request {
-            col_id,
-            folder_path,
-            req_id,
-        } => vec![(
-            "Delete",
-            Message::DeleteRequestPressed {
-                collection_id: *col_id,
-                parent_folder_path: folder_path.clone(),
-                request_id: *req_id,
-            },
-        )],
-    };
-
-    let dropdown = render_dropdown(options);
-    let pos = app.context_menu_position;
-
-    // spacer trick: pad down/right to the captured cursor position so the
-    // panel appears to float at the click site instead of shifting layout.
-    Some(
-        column![
-            container(text("")).height(Length::Fixed(pos.y)),
-            row![
-                container(text("")).width(Length::Fixed(pos.x)),
-                opaque(dropdown)
-            ]
-        ]
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into(),
-    )
-}
-
-fn render_dropdown<'a>(options: Vec<(&'a str, Message)>) -> Element<'a, Message> {
-    let mut menu = column![].spacing(2);
-
-    for (label, message) in options {
-        menu = menu.push(
-            button(
-                text(label)
-                    .size(12)
-                    .width(Length::Fill)
-                    .style(text::primary),
-            )
-            .on_press(message)
-            .padding([4, 8])
-            .style(button::text)
-            .width(Length::Fill),
-        );
-    }
-
-    container(menu)
-        .padding(4)
-        .width(Length::Fixed(140.0))
-        .style(container::bordered_box)
-        .into()
-}
+pub use crate::ui::context_menu::render_context_menu_overlay;
