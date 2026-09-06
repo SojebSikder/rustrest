@@ -13,6 +13,7 @@ Modern API clients like Postman or Insomnia carry massive resource overhead. Rus
 - **Zero Bloat**: Built natively without heavy web-browser runtimes.
 - **Resource Efficient**: Low memory footprint and instant startup times.
 - **Focused**: Just what you need to test APIs, nothing you don't.
+- **Postman Compatible**: You can import Postman collections (including scripts) directly into Rustrest.
 
 [Download Rustrest](https://github.com/SojebSikder/rustrest/releases)
 
