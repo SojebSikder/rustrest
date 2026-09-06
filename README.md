@@ -59,6 +59,7 @@ cargo run --release
 - **Test APIs** using test suites
 - **Local Vault**: Local storage for collections and other resources
 - **Git-native**: Collaborate via Git or any other version control system
+- **Postman Compatible**: Import Postman collections, environments and scripts
 - And many more...
 
 ## Contribute

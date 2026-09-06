@@ -4,7 +4,7 @@ resolver = "2"
 
 [package]
 name = "rustrest"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 repository = "https://github.com/SojebSikder/rustrest"
 

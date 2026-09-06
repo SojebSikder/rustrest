@@ -1,5 +1,6 @@
 use crate::collection::env::Environment;
 use crate::session::SavedSession;
+use crate::KeyValuePair;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -16,6 +17,8 @@ pub struct SavedWorkspace {
     pub collection_sources: Vec<CollectionSource>,
     pub environments: Vec<Environment>,
     pub active_env_index: Option<usize>,
+    #[serde(default)]
+    pub globals: Vec<KeyValuePair>,
     pub session: SavedSession,
 }
 

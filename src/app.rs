@@ -72,6 +72,7 @@ pub struct Rustrest {
     pub collections: Vec<PostmanCollection>,
     pub environments: Vec<Environment>,
     pub active_env_index: Option<usize>,
+    pub globals: Vec<KeyValuePair>,
     pub editing_env_index: Option<usize>,
     pub editing_env_name: bool,
     pub tabs: Vec<TabState>,
@@ -176,6 +177,7 @@ impl Rustrest {
             collection_sources,
             environments: self.environments.clone(),
             active_env_index: self.active_env_index,
+            globals: self.globals.clone(),
             session: self.build_session_snapshot(),
         };
         (ws, dropped)
@@ -223,6 +225,7 @@ impl Rustrest {
 
         self.environments = ws.environments.clone();
         self.active_env_index = ws.active_env_index;
+        self.globals = ws.globals.clone();
 
         restore_session_into_app(self, &ws.session);
 
@@ -292,6 +295,7 @@ pub fn init() -> (Rustrest, Task<Message>) {
         collections: Vec::new(),
         environments: Vec::new(),
         active_env_index: None,
+        globals: Vec::new(),
         tabs: vec![],
         active_tab_index: 0,
         editing_env_index: None,
@@ -399,6 +403,7 @@ fn default_workspace(id: usize, legacy_session: Option<SavedSession>) -> SavedWo
         collection_sources: Vec::new(),
         environments: vec![demo_env],
         active_env_index: None,
+        globals: Vec::new(),
         session: legacy_session.unwrap_or(SavedSession {
             tabs: Vec::new(),
             active_tab_index: 0,
@@ -891,14 +896,33 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     .map(|h| (h.key.clone(), h.value.clone()))
                     .collect();
 
+                let mut script_globals: std::collections::HashMap<String, String> = app
+                    .globals
+                    .iter()
+                    .filter(|v| v.is_active)
+                    .map(|v| (v.key.clone(), v.value.clone()))
+                    .collect();
+
                 let pre_script_text = tab.pre_request_script.text();
                 match crate::script_engine::ScriptRunner::run_pre_request(
                     &pre_script_text,
                     &mut script_vars,
                     &mut script_headers,
+                    &mut script_globals,
                 ) {
                     Ok(logs) => app.console_logs.extend(logs),
                     Err(e) => return Task::done(Message::ShowToast(e, ToastStatus::Error)),
+                }
+
+                for (k, v) in &script_globals {
+                    if let Some(existing) = app.globals.iter_mut().find(|kv| &kv.key == k) {
+                        existing.value = v.clone();
+                        existing.is_active = true;
+                    } else {
+                        let mut kv = KeyValuePair::new(k, v);
+                        kv.is_active = true;
+                        app.globals.push(kv);
+                    }
                 }
 
                 let mut effective_env = app
@@ -906,6 +930,16 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     .and_then(|i| app.environments.get(i))
                     .cloned()
                     .unwrap_or_else(|| Environment::new("__script"));
+
+                // globals are the lowest-precedence variable source; environment/script
+                // variables (applied next) override them for the same key
+                for (k, v) in &script_globals {
+                    if !effective_env.variables.iter().any(|kv| &kv.key == k) {
+                        let mut kv = KeyValuePair::new(k, v);
+                        kv.is_active = true;
+                        effective_env.variables.push(kv);
+                    }
+                }
 
                 for (k, v) in &script_vars {
                     if let Some(existing) =
@@ -985,6 +1019,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     }
                 }
 
+                let mut test_results = Vec::new();
                 if let Ok(resp) = &res {
                     let script_text = tab.post_response_script.text();
                     if !script_text.trim().is_empty() {
@@ -1000,19 +1035,28 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                             })
                             .unwrap_or_default();
 
+                        let base_globals: std::collections::HashMap<String, String> = app
+                            .globals
+                            .iter()
+                            .filter(|v| v.is_active)
+                            .map(|v| (v.key.clone(), v.value.clone()))
+                            .collect();
+
                         let exec_ctx = crate::script_engine::ScriptExecutionContext {
                             variables: base_vars,
-                            // request_headers: std::collections::HashMap::new(),
+                            globals: base_globals,
                             response_status: resp.status,
                             response_body: resp.body.clone(),
+                            response_headers: resp.headers.clone(),
                         };
 
                         match crate::script_engine::ScriptRunner::run_post_response(
                             &script_text,
                             &exec_ctx,
                         ) {
-                            Ok((updated_vars, logs)) => {
+                            Ok((updated_vars, updated_globals, results, logs)) => {
                                 app.console_logs.extend(logs);
+                                test_results = results;
                                 if let Some(idx) = app.active_env_index {
                                     if let Some(env) = app.environments.get_mut(idx) {
                                         for (k, v) in updated_vars {
@@ -1027,6 +1071,18 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                                                 env.variables.push(kv);
                                             }
                                         }
+                                    }
+                                }
+                                for (k, v) in updated_globals {
+                                    if let Some(existing) =
+                                        app.globals.iter_mut().find(|kv| kv.key == k)
+                                    {
+                                        existing.value = v;
+                                        existing.is_active = true;
+                                    } else {
+                                        let mut kv = KeyValuePair::new(&k, &v);
+                                        kv.is_active = true;
+                                        app.globals.push(kv);
                                     }
                                 }
                             }
@@ -1044,6 +1100,10 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     }
                 }
 
+                let mut res = res;
+                if let Ok(resp) = &mut res {
+                    resp.test_results = test_results;
+                }
                 tab.response = Some(res);
             }
             Task::none()
@@ -1635,6 +1695,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 collection_sources: Vec::new(),
                 environments: vec![env],
                 active_env_index: None,
+                globals: Vec::new(),
                 session: SavedSession {
                     tabs: Vec::new(),
                     active_tab_index: 0,
