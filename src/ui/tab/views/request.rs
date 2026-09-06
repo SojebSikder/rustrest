@@ -3,6 +3,7 @@ use super::super::components::kv_editor_pane;
 use super::super::messages::TabMessage;
 use super::super::types::{BodyType, RawType, RequestSubTab, ScriptTab};
 use crate::http_client::HttpMethod;
+use crate::ui::context_menu::{TabFieldTarget, with_context_menu};
 use iced::widget::{
     button, column, container, pick_list, radio, row, text, text_editor, text_input,
 };
@@ -60,17 +61,29 @@ where
     let mut request_row = row![method_picker].spacing(10).align_y(Alignment::Center);
 
     if let HttpMethod::Custom(custom_val) = &tab.method {
-        let custom_method_input = text_input("PURGE", custom_val)
-            .on_input(move |text| wrap_msg(TabMessage::MethodChanged(HttpMethod::Custom(text))))
-            .width(Length::Fixed(100.0))
-            .padding(12);
+        let custom_method_input = with_context_menu(
+            text_input("PURGE", custom_val)
+                .on_input(move |text| wrap_msg(TabMessage::MethodChanged(HttpMethod::Custom(text))))
+                .width(Length::Fixed(100.0))
+                .padding(12),
+            wrap_msg(TabMessage::ShowFieldContextMenu(
+                TabFieldTarget::CustomMethod,
+                custom_val.clone(),
+            )),
+        );
 
         request_row = request_row.push(custom_method_input);
     }
 
-    let url_input = text_input("https://api.example.com/v1/resource", &tab.url)
-        .on_input(move |u| wrap_msg(TabMessage::UrlChanged(u)))
-        .padding(12);
+    let url_input = with_context_menu(
+        text_input("https://api.example.com/v1/resource", &tab.url)
+            .on_input(move |u| wrap_msg(TabMessage::UrlChanged(u)))
+            .padding(12),
+        wrap_msg(TabMessage::ShowFieldContextMenu(
+            TabFieldTarget::Url,
+            tab.url.clone(),
+        )),
+    );
 
     let send_btn = if tab.is_loading {
         button("Cancel")
@@ -117,6 +130,18 @@ where
             move |i, kv| wrap_msg(TabMessage::ParamRowChanged(i, kv)),
             wrap_msg(TabMessage::AddParamRow),
             move |i| wrap_msg(TabMessage::RemoveParamRow(i)),
+            move |i, v| {
+                wrap_msg(TabMessage::ShowFieldContextMenu(
+                    TabFieldTarget::ParamKey(i),
+                    v,
+                ))
+            },
+            move |i, v| {
+                wrap_msg(TabMessage::ShowFieldContextMenu(
+                    TabFieldTarget::ParamValue(i),
+                    v,
+                ))
+            },
         ),
         RequestSubTab::Headers => kv_editor_pane(
             &tab.request_headers,
@@ -124,6 +149,18 @@ where
             move |i, kv| wrap_msg(TabMessage::HeaderRowChanged(i, kv)),
             wrap_msg(TabMessage::AddHeaderRow),
             move |i| wrap_msg(TabMessage::RemoveHeaderRow(i)),
+            move |i, v| {
+                wrap_msg(TabMessage::ShowFieldContextMenu(
+                    TabFieldTarget::HeaderKey(i),
+                    v,
+                ))
+            },
+            move |i, v| {
+                wrap_msg(TabMessage::ShowFieldContextMenu(
+                    TabFieldTarget::HeaderValue(i),
+                    v,
+                ))
+            },
         ),
         RequestSubTab::Cookies => kv_editor_pane(
             &tab.request_cookies,
@@ -131,11 +168,28 @@ where
             move |i, kv| wrap_msg(TabMessage::CookieRowChanged(i, kv)),
             wrap_msg(TabMessage::AddCookieRow),
             move |i| wrap_msg(TabMessage::RemoveCookieRow(i)),
+            move |i, v| {
+                wrap_msg(TabMessage::ShowFieldContextMenu(
+                    TabFieldTarget::CookieKey(i),
+                    v,
+                ))
+            },
+            move |i, v| {
+                wrap_msg(TabMessage::ShowFieldContextMenu(
+                    TabFieldTarget::CookieValue(i),
+                    v,
+                ))
+            },
         ),
-        RequestSubTab::Auth => text_input("Authorization Headers...", &tab.request_auth)
-            .on_input(move |a| wrap_msg(TabMessage::AuthChanged(a)))
-            .padding(10)
-            .into(),
+        RequestSubTab::Auth => with_context_menu(
+            text_input("Authorization Headers...", &tab.request_auth)
+                .on_input(move |a| wrap_msg(TabMessage::AuthChanged(a)))
+                .padding(10),
+            wrap_msg(TabMessage::ShowFieldContextMenu(
+                TabFieldTarget::Auth,
+                tab.request_auth.clone(),
+            )),
+        ),
 
         RequestSubTab::Body => {
             let mut radio_bar = row![].spacing(15).align_y(Alignment::Center);
@@ -158,6 +212,18 @@ where
                     move |i| wrap_msg(TabMessage::SelectFormDataFile(i)),
                     wrap_msg(TabMessage::AddFormDataRow),
                     move |i| wrap_msg(TabMessage::RemoveFormDataRow(i)),
+                    move |i, v| {
+                        wrap_msg(TabMessage::ShowFieldContextMenu(
+                            TabFieldTarget::FormDataKey(i),
+                            v,
+                        ))
+                    },
+                    move |i, v| {
+                        wrap_msg(TabMessage::ShowFieldContextMenu(
+                            TabFieldTarget::FormDataValue(i),
+                            v,
+                        ))
+                    },
                 ),
 
                 BodyType::XWwwFormUrlencoded => kv_editor_pane(
@@ -166,6 +232,18 @@ where
                     move |i, kv| wrap_msg(TabMessage::UrlencodedRowChanged(i, kv)),
                     wrap_msg(TabMessage::AddUrlencodedRow),
                     move |i| wrap_msg(TabMessage::RemoveUrlencodedRow(i)),
+                    move |i, v| {
+                        wrap_msg(TabMessage::ShowFieldContextMenu(
+                            TabFieldTarget::UrlencodedKey(i),
+                            v,
+                        ))
+                    },
+                    move |i, v| {
+                        wrap_msg(TabMessage::ShowFieldContextMenu(
+                            TabFieldTarget::UrlencodedValue(i),
+                            v,
+                        ))
+                    },
                 ),
 
                 BodyType::Raw => {
@@ -174,10 +252,18 @@ where
                     })
                     .padding(5);
 
-                    let editor = text_editor(&tab.request_body)
-                        .on_action(move |action| wrap_msg(TabMessage::BodyChanged(action)))
-                        .height(Length::Fixed(300.0))
-                        .padding(10);
+                    let editor = with_context_menu(
+                        text_editor(&tab.request_body)
+                            .on_action(move |action| wrap_msg(TabMessage::BodyChanged(action)))
+                            .height(Length::Fixed(300.0))
+                            .padding(10),
+                        wrap_msg(TabMessage::ShowFieldContextMenu(
+                            TabFieldTarget::BodyEditor,
+                            tab.request_body
+                                .selection()
+                                .unwrap_or_else(|| tab.request_body.text()),
+                        )),
+                    );
 
                     column![
                         raw_dropdown,
@@ -226,12 +312,20 @@ where
 
             let script_input: Element<Message> = match tab.script_tab {
                 ScriptTab::PreRequest => {
-                    let editor = text_editor(&tab.pre_request_script)
-                        .on_action(move |action| {
-                            wrap_msg(TabMessage::PreRequestScriptChanged(action))
-                        })
-                        .height(Length::Fill)
-                        .padding(10);
+                    let editor = with_context_menu(
+                        text_editor(&tab.pre_request_script)
+                            .on_action(move |action| {
+                                wrap_msg(TabMessage::PreRequestScriptChanged(action))
+                            })
+                            .height(Length::Fill)
+                            .padding(10),
+                        wrap_msg(TabMessage::ShowFieldContextMenu(
+                            TabFieldTarget::PreRequestScriptEditor,
+                            tab.pre_request_script
+                                .selection()
+                                .unwrap_or_else(|| tab.pre_request_script.text()),
+                        )),
+                    );
 
                     column![
                         container(editor)
@@ -243,12 +337,20 @@ where
                     .into()
                 }
                 ScriptTab::PostResponse => {
-                    let editor = text_editor(&tab.post_response_script)
-                        .on_action(move |action| {
-                            wrap_msg(TabMessage::PostResponseScriptChanged(action))
-                        })
-                        .height(Length::Fill)
-                        .padding(10);
+                    let editor = with_context_menu(
+                        text_editor(&tab.post_response_script)
+                            .on_action(move |action| {
+                                wrap_msg(TabMessage::PostResponseScriptChanged(action))
+                            })
+                            .height(Length::Fill)
+                            .padding(10),
+                        wrap_msg(TabMessage::ShowFieldContextMenu(
+                            TabFieldTarget::PostResponseScriptEditor,
+                            tab.post_response_script
+                                .selection()
+                                .unwrap_or_else(|| tab.post_response_script.text()),
+                        )),
+                    );
 
                     column![
                         container(editor)

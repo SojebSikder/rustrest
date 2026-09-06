@@ -2,6 +2,7 @@ use super::types::{
     BodyType, FormDataRow, FormDataType, KeyValuePair, RawType, RequestSubTab, ResponseSubTab,
     ResponseView,
 };
+use crate::ui::context_menu::TabFieldTarget;
 use crate::{http_client::HttpMethod, ui::tab::types::ScriptTab};
 use iced::widget::text_editor;
 
@@ -52,4 +53,8 @@ pub enum TabMessage {
     PostResponseScriptChanged(text_editor::Action),
 
     CancelRequest,
+
+    /// opens the shared Copy/Paste context menu for a field in this tab;
+    /// intercepted at the app level before reaching `Tab::update`.
+    ShowFieldContextMenu(TabFieldTarget, String),
 }

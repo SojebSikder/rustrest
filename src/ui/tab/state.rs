@@ -287,6 +287,10 @@ impl Tab {
                     self.cancel_token.cancel();
                 }
             }
+
+            // handled at the app level (needs the global cursor position), before
+            // this message ever reaches `Tab::update`
+            TabMessage::ShowFieldContextMenu(..) => {}
         }
     }
 

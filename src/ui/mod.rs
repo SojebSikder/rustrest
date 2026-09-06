@@ -1,5 +1,6 @@
 pub mod collection_viewer;
 pub mod console_panel;
+pub mod context_menu;
 pub mod env_editor;
 pub mod menu;
 pub mod resize_handle;

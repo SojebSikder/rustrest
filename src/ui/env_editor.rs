@@ -1,5 +1,6 @@
 use crate::app::Rustrest;
 use crate::message::Message;
+use crate::ui::context_menu::{FieldTarget, with_context_menu};
 use iced::widget::{button, checkbox, column, container, row, scrollable, text, text_input};
 use iced::{Alignment, Element, Length};
 
@@ -9,13 +10,15 @@ pub fn render_env_editor(app: &Rustrest) -> Option<Element<'_, Message>> {
 
     // header with editable name, rename toggle, and close button
     let name_display: Element<Message> = if app.editing_env_name {
-        text_input("Environment name...", &env.name)
-            .on_input(move |name| Message::EnvNameChanged(env_idx, name))
-            .on_submit(Message::SaveEnvNamePressed(env_idx))
-            .padding(4)
-            .size(16)
-            .width(Length::Fill)
-            .into()
+        with_context_menu(
+            text_input("Environment name...", &env.name)
+                .on_input(move |name| Message::EnvNameChanged(env_idx, name))
+                .on_submit(Message::SaveEnvNamePressed(env_idx))
+                .padding(4)
+                .size(16)
+                .width(Length::Fill),
+            Message::ShowTextFieldContextMenu(FieldTarget::EnvName(env_idx), env.name.clone()),
+        )
     } else {
         text(format!("Environment: {}", env.name))
             .size(16)
@@ -68,21 +71,33 @@ pub fn render_env_editor(app: &Rustrest) -> Option<Element<'_, Message>> {
                 is_active,
             });
 
-        let key_input = text_input("Key...", &var.key)
-            .on_input(move |key| Message::EnvVariableKeyChanged {
-                env_idx,
-                var_idx,
-                key,
-            })
-            .padding(4);
+        let key_input = with_context_menu(
+            text_input("Key...", &var.key)
+                .on_input(move |key| Message::EnvVariableKeyChanged {
+                    env_idx,
+                    var_idx,
+                    key,
+                })
+                .padding(4),
+            Message::ShowTextFieldContextMenu(
+                FieldTarget::EnvVarKey { env_idx, var_idx },
+                var.key.clone(),
+            ),
+        );
 
-        let value_input = text_input("Value...", &var.value)
-            .on_input(move |value| Message::EnvVariableValueChanged {
-                env_idx,
-                var_idx,
-                value,
-            })
-            .padding(4);
+        let value_input = with_context_menu(
+            text_input("Value...", &var.value)
+                .on_input(move |value| Message::EnvVariableValueChanged {
+                    env_idx,
+                    var_idx,
+                    value,
+                })
+                .padding(4),
+            Message::ShowTextFieldContextMenu(
+                FieldTarget::EnvVarValue { env_idx, var_idx },
+                var.value.clone(),
+            ),
+        );
 
         let delete_btn = button(text("✕").size(12))
             .on_press(Message::DeleteEnvVariablePressed { env_idx, var_idx })

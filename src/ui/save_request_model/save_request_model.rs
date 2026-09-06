@@ -1,3 +1,4 @@
+use crate::ui::context_menu::{FieldTarget, with_context_menu};
 use crate::{app::Rustrest, message::Message};
 use iced::widget::{button, column, container, pick_list, row, text, text_input};
 use iced::{Border, Color, Element, Font, Length, Shadow, Theme, Vector};
@@ -24,11 +25,14 @@ pub fn view_save_request_modal(app: &Rustrest) -> Option<Element<Message>> {
     let name_label = text("Request name")
         .size(13)
         .color(Color::from_rgb(0.55, 0.55, 0.6));
-    let name_input = text_input("e.g. Get user profile", &modal.request_name)
-        .on_input(Message::SaveRequestNameChanged)
-        .padding(10)
-        .size(14)
-        .width(Length::Fill);
+    let name_input = with_context_menu(
+        text_input("e.g. Get user profile", &modal.request_name)
+            .on_input(Message::SaveRequestNameChanged)
+            .padding(10)
+            .size(14)
+            .width(Length::Fill),
+        Message::ShowTextFieldContextMenu(FieldTarget::SaveRequestName, modal.request_name.clone()),
+    );
 
     let collection_label = text("Save to collection")
         .size(13)

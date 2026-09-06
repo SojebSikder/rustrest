@@ -1,4 +1,5 @@
 use super::types::{FormDataRow, FormDataType, KeyValuePair};
+use crate::ui::context_menu::with_context_menu;
 use iced::widget::{button, checkbox, column, pick_list, row, scrollable, text, text_input};
 use iced::{Alignment, Element, Length};
 
@@ -8,6 +9,8 @@ pub fn kv_editor_pane<'a, Message>(
     on_change: impl Fn(usize, KeyValuePair) -> Message + Copy + 'a,
     on_add: Message,
     on_remove: impl Fn(usize) -> Message + Copy + 'a,
+    on_show_key_menu: impl Fn(usize, String) -> Message + Copy + 'a,
+    on_show_value_menu: impl Fn(usize, String) -> Message + Copy + 'a,
 ) -> Element<'a, Message>
 where
     Message: Clone + 'a,
@@ -30,30 +33,36 @@ where
                     },
                 )
             }),
-            text_input("Key", &item.key)
-                .on_input(move |k| {
-                    on_change(
-                        idx,
-                        KeyValuePair {
-                            is_active: item_clone.is_active,
-                            key: k,
-                            value: item_clone.value.clone(),
-                        },
-                    )
-                })
-                .padding(8),
-            text_input("Value", &item.value)
-                .on_input(move |v| {
-                    on_change(
-                        idx,
-                        KeyValuePair {
-                            is_active: item_clone.is_active,
-                            key: item_clone.key.clone(),
-                            value: v,
-                        },
-                    )
-                })
-                .padding(8),
+            with_context_menu(
+                text_input("Key", &item.key)
+                    .on_input(move |k| {
+                        on_change(
+                            idx,
+                            KeyValuePair {
+                                is_active: item_clone.is_active,
+                                key: k,
+                                value: item_clone.value.clone(),
+                            },
+                        )
+                    })
+                    .padding(8),
+                on_show_key_menu(idx, item.key.clone()),
+            ),
+            with_context_menu(
+                text_input("Value", &item.value)
+                    .on_input(move |v| {
+                        on_change(
+                            idx,
+                            KeyValuePair {
+                                is_active: item_clone.is_active,
+                                key: item_clone.key.clone(),
+                                value: v,
+                            },
+                        )
+                    })
+                    .padding(8),
+                on_show_value_menu(idx, item.value.clone()),
+            ),
             button("Delete")
                 .on_press(on_remove(idx))
                 .padding(8)
@@ -73,6 +82,7 @@ where
     .into()
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn form_data_editor_pane<'a, Message>(
     rows: &'a [FormDataRow],
     on_change: impl Fn(usize, FormDataRow) -> Message + Copy + 'a,
@@ -80,6 +90,8 @@ pub fn form_data_editor_pane<'a, Message>(
     on_file_pick: impl Fn(usize) -> Message + Copy + 'a,
     on_add: Message,
     on_remove: impl Fn(usize) -> Message + Copy + 'a,
+    on_show_key_menu: impl Fn(usize, String) -> Message + Copy + 'a,
+    on_show_value_menu: impl Fn(usize, String) -> Message + Copy + 'a,
 ) -> Element<'a, Message>
 where
     Message: Clone + 'a,
@@ -97,20 +109,22 @@ where
         let value_field: Element<'a, Message> = match item.field_type {
             FormDataType::Text => {
                 let text_item_clone = item.clone();
-                text_input("Value", &item.value)
-                    .on_input(move |v| {
-                        on_change(
-                            idx,
-                            FormDataRow {
-                                is_active: text_item_clone.is_active,
-                                key: text_item_clone.key.clone(),
-                                value: v,
-                                field_type: text_item_clone.field_type,
-                            },
-                        )
-                    })
-                    .padding(8)
-                    .into()
+                with_context_menu(
+                    text_input("Value", &item.value)
+                        .on_input(move |v| {
+                            on_change(
+                                idx,
+                                FormDataRow {
+                                    is_active: text_item_clone.is_active,
+                                    key: text_item_clone.key.clone(),
+                                    value: v,
+                                    field_type: text_item_clone.field_type,
+                                },
+                            )
+                        })
+                        .padding(8),
+                    on_show_value_menu(idx, item.value.clone()),
+                )
             }
             FormDataType::File => {
                 let display_path = if item.value.is_empty() {
@@ -146,20 +160,23 @@ where
                     },
                 )
             }),
-            text_input("Key", &item.key)
-                .on_input(move |k| {
-                    on_change(
-                        idx,
-                        FormDataRow {
-                            is_active: ki_item_clone.is_active,
-                            key: k,
-                            value: ki_item_clone.value.clone(),
-                            field_type: ki_item_clone.field_type,
-                        },
-                    )
-                })
-                .padding(8)
-                .width(Length::Fixed(150.0)),
+            with_context_menu(
+                text_input("Key", &item.key)
+                    .on_input(move |k| {
+                        on_change(
+                            idx,
+                            FormDataRow {
+                                is_active: ki_item_clone.is_active,
+                                key: k,
+                                value: ki_item_clone.value.clone(),
+                                field_type: ki_item_clone.field_type,
+                            },
+                        )
+                    })
+                    .padding(8)
+                    .width(Length::Fixed(150.0)),
+                on_show_key_menu(idx, item.key.clone()),
+            ),
             type_picker,
             value_field,
             button("Delete")
