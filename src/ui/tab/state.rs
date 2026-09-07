@@ -8,9 +8,13 @@ use crate::collection::collection::{
 };
 use crate::collection::env::Environment;
 use crate::http_client::{HttpMethod, HttpResponse};
+use crate::ui::resize_handle::{DividerOrientation, resize_handle};
 use crate::ui::tab::types::ScriptTab;
+use crate::ui::tab::views;
 use crate::{APP_NAME, APP_VERSION};
 use iced::widget::text_editor;
+use iced::widget::{column, container};
+use iced::{Element, Length};
 use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone)]
@@ -83,6 +87,36 @@ impl Tab {
             cancel_token: CancellationToken::new(),
             response_body_editor: text_editor::Content::with_text(""),
         }
+    }
+
+    pub fn view<Message>(
+        &self,
+        wrap_msg: impl Fn(TabMessage) -> Message + Copy + 'static,
+        on_send: Message,
+        request_pane_height: f32,
+        on_resize_start: Message,
+    ) -> Element<'_, Message>
+    where
+        Message: Clone + 'static,
+    {
+        let request_bar = views::request::render_request_bar(self, wrap_msg, on_send);
+        let configuration_pane = views::request::render_configuration_pane(self, wrap_msg);
+        let response_content = views::response::render_response_pane(self, wrap_msg);
+
+        column![
+            request_bar,
+            container(configuration_pane).height(Length::Fixed(request_pane_height)),
+            resize_handle(DividerOrientation::Horizontal, on_resize_start),
+            container(response_content)
+                .height(Length::Fill)
+                .width(Length::Fill)
+                .padding(15)
+                .style(container::bordered_box)
+        ]
+        .height(Length::Fill)
+        .width(Length::Fill)
+        .spacing(10)
+        .into()
     }
 
     pub fn to_postman_request_node(&self, req_id: usize, name: &str) -> PostmanRequestNode {
