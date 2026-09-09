@@ -43,20 +43,38 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
                 .align_y(Alignment::Center)
                 .into()
             } else {
-                mouse_area(
-                    container(
-                        text(format!("📁 {}", col.info.name))
-                            .font(Font {
-                                weight: iced::font::Weight::Bold,
-                                ..Font::DEFAULT
-                            })
-                            .size(14),
-                    )
-                    .padding([4, 2]),
-                )
-                .on_press(Message::SidebarCollectionRootClicked(col_id))
-                .on_right_press(Message::ShowCollectionContextMenu(col_id))
-                .into()
+                let mut header_row = row![
+                    text(format!("📁 {}", col.info.name))
+                        .font(Font {
+                            weight: iced::font::Weight::Bold,
+                            ..Font::DEFAULT
+                        })
+                        .size(14),
+                ]
+                .spacing(4)
+                .align_y(Alignment::Center);
+
+                if col.storage_dir.is_some() {
+                    let has_changes = app
+                        .git_status_cache
+                        .get(&col_id)
+                        .map(|r| matches!(r, Ok(s) if !s.files.is_empty()))
+                        .unwrap_or(false);
+
+                    header_row = header_row.push(text("🌿").size(11));
+                    if has_changes {
+                        header_row = header_row.push(
+                            text("●")
+                                .size(9)
+                                .color(iced::Color::from_rgb(0.85, 0.55, 0.10)),
+                        );
+                    }
+                }
+
+                mouse_area(container(header_row).padding([4, 2]))
+                    .on_press(Message::SidebarCollectionRootClicked(col_id))
+                    .on_right_press(Message::ShowCollectionContextMenu(col_id))
+                    .into()
             };
 
             let mut col_tree = column![collection_header_title].spacing(4);

@@ -20,7 +20,7 @@ pub fn contains_request_node_by_id(items: &[CollectionItem], target_id: usize) -
 
 /// Walks `path` through nested folders and returns the `Vec<CollectionItem>` that
 /// `path` resolves to (i.e. that folder's children). An empty `path` resolves to
-/// `items` itself — this is the "already inside the target parent" case used by
+/// `items` itself, this is the "already inside the target parent" case used by
 /// insert/remove-request operations, where the request itself is never part of `path`.
 fn find_folder_items_mut<'a>(
     items: &'a mut Vec<CollectionItem>,
@@ -42,7 +42,7 @@ fn find_folder_items_mut<'a>(
 }
 
 /// Walks `path` through nested folders and returns the folder that `path`'s last
-/// segment names (used by rename, where the folder itself — not its children — is
+/// segment names (used by rename, where the folder itself, not its children - is
 /// the target).
 fn find_folder_mut<'a>(
     items: &'a mut Vec<CollectionItem>,

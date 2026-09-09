@@ -1,7 +1,7 @@
-use crate::app::CollectionSubTab;
-use crate::collection::collection::PostmanCollection;
+use crate::app::{CollectionSubTab, Rustrest};
 use crate::message::Message;
 use crate::ui::context_menu::{FieldTarget, with_context_menu};
+use crate::ui::git_panel::{render_git_bar, render_git_panel};
 use iced::widget::{button, checkbox, column, container, row, scrollable, text, text_input};
 use iced::{Alignment, Element, Length, Theme};
 
@@ -9,13 +9,17 @@ pub fn render_collection_root(
     collection_id: usize,
     collection_name: &str,
     active_sub_tab: &CollectionSubTab,
-    collections: &[PostmanCollection],
+    app: &Rustrest,
 ) -> Element<'static, Message, Theme, iced::Renderer> {
+    let collections = &app.collections;
     // find current live collection data
     let target_collection = collections.iter().find(|c| c.id == collection_id);
+    let is_git_backed = target_collection
+        .map(|c| c.storage_dir.is_some())
+        .unwrap_or(false);
 
     // tab headers bavigation bar
-    let tabs_nav = row![
+    let mut tabs_nav = row![
         button(text("Overview"))
             .style(if *active_sub_tab == CollectionSubTab::Documentation {
                 button::primary
@@ -36,6 +40,18 @@ pub fn render_collection_root(
             )),
     ]
     .spacing(10);
+
+    if is_git_backed {
+        tabs_nav = tabs_nav.push(
+            button(text("Git"))
+                .style(if *active_sub_tab == CollectionSubTab::Git {
+                    button::primary
+                } else {
+                    button::secondary
+                })
+                .on_press(Message::CollectionSubTabSelected(CollectionSubTab::Git)),
+        );
+    }
 
     // content pane layout
     let content_pane: Element<'static, Message, Theme, iced::Renderer> = match active_sub_tab {
@@ -135,6 +151,21 @@ pub fn render_collection_root(
             collection_name
         ))]
         .into(),
+        CollectionSubTab::Git => {
+            let snapshot = app.git_status_cache.get(&collection_id);
+            column![
+                render_git_bar(collection_id, snapshot),
+                render_git_panel(
+                    collection_id,
+                    snapshot,
+                    app.git_selected_file.as_ref(),
+                    app.git_diff_cache.as_ref(),
+                ),
+            ]
+            .spacing(12)
+            .height(Length::Fill)
+            .into()
+        }
     };
 
     column![

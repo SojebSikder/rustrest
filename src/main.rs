@@ -12,6 +12,8 @@ mod updater;
 mod utils;
 mod workspace;
 
+use crate::ui::commit_modal::view_commit_modal;
+use crate::ui::confirm_dialog::view_confirm_dialog;
 use crate::ui::console_panel::{render_console_bar, render_console_panel};
 use crate::ui::env_editor::render_env_editor;
 use crate::ui::menu::menu::{
@@ -27,7 +29,7 @@ use iced::{Event, Subscription, event};
 use message::{Message, ResizeKind};
 
 const APP_NAME: &str = "Rustrest";
-const APP_VERSION: &str = "0.1.3";
+const APP_VERSION: &str = "0.1.4";
 
 pub fn main() -> iced::Result {
     iced::application(app::init, app::update, view)
@@ -233,6 +235,26 @@ fn view(app: &Rustrest) -> Element<'_, Message> {
             .align_x(Alignment::Center)
             .align_y(Alignment::Center);
         main_interface_stack = main_interface_stack.push(save_request_overlay);
+    }
+
+    // commit-changes modal overlay
+    if let Some(commit_modal) = app.commit_modal.as_ref() {
+        let commit_overlay = container(view_commit_modal(commit_modal))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(Alignment::Center)
+            .align_y(Alignment::Center);
+        main_interface_stack = main_interface_stack.push(commit_overlay);
+    }
+
+    // generic confirm-dialog overlay
+    if let Some(confirm_dialog) = app.confirm_dialog.as_ref() {
+        let confirm_overlay = container(view_confirm_dialog(confirm_dialog))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(Alignment::Center)
+            .align_y(Alignment::Center);
+        main_interface_stack = main_interface_stack.push(confirm_overlay);
     }
 
     // menu bar layer

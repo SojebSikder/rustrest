@@ -60,6 +60,7 @@ pub enum FieldTarget {
         index: usize,
     },
     SaveRequestName,
+    CommitMessage,
 }
 
 pub enum ContextMenu {
@@ -117,7 +118,14 @@ pub fn render_context_menu_overlay<'a>(app: &Rustrest) -> Option<Element<'a, Mes
     let options: Vec<(&'a str, Message)> = match context_menu {
         ContextMenu::Collection(id) => {
             let col_id = *id;
-            vec![
+            let is_git_backed = app
+                .collections
+                .iter()
+                .find(|c| c.id == col_id)
+                .map(|c| c.storage_dir.is_some())
+                .unwrap_or(false);
+
+            let mut opts = vec![
                 ("Rename", Message::RenameCollectionPressed(col_id)),
                 (
                     "New Folder",
@@ -138,9 +146,13 @@ pub fn render_context_menu_overlay<'a>(app: &Rustrest) -> Option<Element<'a, Mes
                     "Save as git folder...",
                     Message::InitGitCollectionPressed(col_id),
                 ),
-                ("Export As...", Message::ExportCollectionPressed(col_id)),
-                ("Delete", Message::DeleteCollectionPressed(col_id)),
-            ]
+            ];
+            if is_git_backed {
+                opts.push(("Commit changes...", Message::CommitChangesPressed(col_id)));
+            }
+            opts.push(("Export As...", Message::ExportCollectionPressed(col_id)));
+            opts.push(("Delete", Message::DeleteCollectionPressed(col_id)));
+            opts
         }
         ContextMenu::Folder { col_id, path } => {
             let collection_id = *col_id;
@@ -366,6 +378,9 @@ pub fn apply_field_paste(app: &mut Rustrest, target: FieldTarget, text: String) 
         }
         FieldTarget::SaveRequestName => {
             let _ = crate::app::update(app, Message::SaveRequestNameChanged(text));
+        }
+        FieldTarget::CommitMessage => {
+            let _ = crate::app::update(app, Message::CommitMessageChanged(text));
         }
         FieldTarget::EnvName(idx) => {
             let _ = crate::app::update(app, Message::EnvNameChanged(idx, text));

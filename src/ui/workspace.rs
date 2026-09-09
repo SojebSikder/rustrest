@@ -121,7 +121,7 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
             *collection_id,
             collection_name,
             active_sub_tab,
-            &app.collections,
+            app,
         ),
     };
 
