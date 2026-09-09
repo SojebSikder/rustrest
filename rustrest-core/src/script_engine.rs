@@ -309,7 +309,7 @@ impl ScriptRunner {
 
     /// Runs `spec` to completion on a dedicated OS thread with its own tiny tokio
     /// runtime, blocking the calling thread until the response (or error) is ready.
-    /// This keeps the boa script engine's fully-synchronous execution model intact —
+    /// This keeps the boa script engine's fully-synchronous execution model intact -
     /// no job queue / microtask draining is needed, while still letting
     /// `pm.sendRequest`'s callback run synchronously before the script continues.
     fn blocking_send(spec: RequestSpec) -> Result<HttpResponse, String> {

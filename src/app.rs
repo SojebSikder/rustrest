@@ -7,6 +7,7 @@ use crate::collection_adapter::create_tab_from_request;
 use crate::http_client::send_request;
 use crate::message::{Message, ResizeKind};
 use crate::session::{SavedSession, SavedTabEntry};
+use crate::ui::confirm_dialog::ConfirmDialogState;
 use crate::ui::context_menu::{ContextMenu, FieldTarget, apply_field_paste};
 use crate::ui::menu::menu::DropdownMenuState;
 use crate::ui::menu::menu_message::MenuMessage;
@@ -28,6 +29,7 @@ use tokio_util::sync::CancellationToken;
 pub enum CollectionSubTab {
     Variables,
     Documentation,
+    Git,
 }
 
 #[derive(Debug, Clone)]
@@ -102,6 +104,16 @@ pub struct Rustrest {
     pub console_logs: Vec<String>,
     pub console_collapsed: bool,
     pub console_panel_height: f32,
+
+    // git status/diff panel + commit modal + generic confirm dialog
+    pub git_status_cache: std::collections::HashMap<
+        usize,
+        Result<crate::collection::git_ops::GitStatusSnapshot, String>,
+    >,
+    pub git_selected_file: Option<std::path::PathBuf>,
+    pub git_diff_cache: Option<(std::path::PathBuf, String)>,
+    pub commit_modal: Option<crate::ui::commit_modal::CommitModalState>,
+    pub confirm_dialog: Option<crate::ui::confirm_dialog::ConfirmDialogState>,
 }
 
 impl Rustrest {
@@ -315,6 +327,11 @@ pub fn init() -> (Rustrest, Task<Message>) {
         console_logs: Vec::new(),
         console_collapsed: true,
         console_panel_height: 220.0,
+        git_status_cache: std::collections::HashMap::new(),
+        git_selected_file: None,
+        git_diff_cache: None,
+        commit_modal: None,
+        confirm_dialog: None,
     };
 
     let load_errors = if let Some(manifest) = crate::workspace::load() {
@@ -491,7 +508,7 @@ fn persist_collection_if_known_location(
         }
     }
 
-    // no known location yet (brand new, never-saved collection) —
+    // no known location yet (never-saved collection)
     // nothing to flush to disk; just confirm the in-memory update.
     Task::done(Message::ShowToast(success_msg, ToastStatus::Success))
 }
@@ -629,10 +646,36 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 match crate::collection::dir_storage::save_collection_to_dir_clean(collection, &dir)
                 {
                     Ok(()) => {
-                        return Task::done(Message::ShowToast(
-                            format!("Collection now stored at {:?}", dir),
-                            ToastStatus::Success,
-                        ));
+                        let was_already_repo = crate::collection::git_ops::is_git_repo(&dir);
+                        if let Err(e) =
+                            crate::collection::git_ops::write_default_gitignore_if_missing(&dir)
+                        {
+                            return Task::done(Message::ShowToast(
+                                format!("Collection saved, but failed to write .gitignore: {e}"),
+                                ToastStatus::Error,
+                            ));
+                        }
+
+                        let dir_for_init = dir.clone();
+                        return Task::perform(
+                            async move { crate::collection::git_ops::git_init(&dir_for_init).await },
+                            move |result| match result {
+                                Ok(()) => {
+                                    let msg = if was_already_repo {
+                                        format!("Collection now stored at {dir:?}")
+                                    } else {
+                                        format!(
+                                            "Collection now stored at {dir:?} (git repo initialized)"
+                                        )
+                                    };
+                                    Message::ShowToast(msg, ToastStatus::Success)
+                                }
+                                Err(e) => Message::ShowToast(
+                                    format!("Collection saved, but git init failed: {e}"),
+                                    ToastStatus::Error,
+                                ),
+                            },
+                        );
                     }
                     Err(e) => {
                         return Task::done(Message::ShowToast(
@@ -668,6 +711,45 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         ),
 
         Message::GitCollectionLoaded(Some(path), Ok(mut collection)) => {
+            let canon_path = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+            let existing_id = app.collections.iter().find_map(|c| {
+                let dir = c.storage_dir.as_ref()?;
+                let canon_dir = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.clone());
+                (canon_dir == canon_path).then_some(c.id)
+            });
+
+            if let Some(existing_id) = existing_id {
+                app.sync_collection_tabs(existing_id);
+                let existing = app
+                    .collections
+                    .iter()
+                    .find(|c| c.id == existing_id)
+                    .expect("looked up by id above");
+                let has_unsaved = crate::collection::dir_storage::plan_dir_sync(existing, &path)
+                    .map(|plan| !plan.is_empty())
+                    .unwrap_or(false);
+                let existing_name = existing.info.name.clone();
+
+                collection.id = existing_id;
+                let message = if has_unsaved {
+                    format!(
+                        "\"{existing_name}\" is already open with unsaved changes. Reloading will discard them."
+                    )
+                } else {
+                    format!("\"{existing_name}\" is already open. Reload it from disk?")
+                };
+
+                return Task::done(Message::ShowConfirmDialog(ConfirmDialogState {
+                    title: "Reload collection from disk?".to_string(),
+                    message,
+                    confirm_label: "Reload".to_string(),
+                    on_confirm: Box::new(Message::ReplaceCollectionConfirmed(
+                        existing_id,
+                        Box::new(collection),
+                    )),
+                }));
+            }
+
             let col_name = collection.info.name.clone();
             collection.id = app.next_tab_id;
             app.next_tab_id += 1;
@@ -684,6 +766,178 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             ToastStatus::Error,
         )),
         Message::GitCollectionLoaded(None, _) => Task::none(),
+
+        Message::ReplaceCollectionConfirmed(col_id, new_collection) => {
+            app.tabs.retain(|t| {
+                !matches!(&t.content, WorkspaceContent::CollectionRoot { collection_id, .. } if *collection_id == col_id)
+            });
+            if app.active_tab_index >= app.tabs.len() {
+                app.active_tab_index = app.tabs.len().saturating_sub(1);
+            }
+
+            if let Some(existing) = app.collections.iter_mut().find(|c| c.id == col_id) {
+                let mut new_collection = *new_collection;
+                new_collection.id = col_id;
+                *existing = new_collection;
+            }
+            app.git_status_cache.remove(&col_id);
+
+            Task::done(Message::ShowToast(
+                "Collection reloaded from disk".to_string(),
+                ToastStatus::Success,
+            ))
+        }
+
+        // git status/diff panel
+        Message::GitStatusRequested(col_id) => {
+            let dir = app
+                .collections
+                .iter()
+                .find(|c| c.id == col_id)
+                .and_then(|c| c.storage_dir.clone());
+
+            match dir {
+                Some(dir) => Task::perform(
+                    async move { crate::collection::git_ops::git_status(&dir).await },
+                    move |result| Message::GitStatusLoaded(col_id, result),
+                ),
+                None => Task::none(),
+            }
+        }
+        Message::GitStatusLoaded(col_id, result) => {
+            app.git_status_cache.insert(col_id, result);
+            Task::none()
+        }
+        Message::GitDiffRequested(col_id, file) => {
+            app.git_selected_file = Some(file.clone());
+            let dir = app
+                .collections
+                .iter()
+                .find(|c| c.id == col_id)
+                .and_then(|c| c.storage_dir.clone());
+
+            match dir {
+                Some(dir) => {
+                    let file_for_result = file.clone();
+                    Task::perform(
+                        async move { crate::collection::git_ops::git_diff_file(&dir, &file).await },
+                        move |result| Message::GitDiffLoaded(col_id, file_for_result, result),
+                    )
+                }
+                None => Task::none(),
+            }
+        }
+        Message::GitDiffLoaded(_col_id, file, result) => {
+            if app.git_selected_file.as_ref() == Some(&file) {
+                let content = match result {
+                    Ok(diff) if diff.trim().is_empty() => "(no textual differences)".to_string(),
+                    Ok(diff) => diff,
+                    Err(e) => format!("Failed to load diff: {e}"),
+                };
+                app.git_diff_cache = Some((file, content));
+            }
+            Task::none()
+        }
+
+        // commit modal
+        Message::CommitChangesPressed(col_id) => {
+            app.sync_collection_tabs(col_id);
+            let Some(collection) = app.collections.iter().find(|c| c.id == col_id) else {
+                return Task::none();
+            };
+            let Some(dir) = collection.storage_dir.clone() else {
+                return Task::none();
+            };
+            let collection_name = collection.info.name.clone();
+
+            Task::perform(
+                async move { crate::collection::git_ops::git_status(&dir).await },
+                move |result| match result {
+                    Ok(snapshot) => {
+                        Message::CommitStatusLoaded(col_id, collection_name.clone(), snapshot)
+                    }
+                    Err(e) => Message::ShowToast(
+                        format!("Failed to read git status: {e}"),
+                        ToastStatus::Error,
+                    ),
+                },
+            )
+        }
+        Message::CommitStatusLoaded(col_id, collection_name, snapshot) => {
+            if snapshot.files.is_empty() {
+                app.git_status_cache.insert(col_id, Ok(snapshot));
+                return Task::done(Message::ShowToast(
+                    "No changes to commit".to_string(),
+                    ToastStatus::Info,
+                ));
+            }
+            app.git_status_cache.insert(col_id, Ok(snapshot.clone()));
+            app.commit_modal = Some(crate::ui::commit_modal::CommitModalState {
+                collection_id: col_id,
+                collection_name,
+                message: String::new(),
+                files: snapshot.files,
+            });
+            Task::none()
+        }
+        Message::CommitMessageChanged(text) => {
+            if let Some(modal) = app.commit_modal.as_mut() {
+                modal.message = text;
+            }
+            Task::none()
+        }
+        Message::CommitCancelled => {
+            app.commit_modal = None;
+            Task::none()
+        }
+        Message::CommitConfirmed => {
+            let Some(modal) = app.commit_modal.take() else {
+                return Task::none();
+            };
+            let Some(collection) = app.collections.iter().find(|c| c.id == modal.collection_id)
+            else {
+                return Task::none();
+            };
+            let Some(dir) = collection.storage_dir.clone() else {
+                return Task::none();
+            };
+            let col_id = modal.collection_id;
+            let message = modal.message.clone();
+
+            Task::perform(
+                async move { crate::collection::git_ops::git_commit_all(&dir, &message).await },
+                move |result| Message::CommitResult(col_id, result),
+            )
+        }
+        Message::CommitResult(col_id, result) => match result {
+            Ok(()) => Task::batch([
+                Task::done(Message::ShowToast(
+                    "Changes committed".to_string(),
+                    ToastStatus::Success,
+                )),
+                Task::done(Message::GitStatusRequested(col_id)),
+            ]),
+            Err(e) => Task::done(Message::ShowToast(
+                format!("Commit failed: {e}"),
+                ToastStatus::Error,
+            )),
+        },
+
+        // generic reusable confirm dialog
+        Message::ShowConfirmDialog(state) => {
+            app.confirm_dialog = Some(state);
+            Task::none()
+        }
+        Message::ConfirmDialogAccepted => {
+            if let Some(state) = app.confirm_dialog.take() {
+                return Task::done(*state.on_confirm);
+            }
+            Task::none()
+        }
+        Message::ConfirmDialogCancelled => {
+            app.confirm_dialog = None;
+            Task::none()
+        }
         // end git
         Message::ExportCollectionPressed(col_id) => {
             app.sync_collection_tabs(col_id);
@@ -1206,14 +1460,22 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         }
 
         Message::CollectionSubTabSelected(sub_tab) => {
+            let mut collection_id_for_git = None;
             if let Some(tab_state) = app.tabs.get_mut(app.active_tab_index) {
                 if let WorkspaceContent::CollectionRoot {
+                    collection_id,
                     ref mut active_sub_tab,
                     ..
                 } = tab_state.content
                 {
-                    *active_sub_tab = sub_tab;
+                    *active_sub_tab = sub_tab.clone();
+                    if sub_tab == CollectionSubTab::Git {
+                        collection_id_for_git = Some(collection_id);
+                    }
                 }
+            }
+            if let Some(col_id) = collection_id_for_git {
+                return iced::Task::done(Message::GitStatusRequested(col_id));
             }
             Task::none()
         }
@@ -1688,7 +1950,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             if dropped > 0 {
                 tasks.push(Task::done(Message::ShowToast(
                     format!(
-                        "{dropped} unsaved collection(s) weren't carried over — save them to disk first to keep them across workspace switches"
+                        "{dropped} unsaved collection(s) weren't carried over, save them to disk first to keep them across workspace switches"
                     ),
                     ToastStatus::Info,
                 )));

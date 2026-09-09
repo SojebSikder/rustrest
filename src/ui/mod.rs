@@ -1,8 +1,12 @@
 pub mod collection_viewer;
+pub mod commit_modal;
+pub mod confirm_dialog;
 pub mod console_panel;
 pub mod context_menu;
 pub mod env_editor;
+pub mod git_panel;
 pub mod menu;
+pub mod modal;
 pub mod resize_handle;
 pub mod save_request_model;
 pub mod sidebar;

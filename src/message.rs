@@ -1,6 +1,8 @@
 use crate::app::CollectionSubTab;
 use crate::collection::collection::{PostmanCollection, PostmanRequestNode};
+use crate::collection::git_ops::GitStatusSnapshot;
 use crate::http_client::HttpResponse;
+use crate::ui::confirm_dialog::ConfirmDialogState;
 use crate::ui::context_menu::FieldTarget;
 use crate::ui::menu::menu::DropdownMessage;
 use crate::ui::menu::menu_message::MenuMessage;
@@ -138,7 +140,7 @@ pub enum Message {
     },
 
     // save request model action
-    SaveRequestPressed(usize), // tab index — opens the chooser
+    SaveRequestPressed(usize), // tab index, opens the chooser
     SaveRequestModalCollectionSelected(usize), // pick target collection
     SaveRequestModalFolderSelected(Vec<String>), // pick target folder (optional)
     SaveRequestNameChanged(String),
@@ -184,6 +186,28 @@ pub enum Message {
         Option<std::path::PathBuf>,
         Result<PostmanCollection, String>,
     ),
+    /// an import target an already-open collection's storage_dir; user must
+    /// confirm before we discard in-memory state and reload from disk.
+    ReplaceCollectionConfirmed(usize, Box<PostmanCollection>),
+
+    // git status/diff panel (collection root "Git" sub-tab)
+    GitStatusRequested(usize),
+    GitStatusLoaded(usize, Result<GitStatusSnapshot, String>),
+    GitDiffRequested(usize, std::path::PathBuf),
+    GitDiffLoaded(usize, std::path::PathBuf, Result<String, String>),
+
+    // commit modal
+    CommitChangesPressed(usize),
+    CommitStatusLoaded(usize, String, GitStatusSnapshot),
+    CommitMessageChanged(String),
+    CommitConfirmed,
+    CommitCancelled,
+    CommitResult(usize, Result<(), String>),
+
+    // generic reusable confirm dialog
+    ShowConfirmDialog(ConfirmDialogState),
+    ConfirmDialogAccepted,
+    ConfirmDialogCancelled,
     // end git
 
     // temporary data stores
