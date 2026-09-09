@@ -3,7 +3,9 @@ use crate::http_client::HttpMethod;
 use crate::message::{Message, ResizeKind};
 use crate::ui::context_menu::{FieldTarget, with_context_menu};
 use crate::ui::unsaved::{tab_is_unsaved, unsaved_dot};
-use iced::widget::{Id, Space, button, column, mouse_area, row, scrollable, text, text_input};
+use iced::widget::{
+    Id, Space, button, column, container, mouse_area, row, scrollable, text, text_input,
+};
 use iced::{Alignment, Element, Length};
 
 /// id of the horizontally-scrolling tab strip, used to snap it to the newest tab whenever one is added
@@ -76,14 +78,40 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
                 .style(button::text),
         );
 
-        let mut tab_button = button(tab_row).padding(6);
+        // a plain container so the outer mouse_area's on_press
+        // still sees the mouse-down and can arm a drag - buttons only report
+        // clicks on release, which is too late to catch the drag motion
+        let tab_surface = container(tab_row)
+            .padding(6)
+            .style(move |theme: &iced::Theme| {
+                if is_active {
+                    container::Style {
+                        background: Some(theme.palette().primary.into()),
+                        text_color: Some(theme.palette().background),
+                        border: iced::Border {
+                            radius: 4.0.into(),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    }
+                } else {
+                    container::Style {
+                        background: Some(iced::Color::from_rgba(0.5, 0.5, 0.5, 0.12).into()),
+                        border: iced::Border {
+                            radius: 4.0.into(),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    }
+                }
+            });
 
-        if !is_active {
-            tab_button = tab_button
-                .style(button::secondary)
-                .on_press(Message::TabSelected(idx));
-        }
-        tab_bar = tab_bar.push(tab_button);
+        let tab_element = mouse_area(tab_surface)
+            .on_press(Message::TabDragStarted(idx))
+            .on_enter(Message::TabDragEntered(idx))
+            .interaction(iced::mouse::Interaction::Pointer);
+
+        tab_bar = tab_bar.push(tab_element);
     }
 
     let add_tab_btn = button("+")

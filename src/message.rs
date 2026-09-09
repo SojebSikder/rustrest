@@ -17,9 +17,40 @@ pub enum ResizeKind {
     ConsolePanel,
 }
 
+/// identifies the sidebar item currently being dragged.
+#[derive(Debug, Clone)]
+pub enum SidebarDragItem {
+    Request {
+        collection_id: usize,
+        parent_path: Vec<String>,
+        request_id: usize,
+    },
+    Folder {
+        collection_id: usize,
+        path: Vec<String>,
+    },
+}
+
+/// identifies where a dragged sidebar item was dropped.
+#[derive(Debug, Clone)]
+pub enum SidebarDropTarget {
+    /// dropped onto a folder header - moves the item into that folder.
+    Folder {
+        collection_id: usize,
+        folder_path: Vec<String>,
+    },
+    /// dropped onto a collection header - moves the item to that collection's root.
+    CollectionRoot(usize),
+    /// dropped onto a request row - slots the item in right before that sibling.
+    Request {
+        collection_id: usize,
+        parent_path: Vec<String>,
+        request_id: usize,
+    },
+}
+
 #[derive(Debug, Clone)]
 pub enum Message {
-    TabSelected(usize),
     NewTabPressed,
     SidebarCollectionRootClicked(usize),
     CloseTabPressed(usize),
@@ -37,7 +68,27 @@ pub enum Message {
     CollectionLoaded(Option<std::path::PathBuf>, String),
     SaveCollectionPressed(usize),
 
-    SidebarRequestClicked(PostmanRequestNode),
+    SidebarRequestClicked {
+        req_node: PostmanRequestNode,
+        collection_id: usize,
+        parent_path: Vec<String>,
+    },
+
+    // sidebar drag-and-drop (reorder / move requests & folders)
+    SidebarDragStarted(SidebarDragItem),
+    SidebarDropped(SidebarDropTarget),
+
+    // sidebar collapse/expand
+    ToggleCollectionCollapsed(usize),
+    ToggleFolderCollapsed {
+        collection_id: usize,
+        folder_path: Vec<String>,
+    },
+
+    // tab bar drag-to-reorder
+    TabDragStarted(usize),
+    TabDragEntered(usize),
+    TabDragEnded,
 
     // environment Actions
     EditEnvironmentPressed(usize),

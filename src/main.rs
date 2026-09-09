@@ -121,6 +121,18 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         Subscription::none()
     };
 
+    // while a tab is being dragged to reorder it, release the drag on mouse-up
+    let tab_drag_sub = if app.dragging_tab_index.is_some() {
+        event::listen_with(|event, _status, _window| match event {
+            Event::Mouse(iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left)) => {
+                Some(Message::TabDragEnded)
+            }
+            _ => None,
+        })
+    } else {
+        Subscription::none()
+    };
+
     Subscription::batch([
         context_menu_sub,
         menu_bar_sub,
@@ -130,6 +142,7 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         cursor_tracker,
         tab_rename_sub,
         resize_drag_sub,
+        tab_drag_sub,
     ])
 }
 

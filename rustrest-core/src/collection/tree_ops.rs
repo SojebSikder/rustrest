@@ -105,6 +105,54 @@ pub fn remove_nested(items: &mut Vec<CollectionItem>, path: &[String]) {
     }
 }
 
+/// removes and returns the request with `req_id` living directly under `path`,
+/// for relocating it elsewhere in the tree (drag-and-drop moves).
+pub fn take_request(
+    items: &mut Vec<CollectionItem>,
+    path: &[String],
+    req_id: usize,
+) -> Option<CollectionItem> {
+    let target = find_folder_items_mut(items, path)?;
+    let idx = target
+        .iter()
+        .position(|item| matches!(item, CollectionItem::Request(req) if req.id == req_id))?;
+    Some(target.remove(idx))
+}
+
+/// removes and returns the folder (with all its descendants) named by `path`'s
+/// last segment, for relocating it elsewhere in the tree (drag-and-drop moves).
+pub fn take_folder(items: &mut Vec<CollectionItem>, path: &[String]) -> Option<CollectionItem> {
+    let (last, parent_path) = path.split_last()?;
+    let target = find_folder_items_mut(items, parent_path)?;
+    let idx = target
+        .iter()
+        .position(|item| matches!(item, CollectionItem::Folder(folder) if folder.name == *last))?;
+    Some(target.remove(idx))
+}
+
+/// inserts `item` into the children of the folder at `path` (or the root, if
+/// `path` is empty), either right before an existing request with the id
+/// `before_request_id`, or at the end when that request isn't found there.
+pub fn insert_item_at(
+    items: &mut Vec<CollectionItem>,
+    path: &[String],
+    item: CollectionItem,
+    before_request_id: Option<usize>,
+) -> bool {
+    let Some(target) = find_folder_items_mut(items, path) else {
+        return false;
+    };
+    let insert_idx = before_request_id
+        .and_then(|id| {
+            target
+                .iter()
+                .position(|i| matches!(i, CollectionItem::Request(req) if req.id == id))
+        })
+        .unwrap_or(target.len());
+    target.insert(insert_idx, item);
+    true
+}
+
 pub fn rename_nested_folder(
     items: &mut Vec<CollectionItem>,
     path: &[String],

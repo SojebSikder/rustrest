@@ -5,7 +5,7 @@ use crate::collection::collection::{
 use crate::collection::env::Environment;
 use crate::collection_adapter::create_tab_from_request;
 use crate::http_client::send_request;
-use crate::message::{Message, ResizeKind};
+use crate::message::{Message, ResizeKind, SidebarDragItem};
 use crate::session::{SavedSession, SavedTabEntry};
 use crate::ui::confirm_dialog::ConfirmDialogState;
 use crate::ui::context_menu::{ContextMenu, FieldTarget, apply_field_paste};
@@ -18,7 +18,8 @@ use crate::ui::toast::toast::{ToastManager, ToastStatus};
 use crate::updater::{UpdateInfo, check_for_update, perform_update};
 use crate::utils::{
     contains_request_node_by_id, find_request_mut, format_json_or_fallback, insert_nested,
-    insert_nested_request, remove_nested, remove_nested_request, rename_nested_folder, update_node,
+    insert_nested_request, move_sidebar_item, remove_nested, remove_nested_request,
+    rename_nested_folder, update_node,
 };
 use crate::workspace::{CollectionSource, SavedWorkspace, WorkspaceManifest};
 use crate::{APP_NAME, APP_VERSION};
@@ -114,6 +115,14 @@ pub struct Rustrest {
     pub git_diff_cache: Option<(std::path::PathBuf, String)>,
     pub commit_modal: Option<crate::ui::commit_modal::CommitModalState>,
     pub confirm_dialog: Option<crate::ui::confirm_dialog::ConfirmDialogState>,
+
+    // sidebar drag-and-drop + collapse state
+    pub sidebar_drag: Option<SidebarDragItem>,
+    pub collapsed_collections: std::collections::HashSet<usize>,
+    pub collapsed_folders: std::collections::HashSet<(usize, Vec<String>)>,
+
+    // tab bar drag-to-reorder
+    pub dragging_tab_index: Option<usize>,
 }
 
 impl Rustrest {
@@ -332,6 +341,10 @@ pub fn init() -> (Rustrest, Task<Message>) {
         git_diff_cache: None,
         commit_modal: None,
         confirm_dialog: None,
+        sidebar_drag: None,
+        collapsed_collections: std::collections::HashSet::new(),
+        collapsed_folders: std::collections::HashSet::new(),
+        dragging_tab_index: None,
     };
 
     let load_errors = if let Some(manifest) = crate::workspace::load() {
@@ -1044,7 +1057,17 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             }
         }
 
-        Message::SidebarRequestClicked(req_node) => {
+        Message::SidebarRequestClicked {
+            req_node,
+            collection_id,
+            parent_path,
+        } => {
+            app.sidebar_drag = Some(SidebarDragItem::Request {
+                collection_id,
+                parent_path,
+                request_id: req_node.id,
+            });
+
             let existing_tab_idx = app.tabs.iter().position(|t| {
                 t.tab.request_id == Some(req_node.id)
                     && matches!(t.content, WorkspaceContent::HttpRequest)
@@ -1072,13 +1095,6 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 app.active_tab_index = app.tabs.len() - 1;
                 iced::widget::operation::snap_to_end(crate::ui::workspace::tab_bar_scroll_id())
             }
-        }
-
-        Message::TabSelected(index) => {
-            if index < app.tabs.len() {
-                app.active_tab_index = index;
-            }
-            Task::none()
         }
 
         Message::NewTabPressed => {
@@ -1847,6 +1863,101 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
 
         Message::ResizeDragEnded => {
             app.resize_drag = None;
+            Task::none()
+        }
+
+        Message::SidebarDragStarted(item) => {
+            app.sidebar_drag = Some(item);
+            Task::none()
+        }
+
+        Message::SidebarDropped(target) => {
+            if let Some(drag) = app.sidebar_drag.take() {
+                let dropped_on_self = matches!(
+                    (&drag, &target),
+                    (
+                        SidebarDragItem::Request { request_id: a, .. },
+                        crate::message::SidebarDropTarget::Request { request_id: b, .. }
+                    ) if a == b
+                );
+
+                if !dropped_on_self {
+                    let (dest_collection_id, dest_folder_path, before_request_id) = match target {
+                        crate::message::SidebarDropTarget::Folder {
+                            collection_id,
+                            folder_path,
+                        } => (collection_id, folder_path, None),
+                        crate::message::SidebarDropTarget::CollectionRoot(collection_id) => {
+                            (collection_id, Vec::new(), None)
+                        }
+                        crate::message::SidebarDropTarget::Request {
+                            collection_id,
+                            parent_path,
+                            request_id,
+                        } => (collection_id, parent_path, Some(request_id)),
+                    };
+                    move_sidebar_item(
+                        &mut app.collections,
+                        drag,
+                        dest_collection_id,
+                        dest_folder_path,
+                        before_request_id,
+                    );
+                }
+            }
+            Task::none()
+        }
+
+        Message::ToggleCollectionCollapsed(col_id) => {
+            if !app.collapsed_collections.remove(&col_id) {
+                app.collapsed_collections.insert(col_id);
+            }
+            Task::none()
+        }
+
+        Message::ToggleFolderCollapsed {
+            collection_id,
+            folder_path,
+        } => {
+            let key = (collection_id, folder_path);
+            if !app.collapsed_folders.remove(&key) {
+                app.collapsed_folders.insert(key);
+            }
+            Task::none()
+        }
+
+        Message::TabDragStarted(idx) => {
+            app.active_tab_index = idx;
+            app.dragging_tab_index = Some(idx);
+            Task::none()
+        }
+
+        Message::TabDragEntered(idx) => {
+            if let Some(from) = app.dragging_tab_index {
+                if from != idx && from < app.tabs.len() && idx < app.tabs.len() {
+                    let was_active = app.active_tab_index;
+                    let moved_was_active = was_active == from;
+
+                    let tab = app.tabs.remove(from);
+                    app.tabs.insert(idx, tab);
+                    app.dragging_tab_index = Some(idx);
+
+                    app.active_tab_index = if moved_was_active {
+                        idx
+                    } else if from < was_active && idx >= was_active {
+                        was_active - 1
+                    } else if from > was_active && idx <= was_active {
+                        was_active + 1
+                    } else {
+                        was_active
+                    };
+                }
+            }
+            Task::none()
+        }
+
+        Message::TabDragEnded => {
+            app.dragging_tab_index = None;
             Task::none()
         }
 
