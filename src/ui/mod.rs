@@ -12,4 +12,5 @@ pub mod save_request_model;
 pub mod sidebar;
 pub mod tab;
 pub mod toast;
+pub mod unsaved;
 pub mod workspace;

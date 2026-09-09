@@ -2,6 +2,9 @@ use crate::app::Rustrest;
 use crate::collection::collection::CollectionItem;
 use crate::message::Message;
 use crate::ui::context_menu::{FieldTarget, with_context_menu};
+use crate::ui::unsaved::{
+    collection_is_unsaved, folder_is_unsaved, request_is_unsaved, unsaved_dot,
+};
 use iced::Padding;
 use iced::widget::{
     Column, button, column, container, mouse_area, pick_list, row, scrollable, text, text_input,
@@ -53,6 +56,10 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
                 ]
                 .spacing(4)
                 .align_y(Alignment::Center);
+
+                if collection_is_unsaved(app, col) {
+                    header_row = header_row.push(unsaved_dot());
+                }
 
                 if col.storage_dir.is_some() {
                     let has_changes = app
@@ -271,7 +278,15 @@ fn render_sidebar_item<'a>(
                 .align_y(Alignment::Center)
                 .into()
             } else {
-                mouse_area(container(text(format!("📁 {}", folder.name)).size(14)).padding([2, 0]))
+                let mut title_row = row![text(format!("📁 {}", folder.name)).size(14)]
+                    .spacing(4)
+                    .align_y(Alignment::Center);
+
+                if folder_is_unsaved(app, &folder.item) {
+                    title_row = title_row.push(unsaved_dot());
+                }
+
+                mouse_area(container(title_row).padding([2, 0]))
                     .on_right_press(Message::ShowFolderContextMenu {
                         collection_id,
                         folder_path: path_for_right_click,
@@ -303,10 +318,17 @@ fn render_sidebar_item<'a>(
             let path_for_right_click = current_path.clone();
             let req_id = req_node.id;
 
+            let mut label_row = row![text(label).size(13)]
+                .spacing(4)
+                .align_y(Alignment::Center);
+            if request_is_unsaved(app, req_node) {
+                label_row = label_row.push(unsaved_dot());
+            }
+
             let req_layout = column![
                 mouse_area(
                     container(
-                        button(text(label).size(13))
+                        button(label_row)
                             .on_press(Message::SidebarRequestClicked(req_clone))
                             .style(button::text)
                             .padding([2, 5])

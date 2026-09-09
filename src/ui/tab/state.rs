@@ -45,6 +45,9 @@ pub struct Tab {
     pub response_body_editor: text_editor::Content,
     pub is_loading: bool,
     pub cancel_token: CancellationToken,
+    /// true when this tab has edits that haven't been saved yet; drives the
+    /// unsaved-changes dot shown in the sidebar and tab strip.
+    pub dirty: bool,
 }
 
 impl Tab {
@@ -86,6 +89,7 @@ impl Tab {
             is_loading: false,
             cancel_token: CancellationToken::new(),
             response_body_editor: text_editor::Content::with_text(""),
+            dirty: false,
         }
     }
 
@@ -145,6 +149,7 @@ impl Tab {
                 body: None,
             },
             event: None,
+            unsaved: false,
         }
     }
 
@@ -180,6 +185,9 @@ impl Tab {
     }
 
     pub fn update(&mut self, message: TabMessage) {
+        if message.is_content_edit() {
+            self.dirty = true;
+        }
         match message {
             TabMessage::UrlChanged(new_url) => {
                 self.url = new_url;

@@ -17,8 +17,8 @@ use crate::ui::tab::{Tab, TabMessage};
 use crate::ui::toast::toast::{ToastManager, ToastStatus};
 use crate::updater::{UpdateInfo, check_for_update, perform_update};
 use crate::utils::{
-    contains_request_node_by_id, format_json_or_fallback, insert_nested, insert_nested_request,
-    remove_nested, remove_nested_request, rename_nested_folder, update_node,
+    contains_request_node_by_id, find_request_mut, format_json_or_fallback, insert_nested,
+    insert_nested_request, remove_nested, remove_nested_request, rename_nested_folder, update_node,
 };
 use crate::workspace::{CollectionSource, SavedWorkspace, WorkspaceManifest};
 use crate::{APP_NAME, APP_VERSION};
@@ -619,6 +619,21 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 return iced::Task::done(Message::ExportCollectionPressed(col_id));
             }
 
+            if let Some(col) = app.collections.iter_mut().find(|c| c.id == col_id) {
+                col.clear_unsaved();
+            }
+            for tab_state in &mut app.tabs {
+                let belongs = match &tab_state.content {
+                    WorkspaceContent::HttpRequest => tab_state.tab.collection_id == Some(col_id),
+                    WorkspaceContent::CollectionRoot { collection_id, .. } => {
+                        *collection_id == col_id
+                    }
+                };
+                if belongs {
+                    tab_state.tab.dirty = false;
+                }
+            }
+
             persist_collection_if_known_location(
                 app,
                 col_id,
@@ -646,6 +661,20 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 match crate::collection::dir_storage::save_collection_to_dir_clean(collection, &dir)
                 {
                     Ok(()) => {
+                        collection.clear_unsaved();
+                        for tab_state in &mut app.tabs {
+                            let belongs = match &tab_state.content {
+                                WorkspaceContent::HttpRequest => {
+                                    tab_state.tab.collection_id == Some(col_id)
+                                }
+                                WorkspaceContent::CollectionRoot { collection_id, .. } => {
+                                    *collection_id == col_id
+                                }
+                            };
+                            if belongs {
+                                tab_state.tab.dirty = false;
+                            }
+                        }
                         let was_already_repo = crate::collection::git_ops::is_git_repo(&dir);
                         if let Err(e) =
                             crate::collection::git_ops::write_default_gitignore_if_missing(&dir)
@@ -1390,6 +1419,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         Message::TabNameChanged(idx, new_name) => {
             if let Some(tab_state) = app.tabs.get_mut(idx) {
                 tab_state.tab.name = new_name;
+                tab_state.tab.dirty = true;
             }
             Task::none()
         }
@@ -1492,6 +1522,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     var.key = key;
                     var.value = Some(serde_json::Value::String(value));
                 }
+                col.unsaved = true;
             }
             Task::none()
         }
@@ -1511,6 +1542,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                         });
                     }
                 }
+                col.unsaved = true;
             }
             Task::none()
         }
@@ -1523,6 +1555,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     value: Some(serde_json::Value::String(String::new())),
                     r#type: Some("string".to_string()),
                 });
+                col.unsaved = true;
             }
             Task::none()
         }
@@ -1534,6 +1567,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                         vars.remove(index);
                     }
                 }
+                col.unsaved = true;
             }
             Task::none()
         }
@@ -1554,6 +1588,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 variable: Some(Vec::new()),
                 file_path: None,
                 storage_dir: None,
+                unsaved: false,
             };
             app.collections.push(new_col);
             Task::none()
@@ -1582,6 +1617,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         Message::CollectionNameChanged(col_id, new_name) => {
             if let Some(col) = app.collections.iter_mut().find(|c| c.id == col_id) {
                 col.info.name = new_name.clone();
+                col.unsaved = true;
 
                 // update associated workspace tabs showing this collection's root
                 for t in &mut app.tabs {
@@ -1677,6 +1713,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                         body: None,
                     },
                     event: None,
+                    unsaved: true,
                 };
 
                 insert_nested_request(
@@ -2097,10 +2134,18 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     // if this request is already saved into a collection, sync its
                     // current state back in place and flush the collection to disk
                     // if it already has a known save location (git folder / file).
-                    if let (Some(_req_id), Some(col_id)) =
+                    if let (Some(req_id), Some(col_id)) =
                         (tab_state.tab.request_id, tab_state.tab.collection_id)
                     {
                         app.sync_tab_to_collection(tab_idx);
+                        if let Some(tab_state) = app.tabs.get_mut(tab_idx) {
+                            tab_state.tab.dirty = false;
+                        }
+                        if let Some(col) = app.collections.iter_mut().find(|c| c.id == col_id) {
+                            if let Some(node) = find_request_mut(&mut col.item, req_id) {
+                                node.unsaved = false;
+                            }
+                        }
                         return persist_collection_if_known_location(
                             app,
                             col_id,
@@ -2169,17 +2214,20 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 modal.request_name.clone()
             };
 
-            let already_linked = app
-                .tabs
-                .get(modal.tab_index)
-                .and_then(|t| t.tab.request_id)
-                .is_some();
+            let already_linked_req_id =
+                app.tabs.get(modal.tab_index).and_then(|t| t.tab.request_id);
 
-            if already_linked {
+            if let Some(req_id) = already_linked_req_id {
                 if let Some(tab_state) = app.tabs.get_mut(modal.tab_index) {
                     tab_state.tab.name = name;
+                    tab_state.tab.dirty = false;
                 }
                 app.sync_tab_to_collection(modal.tab_index);
+                if let Some(col) = app.collections.iter_mut().find(|c| c.id == col_id) {
+                    if let Some(node) = find_request_mut(&mut col.item, req_id) {
+                        node.unsaved = false;
+                    }
+                }
                 return persist_collection_if_known_location(
                     app,
                     col_id,
@@ -2194,6 +2242,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 tab_state.tab.name = name.clone();
                 tab_state.tab.request_id = Some(req_id);
                 tab_state.tab.collection_id = Some(col_id);
+                tab_state.tab.dirty = false;
                 Some(tab_state.tab.to_postman_request_node(req_id, &name))
             } else {
                 None

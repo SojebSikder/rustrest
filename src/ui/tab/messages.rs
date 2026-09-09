@@ -58,3 +58,51 @@ pub enum TabMessage {
     /// intercepted at the app level before reaching `Tab::update`.
     ShowFieldContextMenu(TabFieldTarget, String),
 }
+
+impl TabMessage {
+    /// whether this message represents an actual content edit, as opposed to
+    /// a pure navigation/UI-state change (switching sub-tabs, moving a text
+    /// cursor, etc). Drives the tab's unsaved-changes indicator.
+    pub fn is_content_edit(&self) -> bool {
+        use iced::widget::text_editor::Action;
+        match self {
+            TabMessage::UrlChanged(_)
+            | TabMessage::MethodSelected(_)
+            | TabMessage::MethodChanged(_)
+            | TabMessage::AuthChanged(_)
+            | TabMessage::BodyTypeChanged(_)
+            | TabMessage::RawTypeChanged(_)
+            | TabMessage::SelectBinaryFile
+            | TabMessage::BinaryFileSelected(_)
+            | TabMessage::SelectFormDataFile(_)
+            | TabMessage::FormDataRowTypeChanged(_, _)
+            | TabMessage::ParamRowChanged(_, _)
+            | TabMessage::AddParamRow
+            | TabMessage::RemoveParamRow(_)
+            | TabMessage::HeaderRowChanged(_, _)
+            | TabMessage::AddHeaderRow
+            | TabMessage::RemoveHeaderRow(_)
+            | TabMessage::FormDataRowChanged(_, _)
+            | TabMessage::AddFormDataRow
+            | TabMessage::RemoveFormDataRow(_)
+            | TabMessage::UrlencodedRowChanged(_, _)
+            | TabMessage::AddUrlencodedRow
+            | TabMessage::RemoveUrlencodedRow(_)
+            | TabMessage::CookieRowChanged(_, _)
+            | TabMessage::AddCookieRow
+            | TabMessage::RemoveCookieRow(_) => true,
+
+            TabMessage::BodyChanged(action)
+            | TabMessage::PreRequestScriptChanged(action)
+            | TabMessage::PostResponseScriptChanged(action) => matches!(action, Action::Edit(_)),
+
+            TabMessage::SubTabSelected(_)
+            | TabMessage::ResponseViewChanged(_)
+            | TabMessage::ResponseSubTabSelected(_)
+            | TabMessage::ResponseBodyEditorAction(_)
+            | TabMessage::ScriptTabChanged(_)
+            | TabMessage::CancelRequest
+            | TabMessage::ShowFieldContextMenu(_, _) => false,
+        }
+    }
+}

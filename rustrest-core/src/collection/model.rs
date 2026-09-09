@@ -12,6 +12,12 @@ pub struct PostmanCollection {
     #[serde(skip)]
     pub storage_dir: Option<std::path::PathBuf>,
 
+    /// true when the collection tree/info has been mutated (folder/request
+    /// added or renamed, collection renamed, variables edited, ...) since
+    /// the last successful save to disk.
+    #[serde(skip)]
+    pub unsaved: bool,
+
     pub info: CollectionInfo,
     pub item: Vec<CollectionItem>,
     pub variable: Option<Vec<PostmanVariable>>,
@@ -33,6 +39,15 @@ impl PostmanCollection {
     // recursively find a folder by its current path and rename it
     pub fn rename_folder_by_path(&mut self, path: &[String], new_name: &str) -> bool {
         crate::collection::tree_ops::rename_nested_folder(&mut self.item, path, new_name)
+    }
+
+    /// clears the unsaved flag on the collection and every item in its tree;
+    /// called once the collection has actually been persisted to disk.
+    pub fn clear_unsaved(&mut self) {
+        self.unsaved = false;
+        for item in &mut self.item {
+            item.clear_unsaved();
+        }
     }
 
     // extracts raw postman variables into native application KeyValuePairs
@@ -130,6 +145,10 @@ pub struct PostmanFolder {
     pub item: Vec<CollectionItem>,
     pub event: Option<Vec<PostmanEvent>>,
     pub description: Option<String>,
+
+    /// true when this folder was added/renamed since the last save.
+    #[serde(skip)]
+    pub unsaved: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -143,6 +162,23 @@ pub struct PostmanProtocolProfileBehavior {
 pub enum CollectionItem {
     Folder(PostmanFolder),
     Request(PostmanRequestNode),
+}
+
+impl CollectionItem {
+    /// recursively clears the unsaved flag on this item and its descendants.
+    pub fn clear_unsaved(&mut self) {
+        match self {
+            CollectionItem::Folder(folder) => {
+                folder.unsaved = false;
+                for item in &mut folder.item {
+                    item.clear_unsaved();
+                }
+            }
+            CollectionItem::Request(req) => {
+                req.unsaved = false;
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -184,6 +220,10 @@ pub struct PostmanRequestNode {
     pub name: String,
     pub event: Option<Vec<PostmanEvent>>,
     pub request: PostmanRequestDetails,
+
+    /// true when this request was added since the last save.
+    #[serde(skip)]
+    pub unsaved: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

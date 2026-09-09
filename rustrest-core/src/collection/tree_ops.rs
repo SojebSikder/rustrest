@@ -71,6 +71,7 @@ pub fn insert_nested(items: &mut Vec<CollectionItem>, path: &[String]) {
             item: Vec::new(),
             protocol_profile_behavior: None,
             event: None,
+            unsaved: true,
         }));
     }
 }
@@ -112,6 +113,7 @@ pub fn rename_nested_folder(
     match find_folder_mut(items, path) {
         Some(folder) => {
             folder.name = new_val.to_string();
+            folder.unsaved = true;
             true
         }
         None => false,

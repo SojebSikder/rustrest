@@ -288,6 +288,7 @@ pub fn load_collection_from_dir(root: &Path) -> Result<PostmanCollection, String
         id: 0,
         file_path: None,
         storage_dir: Some(root.to_path_buf()),
+        unsaved: false,
         info: meta.info,
         item,
         variable: meta.variable,
@@ -315,6 +316,7 @@ fn read_items(dir: &Path, order: &[String]) -> Result<Vec<CollectionItem>, Strin
                 item: child_items,
                 event: meta.event,
                 description: meta.description,
+                unsaved: false,
             }));
         } else {
             let text =

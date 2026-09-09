@@ -2,6 +2,7 @@ use crate::app::{Rustrest, WorkspaceContent};
 use crate::http_client::HttpMethod;
 use crate::message::{Message, ResizeKind};
 use crate::ui::context_menu::{FieldTarget, with_context_menu};
+use crate::ui::unsaved::{tab_is_unsaved, unsaved_dot};
 use iced::widget::{Id, Space, button, column, mouse_area, row, scrollable, text, text_input};
 use iced::{Alignment, Element, Length};
 
@@ -60,19 +61,22 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
                 .into()
         };
 
-        let mut tab_button = button(
-            row![
-                prefix_badge,
-                tab_content,
-                button("×")
-                    .on_press(Message::CloseTabPressed(idx))
-                    .padding(2)
-                    .style(button::text)
-            ]
+        let mut tab_row = row![prefix_badge, tab_content]
             .spacing(6)
-            .align_y(Alignment::Center),
-        )
-        .padding(6);
+            .align_y(Alignment::Center);
+
+        if tab_is_unsaved(app, tab_state) {
+            tab_row = tab_row.push(unsaved_dot());
+        }
+
+        tab_row = tab_row.push(
+            button("×")
+                .on_press(Message::CloseTabPressed(idx))
+                .padding(2)
+                .style(button::text),
+        );
+
+        let mut tab_button = button(tab_row).padding(6);
 
         if !is_active {
             tab_button = tab_button

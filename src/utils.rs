@@ -4,8 +4,8 @@ use crate::ui::tab::Tab;
 use crate::ui::tab::types::{BodyType, FormDataType};
 
 pub use rustrest_core::collection::tree_ops::{
-    contains_request_node_by_id, insert_nested, insert_nested_request, remove_nested,
-    remove_nested_request, rename_nested_folder,
+    contains_request_node_by_id, find_request_mut, insert_nested, insert_nested_request,
+    remove_nested, remove_nested_request, rename_nested_folder,
 };
 
 pub fn format_json_or_fallback(raw_body: &str) -> String {
