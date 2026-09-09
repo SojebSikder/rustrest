@@ -107,7 +107,7 @@ pub fn render_env_selector(app: &Rustrest) -> Element<'_, Message> {
             Message::EnvSelected(Some(selected))
         })
         .placeholder("No Environment")
-        .width(Length::Fixed(140.0)),
+        .width(Length::Fixed(150.0)),
         // add Environment button
         button(text("+").size(14))
             .on_press(Message::CreateEnvironmentPressed)
