@@ -1,10 +1,7 @@
-use crate::collection::collection::{
-    CollectionItem, PostmanBody, PostmanBodyRow, PostmanCollection,
-};
-use crate::collection_adapter::RequestNodeTabExt;
+use crate::collection::collection::{CollectionItem, PostmanCollection};
+use crate::collection_adapter::{RequestNodeTabExt, sync_body_from_tab};
 use crate::message::SidebarDragItem;
 use crate::ui::tab::Tab;
-use crate::ui::tab::types::{BodyType, FormDataType};
 
 pub use rustrest_core::collection::tree_ops::{
     contains_request_node_by_id, find_request_mut, insert_item_at, insert_nested,
@@ -77,62 +74,8 @@ pub fn update_node(items: &mut Vec<CollectionItem>, target_id: usize, tab: &Tab)
     // sync name / method / url / headers / pre-request and test scripts
     req.update_from_tab(tab);
 
-    // sync Request Body types conditionally
-    match tab.body_type {
-        BodyType::Raw => {
-            let text_content = tab.request_body.text();
-            if !text_content.trim().is_empty() {
-                req.request.body = Some(PostmanBody {
-                    mode: Some("raw".to_string()),
-                    raw: Some(text_content),
-                    formdata: None,
-                    urlencoded: None,
-                });
-            } else {
-                req.request.body = None;
-            }
-        }
-        BodyType::FormData => {
-            req.request.body = Some(PostmanBody {
-                mode: Some("formdata".to_string()),
-                raw: None,
-                formdata: Some(
-                    tab.body_form_data
-                        .iter()
-                        .map(|r| PostmanBodyRow {
-                            key: r.key.clone(),
-                            value: Some(r.value.clone()),
-                            disabled: Some(!r.is_active),
-                            r#type: Some(match r.field_type {
-                                FormDataType::File => "file".to_string(),
-                                FormDataType::Text => "text".to_string(),
-                            }),
-                        })
-                        .collect(),
-                ),
-                urlencoded: None,
-            });
-        }
-        // handle urlencoded if types parse it natively or fall back safely
-        _ => {
-            req.request.body = Some(PostmanBody {
-                mode: Some("urlencoded".to_string()),
-                raw: None,
-                formdata: None,
-                urlencoded: Some(
-                    tab.body_urlencoded
-                        .iter()
-                        .map(|u| PostmanBodyRow {
-                            key: u.key.clone(),
-                            value: Some(u.value.clone()),
-                            disabled: Some(!u.is_active),
-                            r#type: Some("text".to_string()),
-                        })
-                        .collect(),
-                ),
-            });
-        }
-    }
+    // sync request body conditionally on the active body type
+    sync_body_from_tab(req, tab);
 
     true
 }

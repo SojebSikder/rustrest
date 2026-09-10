@@ -3,10 +3,9 @@ use super::types::{
     BodyType, FormDataRow, FormDataType, KeyValuePair, RawType, RequestSubTab, ResponseSubTab,
     ResponseView,
 };
-use crate::collection::collection::{
-    PostmanHeader, PostmanRequestDetails, PostmanRequestNode, PostmanUrl,
-};
+use crate::collection::collection::{PostmanRequestDetails, PostmanRequestNode, PostmanUrl};
 use crate::collection::env::Environment;
+use crate::collection_adapter::{RequestNodeTabExt, sync_body_from_tab};
 use crate::http_client::{HttpMethod, HttpResponse};
 use crate::ui::resize_handle::{DividerOrientation, resize_handle};
 use crate::ui::tab::types::ScriptTab;
@@ -124,33 +123,24 @@ impl Tab {
     }
 
     pub fn to_postman_request_node(&self, req_id: usize, name: &str) -> PostmanRequestNode {
-        let header = if self.request_headers.is_empty() {
-            None
-        } else {
-            Some(
-                self.request_headers
-                    .iter()
-                    .map(|h| PostmanHeader {
-                        key: h.key.clone(),
-                        value: h.value.clone(),
-                        disabled: Some(!h.is_active),
-                    })
-                    .collect(),
-            )
-        };
-
-        PostmanRequestNode {
+        let mut node = PostmanRequestNode {
             id: req_id,
             name: name.to_string(),
             request: PostmanRequestDetails {
                 method: self.method.to_string(),
                 url: Some(PostmanUrl::String(self.url.clone())),
-                header,
+                header: None,
                 body: None,
             },
             event: None,
             unsaved: false,
-        }
+        };
+
+        node.update_from_tab(self);
+        sync_body_from_tab(&mut node, self);
+        node.id = req_id;
+        node.name = name.to_string();
+        node
     }
 
     /// rebuilds `request_params` from the query string of `self.url`

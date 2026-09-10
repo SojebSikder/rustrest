@@ -1,5 +1,6 @@
 use crate::collection::collection::{
-    PostmanEvent, PostmanHeader, PostmanRequestNode, PostmanScript, PostmanScriptExec, PostmanUrl,
+    PostmanBody, PostmanBodyRow, PostmanEvent, PostmanHeader, PostmanRequestNode, PostmanScript,
+    PostmanScriptExec, PostmanUrl,
 };
 use crate::http_client::HttpMethod;
 use crate::ui::tab::Tab;
@@ -8,6 +9,62 @@ use crate::ui::tab::types::{BodyType, FormDataRow, FormDataType, KeyValuePair, R
 pub trait RequestNodeTabExt {
     /// updates this collection request node from a live UI tab, including pre-request & test scripts.
     fn update_from_tab(&mut self, tab: &Tab);
+}
+
+/// syncs a request node's body from a live UI tab's body editor state.
+pub fn sync_body_from_tab(node: &mut PostmanRequestNode, tab: &Tab) {
+    node.request.body = match tab.body_type {
+        BodyType::None => None,
+        BodyType::Raw => {
+            let text_content = tab.request_body.text();
+            if text_content.trim().is_empty() {
+                None
+            } else {
+                Some(PostmanBody {
+                    mode: Some("raw".to_string()),
+                    raw: Some(text_content),
+                    formdata: None,
+                    urlencoded: None,
+                })
+            }
+        }
+        BodyType::FormData => Some(PostmanBody {
+            mode: Some("formdata".to_string()),
+            raw: None,
+            formdata: Some(
+                tab.body_form_data
+                    .iter()
+                    .map(|r| PostmanBodyRow {
+                        key: r.key.clone(),
+                        value: Some(r.value.clone()),
+                        disabled: Some(!r.is_active),
+                        r#type: Some(match r.field_type {
+                            FormDataType::File => "file".to_string(),
+                            FormDataType::Text => "text".to_string(),
+                        }),
+                    })
+                    .collect(),
+            ),
+            urlencoded: None,
+        }),
+        // handle urlencoded and binary if types parse it natively or fall back safely
+        BodyType::XWwwFormUrlencoded | BodyType::Binary => Some(PostmanBody {
+            mode: Some("urlencoded".to_string()),
+            raw: None,
+            formdata: None,
+            urlencoded: Some(
+                tab.body_urlencoded
+                    .iter()
+                    .map(|u| PostmanBodyRow {
+                        key: u.key.clone(),
+                        value: Some(u.value.clone()),
+                        disabled: Some(!u.is_active),
+                        r#type: Some("text".to_string()),
+                    })
+                    .collect(),
+            ),
+        }),
+    };
 }
 
 impl RequestNodeTabExt for PostmanRequestNode {
