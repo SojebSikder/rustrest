@@ -1,4 +1,9 @@
+<div align="center">
+    <img src="assets/images/logo-transparent.png" width="80"/>
+</div>
+
 ## Rustrest API Testing Platform
+
 Rustrest is an open-source, cross-platform native API testing platform written in Rust.
 
 Rustrest is native, with fastest boot times. It consumes less memory and CPU resources than any other API testing platform out there.
@@ -8,6 +13,7 @@ Rustrest stores your collections directly on your local filesystem. It supports 
 You can use Git or any version control system to manage your collections.
 
 ## Why Rustrest?
+
 Modern API clients like Postman or Insomnia carry massive resource overhead. Rustrest is designed for developers who prefer speed and simplicity:
 
 - **Zero Bloat**: Built natively without heavy web-browser runtimes.
@@ -54,6 +60,7 @@ cargo run --release
 ```
 
 ## Features
+
 - Native, Lightweight, and instant startup time.
 - **Fast**: Send request and get responses in real time.
 - **HTTP Methods**: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS and CUSTOM
@@ -63,5 +70,16 @@ cargo run --release
 - **Postman Compatible**: Import Postman collections, environments and scripts
 - And many more...
 
+## Trademark
+
+### Name
+
+`Rustrest` is a trademark of [Sojeb Sikder](https://sojebsikder.me).
+
+### Logo
+
+This logo is sourced from [OpenMoji](https://openmoji.org/library/emoji-1F680/). License: [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+
 ## Contribute
+
 See [CONTRIBUTING.md](CONTRIBUTING.md) for details on how to contribute to Rustrest.

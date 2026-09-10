@@ -31,13 +31,18 @@ use message::{Message, ResizeKind};
 const APP_NAME: &str = "Rustrest";
 const APP_VERSION: &str = "0.1.4";
 
+const APP_ICON: &[u8] = include_bytes!("../assets/images/logo-transparent.png");
+
 pub fn main() -> iced::Result {
+    let icon = iced::window::icon::from_file_data(APP_ICON, None).ok();
+
     iced::application(app::init, app::update, view)
         .title(|_: &Rustrest| format!("{} - API Testing Platform", APP_NAME))
         .subscription(subscription)
         .exit_on_close_request(false)
         .window(iced::window::Settings {
             size: Size::new(1250.0, 850.0),
+            icon: icon,
             ..Default::default()
         })
         .run()
