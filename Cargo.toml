@@ -26,6 +26,9 @@ rfd = "0.17.2"
 self_update = { version = "1.2.0", default-features = false, features = ["rustls", "reqwest", "archive-tar", "compression-tar-xz", "archive-zip", "compression-zip-deflate"] }
 sha2 = "0.10"
 
+[build-dependencies]
+winres = "0.1"
+
 # The profile that 'dist' will build with
 [profile.dist]
 inherits = "release"
