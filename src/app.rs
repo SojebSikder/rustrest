@@ -396,7 +396,7 @@ pub fn init() -> (Rustrest, Task<Message>) {
         app.next_tab_id += 1;
     }
 
-    let startup_task = if load_errors.is_empty() {
+    let load_errors_task = if load_errors.is_empty() {
         Task::none()
     } else {
         Task::batch(
@@ -405,6 +405,11 @@ pub fn init() -> (Rustrest, Task<Message>) {
                 .map(|err| Task::done(Message::ShowToast(err, ToastStatus::Error))),
         )
     };
+
+    // silently check for updates on startup; surfaces a toast only if one is found
+    let update_check_task = Task::done(Message::CheckForUpdateSilently);
+
+    let startup_task = Task::batch([load_errors_task, update_check_task]);
 
     (app, startup_task)
 }
@@ -2443,6 +2448,21 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             },
             Message::UpdateCheckResult,
         ),
+
+        // check on startup: same lookup, but stays quiet on "up to date" or errors instead of toasting on every launch
+        Message::CheckForUpdateSilently => iced::Task::perform(
+            async {
+                tokio::task::spawn_blocking(check_for_update)
+                    .await
+                    .unwrap_or_else(|e| Err(e.to_string()))
+            },
+            Message::SilentUpdateCheckResult,
+        ),
+
+        Message::SilentUpdateCheckResult(Ok(Some(info))) => {
+            update(app, Message::UpdateCheckResult(Ok(Some(info))))
+        }
+        Message::SilentUpdateCheckResult(_) => Task::none(),
 
         Message::UpdateCheckResult(Ok(Some(info))) => {
             let msg = format!("Update available: v{}", info.version);

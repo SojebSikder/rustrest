@@ -270,7 +270,9 @@ pub enum Message {
 
     // self update
     CheckForUpdate,
+    CheckForUpdateSilently,
     UpdateCheckResult(Result<Option<UpdateInfo>, String>),
+    SilentUpdateCheckResult(Result<Option<UpdateInfo>, String>),
     InstallUpdate,
     UpdateInstallResult(Result<String, String>),
 
