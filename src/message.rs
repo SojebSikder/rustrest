@@ -250,7 +250,7 @@ pub enum Message {
     // commit modal
     CommitChangesPressed(usize),
     CommitStatusLoaded(usize, String, GitStatusSnapshot),
-    CommitMessageChanged(String),
+    CommitMessageChanged(iced::widget::text_editor::Action),
     CommitConfirmed,
     CommitCancelled,
     CommitResult(usize, Result<(), String>),

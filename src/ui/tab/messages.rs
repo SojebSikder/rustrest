@@ -6,13 +6,23 @@ use crate::ui::context_menu::TabFieldTarget;
 use crate::{http_client::HttpMethod, ui::tab::types::ScriptTab};
 use iced::widget::text_editor;
 
+/// identifies which per-row "Value" editor a `ValueEditorAction` targets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ValueField {
+    Param,
+    Header,
+    Cookie,
+    Urlencoded,
+    FormData,
+}
+
 #[derive(Debug, Clone)]
 pub enum TabMessage {
     UrlChanged(String),
     MethodSelected(String),
     MethodChanged(HttpMethod),
     SubTabSelected(RequestSubTab),
-    AuthChanged(String),
+    AuthChanged(text_editor::Action),
     BodyTypeChanged(BodyType),
 
     SelectBinaryFile,
@@ -47,6 +57,9 @@ pub enum TabMessage {
     RemoveCookieRow(usize),
     ResponseBodyEditorAction(iced::widget::text_editor::Action),
 
+    /// a keystroke/cursor action in a per-row "Value" multiline editor
+    ValueEditorAction(ValueField, usize, text_editor::Action),
+
     // scripts
     ScriptTabChanged(ScriptTab),
     PreRequestScriptChanged(text_editor::Action),
@@ -69,7 +82,6 @@ impl TabMessage {
             TabMessage::UrlChanged(_)
             | TabMessage::MethodSelected(_)
             | TabMessage::MethodChanged(_)
-            | TabMessage::AuthChanged(_)
             | TabMessage::BodyTypeChanged(_)
             | TabMessage::RawTypeChanged(_)
             | TabMessage::SelectBinaryFile
@@ -92,9 +104,12 @@ impl TabMessage {
             | TabMessage::AddCookieRow
             | TabMessage::RemoveCookieRow(_) => true,
 
-            TabMessage::BodyChanged(action)
+            TabMessage::AuthChanged(action)
+            | TabMessage::BodyChanged(action)
             | TabMessage::PreRequestScriptChanged(action)
             | TabMessage::PostResponseScriptChanged(action) => matches!(action, Action::Edit(_)),
+
+            TabMessage::ValueEditorAction(_, _, action) => matches!(action, Action::Edit(_)),
 
             TabMessage::SubTabSelected(_)
             | TabMessage::ResponseViewChanged(_)

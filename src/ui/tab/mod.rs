@@ -5,4 +5,4 @@ pub mod types;
 mod views;
 
 pub use messages::TabMessage;
-pub use state::Tab;
+pub use state::{Tab, contents_for, contents_for_form_data};

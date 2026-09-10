@@ -917,14 +917,14 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             app.commit_modal = Some(crate::ui::commit_modal::CommitModalState {
                 collection_id: col_id,
                 collection_name,
-                message: String::new(),
+                message: iced::widget::text_editor::Content::new(),
                 files: snapshot.files,
             });
             Task::none()
         }
-        Message::CommitMessageChanged(text) => {
+        Message::CommitMessageChanged(action) => {
             if let Some(modal) = app.commit_modal.as_mut() {
-                modal.message = text;
+                modal.message.perform(action);
             }
             Task::none()
         }
@@ -944,7 +944,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 return Task::none();
             };
             let col_id = modal.collection_id;
-            let message = modal.message.clone();
+            let message = modal.message.text();
 
             Task::perform(
                 async move { crate::collection::git_ops::git_commit_all(&dir, &message).await },

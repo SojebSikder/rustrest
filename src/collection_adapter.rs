@@ -182,6 +182,7 @@ pub fn create_tab_from_request(
                 kv
             })
             .collect();
+        tab.request_headers_values = crate::ui::tab::contents_for(&tab.request_headers);
     }
 
     if let Some(body) = &node.request.body {
@@ -214,6 +215,8 @@ pub fn create_tab_from_request(
                                 row
                             })
                             .collect();
+                        tab.body_form_data_values =
+                            crate::ui::tab::contents_for_form_data(&tab.body_form_data);
                     }
                 }
                 "urlencoded" => {
@@ -230,6 +233,8 @@ pub fn create_tab_from_request(
                                 kv
                             })
                             .collect();
+                        tab.body_urlencoded_values =
+                            crate::ui::tab::contents_for(&tab.body_urlencoded);
 
                         let encoded_string = rows
                             .iter()

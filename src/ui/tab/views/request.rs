@@ -1,9 +1,10 @@
 use super::super::Tab;
 use super::super::components::kv_editor_pane;
-use super::super::messages::TabMessage;
+use super::super::messages::{TabMessage, ValueField};
 use super::super::types::{BodyType, RawType, RequestSubTab, ScriptTab};
 use crate::http_client::HttpMethod;
 use crate::ui::context_menu::{TabFieldTarget, with_context_menu};
+use crate::ui::multiline_input::multiline_input;
 use iced::widget::{
     button, column, container, pick_list, radio, row, text, text_editor, text_input,
 };
@@ -126,8 +127,10 @@ where
     let inner_input_field: Element<Message> = match tab.active_sub_tab {
         RequestSubTab::Params => kv_editor_pane(
             &tab.request_params,
+            &tab.request_params_values,
             "Add Param",
             move |i, kv| wrap_msg(TabMessage::ParamRowChanged(i, kv)),
+            move |i, action| wrap_msg(TabMessage::ValueEditorAction(ValueField::Param, i, action)),
             wrap_msg(TabMessage::AddParamRow),
             move |i| wrap_msg(TabMessage::RemoveParamRow(i)),
             move |i, v| {
@@ -145,8 +148,12 @@ where
         ),
         RequestSubTab::Headers => kv_editor_pane(
             &tab.request_headers,
+            &tab.request_headers_values,
             "Add Header",
             move |i, kv| wrap_msg(TabMessage::HeaderRowChanged(i, kv)),
+            move |i, action| {
+                wrap_msg(TabMessage::ValueEditorAction(ValueField::Header, i, action))
+            },
             wrap_msg(TabMessage::AddHeaderRow),
             move |i| wrap_msg(TabMessage::RemoveHeaderRow(i)),
             move |i, v| {
@@ -164,8 +171,12 @@ where
         ),
         RequestSubTab::Cookies => kv_editor_pane(
             &tab.request_cookies,
+            &tab.request_cookies_values,
             "Add Cookie",
             move |i, kv| wrap_msg(TabMessage::CookieRowChanged(i, kv)),
+            move |i, action| {
+                wrap_msg(TabMessage::ValueEditorAction(ValueField::Cookie, i, action))
+            },
             wrap_msg(TabMessage::AddCookieRow),
             move |i| wrap_msg(TabMessage::RemoveCookieRow(i)),
             move |i, v| {
@@ -181,13 +192,15 @@ where
                 ))
             },
         ),
-        RequestSubTab::Auth => with_context_menu(
-            text_input("Authorization Headers...", &tab.request_auth)
-                .on_input(move |a| wrap_msg(TabMessage::AuthChanged(a)))
-                .padding(10),
+        RequestSubTab::Auth => multiline_input(
+            "Authorization Headers...",
+            &tab.request_auth,
+            10,
+            200.0,
+            move |action| wrap_msg(TabMessage::AuthChanged(action)),
             wrap_msg(TabMessage::ShowFieldContextMenu(
                 TabFieldTarget::Auth,
-                tab.request_auth.clone(),
+                tab.request_auth.text(),
             )),
         ),
 
@@ -207,7 +220,11 @@ where
 
                 BodyType::FormData => super::super::components::form_data_editor_pane(
                     &tab.body_form_data,
+                    &tab.body_form_data_values,
                     move |i, row| wrap_msg(TabMessage::FormDataRowChanged(i, row)),
+                    move |i, action| {
+                        wrap_msg(TabMessage::ValueEditorAction(ValueField::FormData, i, action))
+                    },
                     move |i, t| wrap_msg(TabMessage::FormDataRowTypeChanged(i, t)),
                     move |i| wrap_msg(TabMessage::SelectFormDataFile(i)),
                     wrap_msg(TabMessage::AddFormDataRow),
@@ -228,8 +245,16 @@ where
 
                 BodyType::XWwwFormUrlencoded => kv_editor_pane(
                     &tab.body_urlencoded,
+                    &tab.body_urlencoded_values,
                     "Add URL Encoded Pair",
                     move |i, kv| wrap_msg(TabMessage::UrlencodedRowChanged(i, kv)),
+                    move |i, action| {
+                        wrap_msg(TabMessage::ValueEditorAction(
+                            ValueField::Urlencoded,
+                            i,
+                            action,
+                        ))
+                    },
                     wrap_msg(TabMessage::AddUrlencodedRow),
                     move |i| wrap_msg(TabMessage::RemoveUrlencodedRow(i)),
                     move |i, v| {

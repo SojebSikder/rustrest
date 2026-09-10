@@ -1,4 +1,4 @@
-use super::messages::TabMessage;
+use super::messages::{TabMessage, ValueField};
 use super::types::{
     BodyType, FormDataRow, FormDataType, KeyValuePair, RawType, RequestSubTab, ResponseSubTab,
     ResponseView,
@@ -30,15 +30,20 @@ pub struct Tab {
     pub raw_type: RawType,
     pub response_view: ResponseView,
     pub request_params: Vec<KeyValuePair>,
+    pub request_params_values: Vec<text_editor::Content>,
     pub request_headers: Vec<KeyValuePair>,
+    pub request_headers_values: Vec<text_editor::Content>,
     pub request_cookies: Vec<KeyValuePair>,
-    pub request_auth: String,
+    pub request_cookies_values: Vec<text_editor::Content>,
+    pub request_auth: text_editor::Content,
     pub request_body: text_editor::Content,
     pub script_tab: ScriptTab,
     pub pre_request_script: text_editor::Content,
     pub post_response_script: text_editor::Content,
     pub body_form_data: Vec<FormDataRow>,
+    pub body_form_data_values: Vec<text_editor::Content>,
     pub body_urlencoded: Vec<KeyValuePair>,
+    pub body_urlencoded_values: Vec<text_editor::Content>,
     pub binary_file_path: Option<String>,
     pub response: Option<Result<HttpResponse, String>>,
     pub response_body_editor: text_editor::Content,
@@ -51,6 +56,18 @@ pub struct Tab {
 
 impl Tab {
     pub fn new(id: usize) -> Self {
+        let request_params = vec![KeyValuePair::new("", "")];
+        let request_headers = vec![
+            KeyValuePair::new("Content-Type", "application/json"),
+            KeyValuePair::new("User-Agent", &format!("{}/{}", APP_NAME, APP_VERSION)),
+            KeyValuePair::new("Accept", "*/*"),
+            // KeyValuePair::new("Accept-Encoding", "gzip, deflate, br"),
+            KeyValuePair::new("Connection", "keep-alive"),
+        ];
+        let request_cookies = vec![KeyValuePair::new("", "")];
+        let body_form_data = vec![FormDataRow::new("form_field", "value", FormDataType::Text)];
+        let body_urlencoded = vec![KeyValuePair::new("form_key", "form_value")];
+
         Self {
             id,
             collection_id: None, // Default to standalone request
@@ -63,16 +80,13 @@ impl Tab {
             body_type: BodyType::Raw,
             raw_type: RawType::Json,
             response_view: ResponseView::Json,
-            request_params: vec![KeyValuePair::new("", "")],
-            request_headers: vec![
-                KeyValuePair::new("Content-Type", "application/json"),
-                KeyValuePair::new("User-Agent", &format!("{}/{}", APP_NAME, APP_VERSION)),
-                KeyValuePair::new("Accept", "*/*"),
-                // KeyValuePair::new("Accept-Encoding", "gzip, deflate, br"),
-                KeyValuePair::new("Connection", "keep-alive"),
-            ],
-            request_cookies: vec![KeyValuePair::new("", "")],
-            request_auth: String::from("Bearer your_token_here"),
+            request_params_values: contents_for(&request_params),
+            request_params,
+            request_headers_values: contents_for(&request_headers),
+            request_headers,
+            request_cookies_values: contents_for(&request_cookies),
+            request_cookies,
+            request_auth: text_editor::Content::with_text("Bearer your_token_here"),
             request_body: text_editor::Content::with_text("{\n  \"key\": \"value\"\n}"),
             script_tab: ScriptTab::PreRequest,
             pre_request_script: text_editor::Content::with_text(
@@ -81,8 +95,10 @@ impl Tab {
             post_response_script: text_editor::Content::with_text(
                 "// Executed after receiving a response\n// e.g. pm.test(\"Status code is 200\", function () {\n//     pm.response.to.have.status(200);\n// });",
             ),
-            body_form_data: vec![FormDataRow::new("form_field", "value", FormDataType::Text)],
-            body_urlencoded: vec![KeyValuePair::new("form_key", "form_value")],
+            body_form_data_values: contents_for_form_data(&body_form_data),
+            body_form_data,
+            body_urlencoded_values: contents_for(&body_urlencoded),
+            body_urlencoded,
             binary_file_path: None,
             response: None,
             is_loading: false,
@@ -171,6 +187,8 @@ impl Tab {
             {
                 self.request_params.push(KeyValuePair::new("", ""));
             }
+
+            self.request_params_values = contents_for(&self.request_params);
         }
     }
 
@@ -195,11 +213,15 @@ impl Tab {
                 if index < self.request_params.len() {
                     self.request_params.remove(index);
                 }
+                if index < self.request_params_values.len() {
+                    self.request_params_values.remove(index);
+                }
                 self.url = sync_params_to_url(&self.url, &self.request_params);
             }
 
             TabMessage::AddParamRow => {
                 self.request_params.push(KeyValuePair::new("", ""));
+                self.request_params_values.push(text_editor::Content::new());
             }
 
             TabMessage::MethodChanged(method) => self.method = method,
@@ -219,7 +241,7 @@ impl Tab {
 
             TabMessage::SubTabSelected(sub_tab) => self.active_sub_tab = sub_tab,
             TabMessage::ResponseSubTabSelected(resp_tab) => self.active_response_tab = resp_tab,
-            TabMessage::AuthChanged(auth) => self.request_auth = auth,
+            TabMessage::AuthChanged(action) => self.request_auth.perform(action),
             TabMessage::BodyTypeChanged(body_type) => self.body_type = body_type,
             TabMessage::RawTypeChanged(raw_type) => self.raw_type = raw_type,
             TabMessage::ResponseViewChanged(view) => self.response_view = view,
@@ -240,10 +262,17 @@ impl Tab {
                     *row = kv;
                 }
             }
-            TabMessage::AddHeaderRow => self.request_headers.push(KeyValuePair::new("", "")),
+            TabMessage::AddHeaderRow => {
+                self.request_headers.push(KeyValuePair::new("", ""));
+                self.request_headers_values
+                    .push(text_editor::Content::new());
+            }
             TabMessage::RemoveHeaderRow(index) => {
                 if index < self.request_headers.len() {
                     self.request_headers.remove(index);
+                }
+                if index < self.request_headers_values.len() {
+                    self.request_headers_values.remove(index);
                 }
             }
 
@@ -252,10 +281,17 @@ impl Tab {
                     *row = kv;
                 }
             }
-            TabMessage::AddCookieRow => self.request_cookies.push(KeyValuePair::new("", "")),
+            TabMessage::AddCookieRow => {
+                self.request_cookies.push(KeyValuePair::new("", ""));
+                self.request_cookies_values
+                    .push(text_editor::Content::new());
+            }
             TabMessage::RemoveCookieRow(index) => {
                 if index < self.request_cookies.len() {
                     self.request_cookies.remove(index);
+                }
+                if index < self.request_cookies_values.len() {
+                    self.request_cookies_values.remove(index);
                 }
             }
             TabMessage::ResponseBodyEditorAction(action) => {
@@ -273,16 +309,23 @@ impl Tab {
             TabMessage::AddFormDataRow => {
                 self.body_form_data
                     .push(FormDataRow::new("", "", FormDataType::Text));
+                self.body_form_data_values.push(text_editor::Content::new());
             }
             TabMessage::RemoveFormDataRow(index) => {
                 if index < self.body_form_data.len() {
                     self.body_form_data.remove(index);
+                }
+                if index < self.body_form_data_values.len() {
+                    self.body_form_data_values.remove(index);
                 }
             }
             TabMessage::FormDataRowTypeChanged(index, new_type) => {
                 if let Some(row) = self.body_form_data.get_mut(index) {
                     row.field_type = new_type;
                     row.value.clear();
+                }
+                if let Some(content) = self.body_form_data_values.get_mut(index) {
+                    *content = text_editor::Content::new();
                 }
             }
 
@@ -291,10 +334,59 @@ impl Tab {
                     *row = kv;
                 }
             }
-            TabMessage::AddUrlencodedRow => self.body_urlencoded.push(KeyValuePair::new("", "")),
+            TabMessage::AddUrlencodedRow => {
+                self.body_urlencoded.push(KeyValuePair::new("", ""));
+                self.body_urlencoded_values
+                    .push(text_editor::Content::new());
+            }
             TabMessage::RemoveUrlencodedRow(index) => {
                 if index < self.body_urlencoded.len() {
                     self.body_urlencoded.remove(index);
+                }
+                if index < self.body_urlencoded_values.len() {
+                    self.body_urlencoded_values.remove(index);
+                }
+            }
+
+            TabMessage::ValueEditorAction(field, index, action) => {
+                let contents: &mut Vec<text_editor::Content> = match field {
+                    ValueField::Param => &mut self.request_params_values,
+                    ValueField::Header => &mut self.request_headers_values,
+                    ValueField::Cookie => &mut self.request_cookies_values,
+                    ValueField::Urlencoded => &mut self.body_urlencoded_values,
+                    ValueField::FormData => &mut self.body_form_data_values,
+                };
+                if let Some(content) = contents.get_mut(index) {
+                    content.perform(action);
+                    let text = content.text();
+                    match field {
+                        ValueField::Param => {
+                            if let Some(row) = self.request_params.get_mut(index) {
+                                row.value = text;
+                            }
+                            self.url = sync_params_to_url(&self.url, &self.request_params);
+                        }
+                        ValueField::Header => {
+                            if let Some(row) = self.request_headers.get_mut(index) {
+                                row.value = text;
+                            }
+                        }
+                        ValueField::Cookie => {
+                            if let Some(row) = self.request_cookies.get_mut(index) {
+                                row.value = text;
+                            }
+                        }
+                        ValueField::Urlencoded => {
+                            if let Some(row) = self.body_urlencoded.get_mut(index) {
+                                row.value = text;
+                            }
+                        }
+                        ValueField::FormData => {
+                            if let Some(row) = self.body_form_data.get_mut(index) {
+                                row.value = text;
+                            }
+                        }
+                    }
                 }
             }
 
@@ -358,7 +450,7 @@ impl Tab {
         };
 
         let resolved_url = resolve(&self.url);
-        let resolved_auth = resolve(&self.request_auth);
+        let resolved_auth = resolve(&self.request_auth.text());
         let mut resolved_body = resolve(&self.request_body.text());
 
         // strip out comment lines if the body is Raw JSON
@@ -400,6 +492,24 @@ impl Tab {
             resolved_auth,
         )
     }
+}
+
+/// builds a multiline "Value" editor per pair, aligned by index; used
+/// whenever a `Vec<KeyValuePair>` is replaced wholesale (row list rebuilt
+/// from the URL, or loaded from an imported request) so the editors stay in
+/// sync with the data they display.
+pub fn contents_for(pairs: &[KeyValuePair]) -> Vec<text_editor::Content> {
+    pairs
+        .iter()
+        .map(|p| text_editor::Content::with_text(&p.value))
+        .collect()
+}
+
+/// same as [`contents_for`], for form-data rows.
+pub fn contents_for_form_data(rows: &[FormDataRow]) -> Vec<text_editor::Content> {
+    rows.iter()
+        .map(|r| text_editor::Content::with_text(&r.value))
+        .collect()
 }
 
 fn sync_params_to_url(url_str: &str, params: &[KeyValuePair]) -> String {

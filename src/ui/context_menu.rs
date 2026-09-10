@@ -1,7 +1,7 @@
 use crate::app::Rustrest;
 use crate::http_client::HttpMethod;
 use crate::message::Message;
-use crate::ui::tab::messages::TabMessage;
+use crate::ui::tab::messages::{TabMessage, ValueField};
 use crate::ui::tab::types::{FormDataRow, KeyValuePair};
 use iced::widget::text_editor::{Action, Edit};
 use iced::widget::{button, column, container, mouse_area, opaque, row, text};
@@ -272,48 +272,50 @@ pub fn apply_field_paste(app: &mut Rustrest, target: FieldTarget, text: String) 
                 TabFieldTarget::CustomMethod => {
                     tab.update(TabMessage::MethodChanged(HttpMethod::Custom(text)))
                 }
-                TabFieldTarget::Auth => tab.update(TabMessage::AuthChanged(text)),
+                TabFieldTarget::Auth => tab.update(TabMessage::AuthChanged(Action::Edit(
+                    Edit::Paste(Arc::new(text)),
+                ))),
 
                 TabFieldTarget::HeaderKey(idx) => {
                     if let Some(updated) = kv_key_paste(&tab.request_headers, idx, text) {
                         tab.update(TabMessage::HeaderRowChanged(idx, updated));
                     }
                 }
-                TabFieldTarget::HeaderValue(idx) => {
-                    if let Some(updated) = kv_value_paste(&tab.request_headers, idx, text) {
-                        tab.update(TabMessage::HeaderRowChanged(idx, updated));
-                    }
-                }
+                TabFieldTarget::HeaderValue(idx) => tab.update(TabMessage::ValueEditorAction(
+                    ValueField::Header,
+                    idx,
+                    Action::Edit(Edit::Paste(Arc::new(text))),
+                )),
                 TabFieldTarget::ParamKey(idx) => {
                     if let Some(updated) = kv_key_paste(&tab.request_params, idx, text) {
                         tab.update(TabMessage::ParamRowChanged(idx, updated));
                     }
                 }
-                TabFieldTarget::ParamValue(idx) => {
-                    if let Some(updated) = kv_value_paste(&tab.request_params, idx, text) {
-                        tab.update(TabMessage::ParamRowChanged(idx, updated));
-                    }
-                }
+                TabFieldTarget::ParamValue(idx) => tab.update(TabMessage::ValueEditorAction(
+                    ValueField::Param,
+                    idx,
+                    Action::Edit(Edit::Paste(Arc::new(text))),
+                )),
                 TabFieldTarget::CookieKey(idx) => {
                     if let Some(updated) = kv_key_paste(&tab.request_cookies, idx, text) {
                         tab.update(TabMessage::CookieRowChanged(idx, updated));
                     }
                 }
-                TabFieldTarget::CookieValue(idx) => {
-                    if let Some(updated) = kv_value_paste(&tab.request_cookies, idx, text) {
-                        tab.update(TabMessage::CookieRowChanged(idx, updated));
-                    }
-                }
+                TabFieldTarget::CookieValue(idx) => tab.update(TabMessage::ValueEditorAction(
+                    ValueField::Cookie,
+                    idx,
+                    Action::Edit(Edit::Paste(Arc::new(text))),
+                )),
                 TabFieldTarget::UrlencodedKey(idx) => {
                     if let Some(updated) = kv_key_paste(&tab.body_urlencoded, idx, text) {
                         tab.update(TabMessage::UrlencodedRowChanged(idx, updated));
                     }
                 }
-                TabFieldTarget::UrlencodedValue(idx) => {
-                    if let Some(updated) = kv_value_paste(&tab.body_urlencoded, idx, text) {
-                        tab.update(TabMessage::UrlencodedRowChanged(idx, updated));
-                    }
-                }
+                TabFieldTarget::UrlencodedValue(idx) => tab.update(TabMessage::ValueEditorAction(
+                    ValueField::Urlencoded,
+                    idx,
+                    Action::Edit(Edit::Paste(Arc::new(text))),
+                )),
                 TabFieldTarget::FormDataKey(idx) => {
                     if let Some(row) = tab.body_form_data.get(idx) {
                         let updated = FormDataRow {
@@ -325,17 +327,11 @@ pub fn apply_field_paste(app: &mut Rustrest, target: FieldTarget, text: String) 
                         tab.update(TabMessage::FormDataRowChanged(idx, updated));
                     }
                 }
-                TabFieldTarget::FormDataValue(idx) => {
-                    if let Some(row) = tab.body_form_data.get(idx) {
-                        let updated = FormDataRow {
-                            is_active: row.is_active,
-                            key: row.key.clone(),
-                            value: text,
-                            field_type: row.field_type,
-                        };
-                        tab.update(TabMessage::FormDataRowChanged(idx, updated));
-                    }
-                }
+                TabFieldTarget::FormDataValue(idx) => tab.update(TabMessage::ValueEditorAction(
+                    ValueField::FormData,
+                    idx,
+                    Action::Edit(Edit::Paste(Arc::new(text))),
+                )),
 
                 TabFieldTarget::BodyEditor => tab.update(TabMessage::BodyChanged(Action::Edit(
                     Edit::Paste(Arc::new(text)),
@@ -380,7 +376,10 @@ pub fn apply_field_paste(app: &mut Rustrest, target: FieldTarget, text: String) 
             let _ = crate::app::update(app, Message::SaveRequestNameChanged(text));
         }
         FieldTarget::CommitMessage => {
-            let _ = crate::app::update(app, Message::CommitMessageChanged(text));
+            let _ = crate::app::update(
+                app,
+                Message::CommitMessageChanged(Action::Edit(Edit::Paste(Arc::new(text)))),
+            );
         }
         FieldTarget::EnvName(idx) => {
             let _ = crate::app::update(app, Message::EnvNameChanged(idx, text));
@@ -467,13 +466,5 @@ fn kv_key_paste(pairs: &[KeyValuePair], idx: usize, text: String) -> Option<KeyV
         is_active: row.is_active,
         key: text,
         value: row.value.clone(),
-    })
-}
-
-fn kv_value_paste(pairs: &[KeyValuePair], idx: usize, text: String) -> Option<KeyValuePair> {
-    pairs.get(idx).map(|row| KeyValuePair {
-        is_active: row.is_active,
-        key: row.key.clone(),
-        value: text,
     })
 }

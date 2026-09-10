@@ -7,6 +7,7 @@ pub mod env_editor;
 pub mod git_panel;
 pub mod menu;
 pub mod modal;
+pub mod multiline_input;
 pub mod resize_handle;
 pub mod save_request_model;
 pub mod sidebar;

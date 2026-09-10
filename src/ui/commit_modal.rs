@@ -1,20 +1,21 @@
 use crate::collection::git_ops::GitFileEntry;
 use crate::message::Message;
-use crate::ui::context_menu::{FieldTarget, with_context_menu};
+use crate::ui::context_menu::FieldTarget;
 use crate::ui::git_panel::status_badge;
 use crate::ui::modal::card;
-use iced::widget::{button, column, container, row, scrollable, text, text_input};
+use crate::ui::multiline_input::multiline_input;
+use iced::widget::{button, column, container, row, scrollable, text, text_editor};
 use iced::{Alignment, Color, Element, Font, Length};
 
 #[derive(Debug, Clone)]
 pub struct CommitModalState {
     pub collection_id: usize,
     pub collection_name: String,
-    pub message: String,
+    pub message: text_editor::Content,
     pub files: Vec<GitFileEntry>,
 }
 
-pub fn view_commit_modal(state: &CommitModalState) -> Element<'static, Message> {
+pub fn view_commit_modal(state: &CommitModalState) -> Element<'_, Message> {
     let title = text(format!("Commit changes - {}", state.collection_name))
         .size(18)
         .font(Font {
@@ -44,13 +45,13 @@ pub fn view_commit_modal(state: &CommitModalState) -> Element<'static, Message> 
     let message_label = text("Commit message")
         .size(13)
         .color(Color::from_rgb(0.55, 0.55, 0.6));
-    let message_input = with_context_menu(
-        text_input("e.g. Update login request", &state.message)
-            .on_input(Message::CommitMessageChanged)
-            .padding(10)
-            .size(14)
-            .width(Length::Fill),
-        Message::ShowTextFieldContextMenu(FieldTarget::CommitMessage, state.message.clone()),
+    let message_input = multiline_input(
+        "e.g. Update login request",
+        &state.message,
+        10,
+        200.0,
+        Message::CommitMessageChanged,
+        Message::ShowTextFieldContextMenu(FieldTarget::CommitMessage, state.message.text()),
     );
 
     let cancel_btn = button(text("Cancel").size(14))
@@ -59,7 +60,7 @@ pub fn view_commit_modal(state: &CommitModalState) -> Element<'static, Message> 
         .style(button::secondary);
 
     let commit_btn = button(text("Commit").size(14))
-        .on_press_maybe((!state.message.trim().is_empty()).then_some(Message::CommitConfirmed))
+        .on_press_maybe((!state.message.text().trim().is_empty()).then_some(Message::CommitConfirmed))
         .padding([8, 16])
         .style(button::primary);
 
