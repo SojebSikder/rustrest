@@ -1198,6 +1198,8 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     .map(|v| (v.key.clone(), v.value.clone()))
                     .collect();
 
+                let script_vars_snapshot = script_vars.clone();
+
                 let pre_script_text = tab.pre_request_script.text();
                 match crate::script_engine::ScriptRunner::run_pre_request(
                     &pre_script_text,
@@ -1217,6 +1219,25 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                         let mut kv = KeyValuePair::new(k, v);
                         kv.is_active = true;
                         app.globals.push(kv);
+                    }
+                }
+
+                if let Some(idx) = app.active_env_index {
+                    if let Some(env) = app.environments.get_mut(idx) {
+                        for (k, v) in &script_vars {
+                            if script_vars_snapshot.get(k) != Some(v) {
+                                if let Some(existing) =
+                                    env.variables.iter_mut().find(|kv| &kv.key == k)
+                                {
+                                    existing.value = v.clone();
+                                    existing.is_active = true;
+                                } else {
+                                    let mut kv = KeyValuePair::new(k, v);
+                                    kv.is_active = true;
+                                    env.variables.push(kv);
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -1318,7 +1339,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 if let Ok(resp) = &res {
                     let script_text = tab.post_response_script.text();
                     if !script_text.trim().is_empty() {
-                        let base_vars: std::collections::HashMap<String, String> = app
+                        let mut base_vars: std::collections::HashMap<String, String> = app
                             .active_env_index
                             .and_then(|idx| app.environments.get(idx))
                             .map(|e| {
@@ -1329,6 +1350,16 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                                     .collect()
                             })
                             .unwrap_or_default();
+
+                        if let Some(c_id) = tab.collection_id {
+                            if let Some(col) = app.collections.iter().find(|c| c.id == c_id) {
+                                for kv in col.get_native_variables() {
+                                    base_vars.entry(kv.key).or_insert(kv.value);
+                                }
+                            }
+                        }
+
+                        let base_vars_snapshot = base_vars.clone();
 
                         let base_globals: std::collections::HashMap<String, String> = app
                             .globals
@@ -1355,6 +1386,9 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                                 if let Some(idx) = app.active_env_index {
                                     if let Some(env) = app.environments.get_mut(idx) {
                                         for (k, v) in updated_vars {
+                                            if base_vars_snapshot.get(&k) == Some(&v) {
+                                                continue;
+                                            }
                                             if let Some(existing) =
                                                 env.variables.iter_mut().find(|kv| kv.key == k)
                                             {
