@@ -220,6 +220,7 @@ pub enum Message {
 
     MenuInteraction(DropdownMessage<MenuMessage>),
     SaveActiveRequestShortcut,
+    CloseActiveTabShortcut,
 
     // panel resizing
     ResizeDragStarted(ResizeKind),

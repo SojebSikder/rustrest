@@ -548,6 +548,23 @@ fn finalize_tab_rename(app: &mut Rustrest, idx: usize) {
     app.sync_tab_to_collection(idx);
 }
 
+/// closes the tab at `index`, if any. closing the last remaining tab leaves
+/// `app.tabs` empty, which shows the workspace's empty-state screen.
+fn close_tab(app: &mut Rustrest, index: usize) {
+    if let Some(tab_state) = app.tabs.get(index) {
+        if tab_state.tab.is_loading {
+            tab_state.tab.cancel_token.cancel();
+        }
+    } else {
+        return;
+    }
+
+    app.tabs.remove(index);
+    if app.active_tab_index >= app.tabs.len() && !app.tabs.is_empty() {
+        app.active_tab_index = app.tabs.len() - 1;
+    }
+}
+
 pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
     match message {
         Message::None => Task::none(),
@@ -1114,17 +1131,12 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         }
 
         Message::CloseTabPressed(index) => {
-            if app.tabs.len() > 1 {
-                if let Some(tab_state) = app.tabs.get(index) {
-                    if tab_state.tab.is_loading {
-                        tab_state.tab.cancel_token.cancel();
-                    }
-                }
-                app.tabs.remove(index);
-                if app.active_tab_index >= app.tabs.len() {
-                    app.active_tab_index = app.tabs.len() - 1;
-                }
-            }
+            close_tab(app, index);
+            Task::none()
+        }
+
+        Message::CloseActiveTabShortcut => {
+            close_tab(app, app.active_tab_index);
             Task::none()
         }
 
