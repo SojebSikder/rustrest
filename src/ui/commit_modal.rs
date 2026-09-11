@@ -60,7 +60,9 @@ pub fn view_commit_modal(state: &CommitModalState) -> Element<'_, Message> {
         .style(button::secondary);
 
     let commit_btn = button(text("Commit").size(14))
-        .on_press_maybe((!state.message.text().trim().is_empty()).then_some(Message::CommitConfirmed))
+        .on_press_maybe(
+            (!state.message.text().trim().is_empty()).then_some(Message::CommitConfirmed),
+        )
         .padding([8, 16])
         .style(button::primary);
 

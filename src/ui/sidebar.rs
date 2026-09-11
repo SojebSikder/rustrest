@@ -47,10 +47,11 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
                 .align_y(Alignment::Center)
                 .into()
             } else {
-                let collapse_arrow = button(text(if is_collapsed_col { "▶" } else { "▼" }).size(10))
-                    .on_press(Message::ToggleCollectionCollapsed(col_id))
-                    .style(button::text)
-                    .padding(2);
+                let collapse_arrow =
+                    button(text(if is_collapsed_col { "▶" } else { "▼" }).size(10))
+                        .on_press(Message::ToggleCollectionCollapsed(col_id))
+                        .style(button::text)
+                        .padding(2);
 
                 let mut header_row = row![
                     collapse_arrow,
@@ -304,9 +305,10 @@ fn render_sidebar_item<'a>(
                     .style(button::text)
                     .padding(2);
 
-                let mut title_row = row![collapse_arrow, text(format!("📁 {}", folder.name)).size(14)]
-                    .spacing(4)
-                    .align_y(Alignment::Center);
+                let mut title_row =
+                    row![collapse_arrow, text(format!("📁 {}", folder.name)).size(14)]
+                        .spacing(4)
+                        .align_y(Alignment::Center);
 
                 if folder_is_unsaved(app, &folder.item) {
                     title_row = title_row.push(unsaved_dot());
@@ -364,14 +366,12 @@ fn render_sidebar_item<'a>(
             }
 
             let req_layout = column![
-                mouse_area(
-                    container(label_row).padding(Padding {
-                        top: 2.0,
-                        right: 0.0,
-                        bottom: 2.0,
-                        left: 15.0,
-                    })
-                )
+                mouse_area(container(label_row).padding(Padding {
+                    top: 2.0,
+                    right: 0.0,
+                    bottom: 2.0,
+                    left: 15.0,
+                }))
                 .on_press(Message::SidebarRequestClicked {
                     req_node: req_clone,
                     collection_id,
@@ -382,11 +382,13 @@ fn render_sidebar_item<'a>(
                     folder_path: path_for_right_click,
                     request_id: req_id,
                 })
-                .on_release(Message::SidebarDropped(SidebarDropTarget::Request {
-                    collection_id,
-                    parent_path: path_for_drop,
-                    request_id: req_id,
-                }))
+                .on_release(Message::SidebarDropped(
+                    SidebarDropTarget::Request {
+                        collection_id,
+                        parent_path: path_for_drop,
+                        request_id: req_id,
+                    }
+                ))
             ];
 
             layout.push(req_layout)

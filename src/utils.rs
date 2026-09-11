@@ -5,8 +5,8 @@ use crate::ui::tab::Tab;
 
 pub use rustrest_core::collection::tree_ops::{
     contains_request_node_by_id, find_request_mut, insert_item_at, insert_nested,
-    insert_nested_request, remove_nested, remove_nested_request, rename_nested_folder,
-    take_folder, take_request,
+    insert_nested_request, remove_nested, remove_nested_request, rename_nested_folder, take_folder,
+    take_request,
 };
 
 /// relocates a dragged request/folder from its source location to `dest_folder_path`
@@ -21,7 +21,11 @@ pub fn move_sidebar_item(
     before_request_id: Option<usize>,
 ) {
     // guard against dropping a folder into itself or one of its own descendants
-    if let SidebarDragItem::Folder { collection_id, path } = &source {
+    if let SidebarDragItem::Folder {
+        collection_id,
+        path,
+    } = &source
+    {
         if *collection_id == dest_collection_id && dest_folder_path.starts_with(path.as_slice()) {
             return;
         }
@@ -36,7 +40,10 @@ pub fn move_sidebar_item(
             .iter_mut()
             .find(|c| c.id == *collection_id)
             .and_then(|c| take_request(&mut c.item, parent_path, *request_id)),
-        SidebarDragItem::Folder { collection_id, path } => collections
+        SidebarDragItem::Folder {
+            collection_id,
+            path,
+        } => collections
             .iter_mut()
             .find(|c| c.id == *collection_id)
             .and_then(|c| take_folder(&mut c.item, path)),
@@ -53,7 +60,12 @@ pub fn move_sidebar_item(
     }
 
     if let Some(dest_col) = collections.iter_mut().find(|c| c.id == dest_collection_id) {
-        insert_item_at(&mut dest_col.item, &dest_folder_path, item, before_request_id);
+        insert_item_at(
+            &mut dest_col.item,
+            &dest_folder_path,
+            item,
+            before_request_id,
+        );
     }
 }
 

@@ -151,9 +151,7 @@ where
             &tab.request_headers_values,
             "Add Header",
             move |i, kv| wrap_msg(TabMessage::HeaderRowChanged(i, kv)),
-            move |i, action| {
-                wrap_msg(TabMessage::ValueEditorAction(ValueField::Header, i, action))
-            },
+            move |i, action| wrap_msg(TabMessage::ValueEditorAction(ValueField::Header, i, action)),
             wrap_msg(TabMessage::AddHeaderRow),
             move |i| wrap_msg(TabMessage::RemoveHeaderRow(i)),
             move |i, v| {
@@ -174,9 +172,7 @@ where
             &tab.request_cookies_values,
             "Add Cookie",
             move |i, kv| wrap_msg(TabMessage::CookieRowChanged(i, kv)),
-            move |i, action| {
-                wrap_msg(TabMessage::ValueEditorAction(ValueField::Cookie, i, action))
-            },
+            move |i, action| wrap_msg(TabMessage::ValueEditorAction(ValueField::Cookie, i, action)),
             wrap_msg(TabMessage::AddCookieRow),
             move |i| wrap_msg(TabMessage::RemoveCookieRow(i)),
             move |i, v| {
@@ -223,7 +219,11 @@ where
                     &tab.body_form_data_values,
                     move |i, row| wrap_msg(TabMessage::FormDataRowChanged(i, row)),
                     move |i, action| {
-                        wrap_msg(TabMessage::ValueEditorAction(ValueField::FormData, i, action))
+                        wrap_msg(TabMessage::ValueEditorAction(
+                            ValueField::FormData,
+                            i,
+                            action,
+                        ))
                     },
                     move |i, t| wrap_msg(TabMessage::FormDataRowTypeChanged(i, t)),
                     move |i| wrap_msg(TabMessage::SelectFormDataFile(i)),
