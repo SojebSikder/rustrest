@@ -7,6 +7,7 @@ mod http_client;
 mod message;
 mod script_engine;
 mod session;
+mod shortcuts;
 mod ui;
 mod updater;
 mod utils;
@@ -71,15 +72,8 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         Subscription::none()
     };
 
-    // listen for save shortcut (Ctrl+S)
-    let save_shortcut = event::listen_with(|event, _status, _window| match event {
-        Event::Keyboard(iced::keyboard::Event::KeyPressed {
-            key: iced::keyboard::Key::Character(ref c),
-            modifiers,
-            ..
-        }) if modifiers.command() && c.as_str() == "s" => Some(Message::SaveActiveRequestShortcut),
-        _ => None,
-    });
+    // all Ctrl/Cmd-style keyboard shortcuts are registered in `shortcuts::bindings()`
+    let keyboard_shortcuts = shortcuts::subscription();
 
     // periodically every 5 seconds autosave of the in-progress session (draft tabs, active tab, etc.),
     let autosave =
@@ -141,7 +135,7 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
     Subscription::batch([
         context_menu_sub,
         menu_bar_sub,
-        save_shortcut,
+        keyboard_shortcuts,
         autosave,
         close_requested,
         cursor_tracker,

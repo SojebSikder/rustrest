@@ -17,11 +17,33 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
     let env_selector = super::sidebar::render_env_selector(app);
 
     if app.tabs.is_empty() {
+        let empty_state = column![
+            iced::widget::text("No requests open").size(20),
+            iced::widget::text("Create a new request or collection to get started.").size(13),
+            row![
+                button("New Request")
+                    .on_press(Message::NewTabPressed)
+                    .style(button::success)
+                    .padding([8, 16]),
+                button("New Collection")
+                    .on_press(Message::CreateNewCollectionPressed)
+                    .padding([8, 16]),
+            ]
+            .spacing(10),
+        ]
+        .spacing(12)
+        .align_x(Alignment::Center);
+
         return column![
             row![Space::new().width(Length::Fill), env_selector].align_y(Alignment::Center),
-            iced::widget::text("No active requests open. Click a sidebar item or hit '+'.")
+            container(empty_state)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .align_x(Alignment::Center)
+                .align_y(Alignment::Center),
         ]
         .spacing(15)
+        .height(Length::Fill)
         .into();
     }
 
