@@ -51,6 +51,16 @@ impl ScriptTab {
 
 pub use rustrest_core::{BodyType, FormDataRow, FormDataType, KeyValuePair};
 
+/// a saved snapshot of a response
+#[derive(Debug, Clone)]
+pub struct SavedResponse {
+    pub name: String,
+    pub status: u16,
+    pub body: String,
+    pub headers: std::collections::HashMap<String, String>,
+    pub elapsed_ms: u128,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RawType {
     Text,

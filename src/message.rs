@@ -74,6 +74,35 @@ pub enum Message {
         parent_path: Vec<String>,
     },
 
+    // saved response ("example") sidebar actions
+    SidebarSavedResponseClicked {
+        req_node: PostmanRequestNode,
+        collection_id: usize,
+        index: usize,
+    },
+    ShowSavedResponseContextMenu {
+        collection_id: usize,
+        request_id: usize,
+        index: usize,
+    },
+    RenameSavedResponsePressed {
+        collection_id: usize,
+        request_id: usize,
+        index: usize,
+    },
+    SavedResponseNameChanged {
+        collection_id: usize,
+        request_id: usize,
+        index: usize,
+        new_name: String,
+    },
+    SaveSavedResponseNamePressed,
+    DeleteSavedResponsePressed {
+        collection_id: usize,
+        request_id: usize,
+        index: usize,
+    },
+
     // sidebar drag-and-drop (reorder / move requests & folders)
     SidebarDragStarted(SidebarDragItem),
     SidebarDropped(SidebarDropTarget),

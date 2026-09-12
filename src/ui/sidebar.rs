@@ -1,5 +1,5 @@
 use crate::app::Rustrest;
-use crate::collection::collection::CollectionItem;
+use crate::collection::collection::{CollectionItem, PostmanRequestNode, PostmanResponseExample};
 use crate::message::{Message, SidebarDragItem, SidebarDropTarget};
 use crate::ui::context_menu::{FieldTarget, with_context_menu};
 use crate::ui::unsaved::{
@@ -365,7 +365,7 @@ fn render_sidebar_item<'a>(
                 label_row = label_row.push(unsaved_dot());
             }
 
-            let req_layout = column![
+            let mut req_layout = column![
                 mouse_area(container(label_row).padding(Padding {
                     top: 2.0,
                     right: 0.0,
@@ -389,10 +389,90 @@ fn render_sidebar_item<'a>(
                         request_id: req_id,
                     }
                 ))
-            ];
+            ]
+            .spacing(2);
+
+            if let Some(examples) = &req_node.response {
+                for (index, example) in examples.iter().enumerate() {
+                    req_layout = req_layout.push(render_saved_response_row(
+                        app,
+                        req_node,
+                        collection_id,
+                        index,
+                        example,
+                    ));
+                }
+            }
 
             layout.push(req_layout)
         }
+    }
+}
+
+/// renders one saved response row nested under its parent request
+fn render_saved_response_row<'a>(
+    app: &'a Rustrest,
+    req_node: &'a PostmanRequestNode,
+    collection_id: usize,
+    index: usize,
+    example: &'a PostmanResponseExample,
+) -> Element<'a, Message> {
+    let request_id = req_node.id;
+    let is_editing = app.editing_saved_response == Some((collection_id, request_id, index));
+
+    if is_editing {
+        row![
+            text_input("Response Name...", &example.name)
+                .on_input(move |txt| Message::SavedResponseNameChanged {
+                    collection_id,
+                    request_id,
+                    index,
+                    new_name: txt,
+                })
+                .on_submit(Message::SaveSavedResponseNamePressed)
+                .width(Length::Fixed(120.0))
+                .padding(2)
+                .size(12),
+            button(text("💾").size(10))
+                .on_press(Message::SaveSavedResponseNamePressed)
+                .style(button::text)
+        ]
+        .spacing(5)
+        .align_y(Alignment::Center)
+        .padding(Padding {
+            top: 2.0,
+            right: 0.0,
+            bottom: 2.0,
+            left: 30.0,
+        })
+        .into()
+    } else {
+        let title_row = row![
+            text("📄").size(11),
+            text(example.name.clone())
+                .size(12)
+                .color(iced::Color::from_rgb(0.55, 0.55, 0.55)),
+        ]
+        .spacing(4)
+        .align_y(Alignment::Center);
+
+        mouse_area(container(title_row).padding(Padding {
+            top: 2.0,
+            right: 0.0,
+            bottom: 2.0,
+            left: 30.0,
+        }))
+        .on_press(Message::SidebarSavedResponseClicked {
+            req_node: req_node.clone(),
+            collection_id,
+            index,
+        })
+        .on_right_press(Message::ShowSavedResponseContextMenu {
+            collection_id,
+            request_id,
+            index,
+        })
+        .into()
     }
 }
 

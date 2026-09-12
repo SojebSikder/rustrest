@@ -74,6 +74,11 @@ pub enum ContextMenu {
         folder_path: Vec<String>,
         req_id: usize,
     },
+    SavedResponse {
+        col_id: usize,
+        req_id: usize,
+        index: usize,
+    },
     /// a plain text field/editor; `current_value` is captured at the moment
     /// the menu was opened so "Copy" doesn't need to re-look up the field.
     TextField {
@@ -109,6 +114,11 @@ pub fn render_context_menu_overlay<'a>(app: &Rustrest) -> Option<Element<'a, Mes
             app.editing_folder_collection_id == Some(*col_id) && app.editing_folder_path == *path
         }
         ContextMenu::Request { .. } => false,
+        ContextMenu::SavedResponse {
+            col_id,
+            req_id,
+            index,
+        } => app.editing_saved_response == Some((*col_id, *req_id, *index)),
         ContextMenu::TextField { .. } => false,
     };
     if is_editing {
@@ -199,6 +209,28 @@ pub fn render_context_menu_overlay<'a>(app: &Rustrest) -> Option<Element<'a, Mes
                 request_id: *req_id,
             },
         )],
+        ContextMenu::SavedResponse {
+            col_id,
+            req_id,
+            index,
+        } => vec![
+            (
+                "Rename",
+                Message::RenameSavedResponsePressed {
+                    collection_id: *col_id,
+                    request_id: *req_id,
+                    index: *index,
+                },
+            ),
+            (
+                "Delete",
+                Message::DeleteSavedResponsePressed {
+                    collection_id: *col_id,
+                    request_id: *req_id,
+                    index: *index,
+                },
+            ),
+        ],
         ContextMenu::TextField {
             target,
             current_value,

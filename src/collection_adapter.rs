@@ -1,14 +1,68 @@
 use crate::collection::collection::{
-    PostmanBody, PostmanBodyRow, PostmanEvent, PostmanHeader, PostmanRequestNode, PostmanScript,
-    PostmanScriptExec, PostmanUrl,
+    PostmanBody, PostmanBodyRow, PostmanEvent, PostmanHeader, PostmanRequestNode,
+    PostmanResponseExample, PostmanScript, PostmanScriptExec, PostmanUrl,
 };
 use crate::http_client::HttpMethod;
 use crate::ui::tab::Tab;
-use crate::ui::tab::types::{BodyType, FormDataRow, FormDataType, KeyValuePair, RequestSubTab};
+use crate::ui::tab::types::{
+    BodyType, FormDataRow, FormDataType, KeyValuePair, RequestSubTab, SavedResponse,
+};
 
 pub trait RequestNodeTabExt {
     /// updates this collection request node from a live UI tab, including pre-request & test scripts.
     fn update_from_tab(&mut self, tab: &Tab);
+}
+
+/// converts a tab's live saved-response snapshots into the collection JSON shape.
+pub fn saved_responses_to_examples(saved: &[SavedResponse]) -> Option<Vec<PostmanResponseExample>> {
+    if saved.is_empty() {
+        return None;
+    }
+    Some(
+        saved
+            .iter()
+            .map(|saved| PostmanResponseExample {
+                name: saved.name.clone(),
+                code: saved.status,
+                header: Some(
+                    saved
+                        .headers
+                        .iter()
+                        .map(|(key, value)| PostmanHeader {
+                            key: key.clone(),
+                            value: value.clone(),
+                            disabled: None,
+                        })
+                        .collect(),
+                ),
+                body: Some(saved.body.clone()),
+                response_time: Some(saved.elapsed_ms),
+            })
+            .collect(),
+    )
+}
+
+/// converts a request node's saved response examples into the tab's live representation.
+pub fn examples_to_saved_responses(examples: &[PostmanResponseExample]) -> Vec<SavedResponse> {
+    examples
+        .iter()
+        .map(|example| SavedResponse {
+            name: example.name.clone(),
+            status: example.code,
+            body: example.body.clone().unwrap_or_default(),
+            headers: example
+                .header
+                .as_ref()
+                .map(|headers| {
+                    headers
+                        .iter()
+                        .map(|h| (h.key.clone(), h.value.clone()))
+                        .collect()
+                })
+                .unwrap_or_default(),
+            elapsed_ms: example.response_time.unwrap_or(0),
+        })
+        .collect()
 }
 
 /// syncs a request node's body from a live UI tab's body editor state.
@@ -119,6 +173,9 @@ impl RequestNodeTabExt for PostmanRequestNode {
         } else {
             Some(events)
         };
+
+        // sync saved response snapshots
+        self.response = saved_responses_to_examples(&tab.saved_responses);
     }
 }
 
@@ -171,6 +228,10 @@ pub fn create_tab_from_request(
                 }
             }
         }
+    }
+
+    if let Some(examples) = &node.response {
+        tab.saved_responses = examples_to_saved_responses(examples);
     }
 
     if let Some(headers) = &node.request.header {

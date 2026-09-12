@@ -3,7 +3,9 @@ use crate::collection::collection::{
     PostmanUrl, PostmanVariable,
 };
 use crate::collection::env::Environment;
-use crate::collection_adapter::create_tab_from_request;
+use crate::collection_adapter::{
+    create_tab_from_request, examples_to_saved_responses, saved_responses_to_examples,
+};
 use crate::http_client::send_request;
 use crate::message::{Message, ResizeKind, SidebarDragItem};
 use crate::session::{SavedSession, SavedTabEntry};
@@ -12,7 +14,7 @@ use crate::ui::context_menu::{ContextMenu, FieldTarget, apply_field_paste};
 use crate::ui::menu::menu::DropdownMenuState;
 use crate::ui::menu::menu_message::MenuMessage;
 use crate::ui::save_request_model::types::SaveRequestModalState;
-use crate::ui::tab::types::{KeyValuePair, ResponseView};
+use crate::ui::tab::types::{KeyValuePair, ResponseSubTab, ResponseView};
 use crate::ui::tab::{Tab, TabMessage};
 use crate::ui::toast::toast::{ToastManager, ToastStatus};
 use crate::updater::{UpdateInfo, check_for_update, perform_update};
@@ -80,6 +82,8 @@ pub struct Rustrest {
     pub editing_collection_id: Option<usize>,
     pub editing_folder_collection_id: Option<usize>,
     pub editing_folder_path: Vec<String>,
+    /// (collection_id, request_id, index) of the saved response currently being renamed.
+    pub editing_saved_response: Option<(usize, usize, usize)>,
     pub active_context_menu: Option<ContextMenu>,
     pub context_menu_position: iced::Point,
     pub cursor_position: iced::Point,
@@ -297,6 +301,52 @@ impl Rustrest {
             }
         }
     }
+
+    /// after saving/deleting a response snapshot from an open tab's response
+    /// pane, mirrors that tab's saved responses into the collection tree
+    pub fn sync_active_tab_saved_responses_to_collection(&mut self, idx: usize) {
+        let Some(tab_state) = self.tabs.get(idx) else {
+            return;
+        };
+        let (Some(req_id), Some(col_id)) = (tab_state.tab.request_id, tab_state.tab.collection_id)
+        else {
+            return;
+        };
+        let saved = tab_state.tab.saved_responses.clone();
+
+        if let Some(col) = self.collections.iter_mut().find(|c| c.id == col_id) {
+            if let Some(node) = find_request_mut(&mut col.item, req_id) {
+                node.response = saved_responses_to_examples(&saved);
+                node.unsaved = true;
+            }
+        }
+    }
+
+    /// re-reads a request's saved responses from the collection tree into any
+    /// currently open tab for that request
+    pub fn refresh_open_tab_saved_responses(&mut self, collection_id: usize, request_id: usize) {
+        let examples = self
+            .collections
+            .iter_mut()
+            .find(|c| c.id == collection_id)
+            .and_then(|c| find_request_mut(&mut c.item, request_id))
+            .and_then(|node| node.response.clone())
+            .unwrap_or_default();
+        let saved = examples_to_saved_responses(&examples);
+
+        for tab_state in self.tabs.iter_mut() {
+            if tab_state.tab.collection_id == Some(collection_id)
+                && tab_state.tab.request_id == Some(request_id)
+            {
+                tab_state.tab.saved_responses = saved.clone();
+                if let Some(viewing) = tab_state.tab.viewing_saved_response {
+                    if viewing >= tab_state.tab.saved_responses.len() {
+                        tab_state.tab.viewing_saved_response = None;
+                    }
+                }
+            }
+        }
+    }
 }
 
 pub fn init() -> (Rustrest, Task<Message>) {
@@ -317,6 +367,7 @@ pub fn init() -> (Rustrest, Task<Message>) {
         editing_collection_id: None,
         editing_folder_collection_id: None,
         editing_folder_path: Vec::new(),
+        editing_saved_response: None,
         active_context_menu: None,
         context_menu_position: iced::Point::ORIGIN,
         cursor_position: iced::Point::ORIGIN,
@@ -1119,6 +1170,125 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             }
         }
 
+        Message::SidebarSavedResponseClicked {
+            req_node,
+            collection_id,
+            index,
+        } => {
+            let existing_tab_idx = app.tabs.iter().position(|t| {
+                t.tab.request_id == Some(req_node.id)
+                    && matches!(t.content, WorkspaceContent::HttpRequest)
+            });
+
+            let (tab_idx, opened_new_tab) = match existing_tab_idx {
+                Some(idx) => {
+                    app.active_tab_index = idx;
+                    (idx, false)
+                }
+                None => {
+                    let new_tab =
+                        create_tab_from_request(app.next_tab_id, &req_node, Some(collection_id));
+                    app.tabs.push(TabState {
+                        tab: new_tab,
+                        content: WorkspaceContent::HttpRequest,
+                        is_editing_name: false,
+                    });
+                    app.next_tab_id += 1;
+                    app.active_tab_index = app.tabs.len() - 1;
+                    (app.active_tab_index, true)
+                }
+            };
+
+            if let Some(tab_state) = app.tabs.get_mut(tab_idx) {
+                if index < tab_state.tab.saved_responses.len() {
+                    tab_state.tab.viewing_saved_response = Some(index);
+                    tab_state.tab.active_response_tab = ResponseSubTab::Body;
+                }
+            }
+
+            if opened_new_tab {
+                iced::widget::operation::snap_to_end(crate::ui::workspace::tab_bar_scroll_id())
+            } else {
+                Task::none()
+            }
+        }
+
+        Message::ShowSavedResponseContextMenu {
+            collection_id,
+            request_id,
+            index,
+        } => {
+            app.active_context_menu = Some(ContextMenu::SavedResponse {
+                col_id: collection_id,
+                req_id: request_id,
+                index,
+            });
+            app.context_menu_position = app.cursor_position;
+            Task::none()
+        }
+
+        Message::RenameSavedResponsePressed {
+            collection_id,
+            request_id,
+            index,
+        } => {
+            app.editing_saved_response = Some((collection_id, request_id, index));
+            app.active_context_menu = None;
+            Task::none()
+        }
+
+        Message::SavedResponseNameChanged {
+            collection_id,
+            request_id,
+            index,
+            new_name,
+        } => {
+            if let Some(col) = app.collections.iter_mut().find(|c| c.id == collection_id) {
+                if let Some(node) = find_request_mut(&mut col.item, request_id) {
+                    if let Some(example) = node
+                        .response
+                        .as_mut()
+                        .and_then(|responses| responses.get_mut(index))
+                    {
+                        example.name = new_name;
+                        node.unsaved = true;
+                    }
+                }
+            }
+            app.refresh_open_tab_saved_responses(collection_id, request_id);
+            Task::none()
+        }
+
+        Message::SaveSavedResponseNamePressed => {
+            app.editing_saved_response = None;
+            Task::none()
+        }
+
+        Message::DeleteSavedResponsePressed {
+            collection_id,
+            request_id,
+            index,
+        } => {
+            if let Some(col) = app.collections.iter_mut().find(|c| c.id == collection_id) {
+                if let Some(node) = find_request_mut(&mut col.item, request_id) {
+                    if let Some(responses) = node.response.as_mut() {
+                        if index < responses.len() {
+                            responses.remove(index);
+                            node.unsaved = true;
+                        }
+                        if responses.is_empty() {
+                            node.response = None;
+                        }
+                    }
+                }
+            }
+            if app.editing_saved_response == Some((collection_id, request_id, index)) {
+                app.editing_saved_response = None;
+            }
+            app.refresh_open_tab_saved_responses(collection_id, request_id);
+            Task::none()
+        }
+
         Message::NewTabPressed => {
             app.tabs.push(TabState {
                 tab: Tab::new(app.next_tab_id),
@@ -1149,7 +1319,9 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 app.context_menu_position = app.cursor_position;
                 return Task::none();
             }
-            if let Some(tab_state) = app.tabs.get_mut(app.active_tab_index) {
+            let active_idx = app.active_tab_index;
+            let mut syncs_saved_responses = false;
+            if let Some(tab_state) = app.tabs.get_mut(active_idx) {
                 if let TabMessage::ResponseViewChanged(view) = tab_msg {
                     tab_state.tab.response_view = view;
                     if let Some(Ok(resp)) = &tab_state.tab.response {
@@ -1161,8 +1333,18 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                             iced::widget::text_editor::Content::with_text(&body_text);
                     }
                 } else {
+                    syncs_saved_responses = matches!(
+                        tab_msg,
+                        TabMessage::SaveResponse | TabMessage::DeleteSavedResponse(_)
+                    );
                     tab_state.tab.update(tab_msg);
                 }
+            }
+            // saving/deleting a response snapshot mutates the request's saved-response
+            // list directly, so mirror it into the collection tree (sidebar) right away
+            // instead of waiting for an explicit "Save Request".
+            if syncs_saved_responses {
+                app.sync_active_tab_saved_responses_to_collection(active_idx);
             }
             Task::none()
         }
@@ -1781,6 +1963,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     },
                     event: None,
                     unsaved: true,
+                    response: None,
                 };
 
                 insert_nested_request(
