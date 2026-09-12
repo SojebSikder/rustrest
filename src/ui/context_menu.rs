@@ -113,7 +113,10 @@ pub fn render_context_menu_overlay<'a>(app: &Rustrest) -> Option<Element<'a, Mes
         ContextMenu::Folder { col_id, path } => {
             app.editing_folder_collection_id == Some(*col_id) && app.editing_folder_path == *path
         }
-        ContextMenu::Request { .. } => false,
+        ContextMenu::Request { col_id, req_id, .. } => {
+            app.editing_request_collection_id == Some(*col_id)
+                && app.editing_request_id == Some(*req_id)
+        }
         ContextMenu::SavedResponse {
             col_id,
             req_id,
@@ -201,14 +204,23 @@ pub fn render_context_menu_overlay<'a>(app: &Rustrest) -> Option<Element<'a, Mes
             col_id,
             folder_path,
             req_id,
-        } => vec![(
-            "Delete",
-            Message::DeleteRequestPressed {
-                collection_id: *col_id,
-                parent_folder_path: folder_path.clone(),
-                request_id: *req_id,
-            },
-        )],
+        } => vec![
+            (
+                "Rename",
+                Message::RenameRequestPressed {
+                    collection_id: *col_id,
+                    request_id: *req_id,
+                },
+            ),
+            (
+                "Delete",
+                Message::DeleteRequestPressed {
+                    collection_id: *col_id,
+                    parent_folder_path: folder_path.clone(),
+                    request_id: *req_id,
+                },
+            ),
+        ],
         ContextMenu::SavedResponse {
             col_id,
             req_id,

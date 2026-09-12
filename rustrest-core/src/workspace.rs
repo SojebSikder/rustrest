@@ -2,6 +2,7 @@ use crate::KeyValuePair;
 use crate::collection::env::Environment;
 use crate::session::SavedSession;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -19,6 +20,16 @@ pub struct SavedWorkspace {
     pub active_env_index: Option<usize>,
     #[serde(default)]
     pub globals: Vec<KeyValuePair>,
+
+    // sidebar collapse/expand state, persisted per workspace
+    #[serde(default)]
+    pub collapsed_collections: HashSet<usize>,
+    #[serde(default)]
+    pub collapsed_folders: HashSet<(usize, Vec<String>)>,
+    /// request ids whose saved-responses list is collapsed in the sidebar.
+    #[serde(default)]
+    pub collapsed_saved_responses: HashSet<usize>,
+
     pub session: SavedSession,
 }
 

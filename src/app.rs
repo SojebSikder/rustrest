@@ -82,6 +82,8 @@ pub struct Rustrest {
     pub editing_collection_id: Option<usize>,
     pub editing_folder_collection_id: Option<usize>,
     pub editing_folder_path: Vec<String>,
+    pub editing_request_collection_id: Option<usize>,
+    pub editing_request_id: Option<usize>,
     /// (collection_id, request_id, index) of the saved response currently being renamed.
     pub editing_saved_response: Option<(usize, usize, usize)>,
     pub active_context_menu: Option<ContextMenu>,
@@ -124,6 +126,8 @@ pub struct Rustrest {
     pub sidebar_drag: Option<SidebarDragItem>,
     pub collapsed_collections: std::collections::HashSet<usize>,
     pub collapsed_folders: std::collections::HashSet<(usize, Vec<String>)>,
+    /// request ids whose saved-responses list is collapsed in the sidebar.
+    pub collapsed_saved_responses: std::collections::HashSet<usize>,
 
     // tab bar drag-to-reorder
     pub dragging_tab_index: Option<usize>,
@@ -191,6 +195,9 @@ impl Rustrest {
             environments: self.environments.clone(),
             active_env_index: self.active_env_index,
             globals: self.globals.clone(),
+            collapsed_collections: self.collapsed_collections.clone(),
+            collapsed_folders: self.collapsed_folders.clone(),
+            collapsed_saved_responses: self.collapsed_saved_responses.clone(),
             session: self.build_session_snapshot(),
         };
         (ws, dropped)
@@ -239,6 +246,9 @@ impl Rustrest {
         self.environments = ws.environments.clone();
         self.active_env_index = ws.active_env_index;
         self.globals = ws.globals.clone();
+        self.collapsed_collections = ws.collapsed_collections.clone();
+        self.collapsed_folders = ws.collapsed_folders.clone();
+        self.collapsed_saved_responses = ws.collapsed_saved_responses.clone();
 
         restore_session_into_app(self, &ws.session);
 
@@ -367,6 +377,8 @@ pub fn init() -> (Rustrest, Task<Message>) {
         editing_collection_id: None,
         editing_folder_collection_id: None,
         editing_folder_path: Vec::new(),
+        editing_request_collection_id: None,
+        editing_request_id: None,
         editing_saved_response: None,
         active_context_menu: None,
         context_menu_position: iced::Point::ORIGIN,
@@ -395,6 +407,7 @@ pub fn init() -> (Rustrest, Task<Message>) {
         sidebar_drag: None,
         collapsed_collections: std::collections::HashSet::new(),
         collapsed_folders: std::collections::HashSet::new(),
+        collapsed_saved_responses: std::collections::HashSet::new(),
         dragging_tab_index: None,
     };
 
@@ -478,6 +491,9 @@ fn default_workspace(id: usize, legacy_session: Option<SavedSession>) -> SavedWo
         environments: vec![demo_env],
         active_env_index: None,
         globals: Vec::new(),
+        collapsed_collections: std::collections::HashSet::new(),
+        collapsed_folders: std::collections::HashSet::new(),
+        collapsed_saved_responses: std::collections::HashSet::new(),
         session: legacy_session.unwrap_or(SavedSession {
             tabs: Vec::new(),
             active_tab_index: 0,
@@ -1991,6 +2007,52 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             Task::none()
         }
 
+        // request rename actions
+        Message::RenameRequestPressed {
+            collection_id,
+            request_id,
+        } => {
+            app.editing_request_collection_id = Some(collection_id);
+            app.editing_request_id = Some(request_id);
+            app.active_context_menu = None;
+            Task::none()
+        }
+
+        Message::RequestNameChanged {
+            collection_id,
+            request_id,
+            new_name,
+        } => {
+            if let Some(col) = app.collections.iter_mut().find(|c| c.id == collection_id) {
+                if let Some(node) = find_request_mut(&mut col.item, request_id) {
+                    node.name = new_name.clone();
+                    node.unsaved = true;
+                }
+            }
+            for t in &mut app.tabs {
+                if t.tab.collection_id == Some(collection_id)
+                    && t.tab.request_id == Some(request_id)
+                    && matches!(t.content, WorkspaceContent::HttpRequest)
+                {
+                    t.tab.name = new_name.clone();
+                }
+            }
+            Task::none()
+        }
+
+        Message::SaveRequestNamePressed { .. } => {
+            app.editing_request_collection_id = None;
+            app.editing_request_id = None;
+            Task::none()
+        }
+
+        Message::ToggleSavedResponsesCollapsed(request_id) => {
+            if !app.collapsed_saved_responses.remove(&request_id) {
+                app.collapsed_saved_responses.insert(request_id);
+            }
+            Task::none()
+        }
+
         // context menu
         Message::ShowCollectionContextMenu(col_id) => {
             app.active_context_menu = Some(ContextMenu::Collection(col_id));
@@ -2364,6 +2426,9 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 environments: vec![env],
                 active_env_index: None,
                 globals: Vec::new(),
+                collapsed_collections: std::collections::HashSet::new(),
+                collapsed_folders: std::collections::HashSet::new(),
+                collapsed_saved_responses: std::collections::HashSet::new(),
                 session: SavedSession {
                     tabs: Vec::new(),
                     active_tab_index: 0,

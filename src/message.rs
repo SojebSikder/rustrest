@@ -199,6 +199,24 @@ pub enum Message {
         parent_folder_path: Vec<String>,
     },
 
+    // request rename actions
+    RenameRequestPressed {
+        collection_id: usize,
+        request_id: usize,
+    },
+    RequestNameChanged {
+        collection_id: usize,
+        request_id: usize,
+        new_name: String,
+    },
+    SaveRequestNamePressed {
+        collection_id: usize,
+        request_id: usize,
+    },
+
+    // sidebar collapse/expand of a request's saved-responses list
+    ToggleSavedResponsesCollapsed(usize),
+
     // collection Rename Actions
     RenameCollectionPressed(usize),       // trigger edit mode
     CollectionNameChanged(usize, String), // inline text change
