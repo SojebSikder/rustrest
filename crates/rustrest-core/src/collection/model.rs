@@ -237,8 +237,9 @@ pub struct PostmanResponseExample {
     pub code: u16,
     pub header: Option<Vec<PostmanHeader>>,
     pub body: Option<String>,
+
     #[serde(rename = "responseTime")]
-    pub response_time: Option<u128>,
+    pub response_time: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

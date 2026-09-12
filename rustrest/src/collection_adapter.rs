@@ -36,7 +36,7 @@ pub fn saved_responses_to_examples(saved: &[SavedResponse]) -> Option<Vec<Postma
                         .collect(),
                 ),
                 body: Some(saved.body.clone()),
-                response_time: Some(saved.elapsed_ms),
+                response_time: Some(saved.elapsed_ms as u64),
             })
             .collect(),
     )
@@ -60,7 +60,7 @@ pub fn examples_to_saved_responses(examples: &[PostmanResponseExample]) -> Vec<S
                         .collect()
                 })
                 .unwrap_or_default(),
-            elapsed_ms: example.response_time.unwrap_or(0),
+            elapsed_ms: example.response_time.unwrap_or(0) as u128,
         })
         .collect()
 }
