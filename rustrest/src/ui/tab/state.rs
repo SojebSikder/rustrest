@@ -1,7 +1,7 @@
 use super::messages::{TabMessage, ValueField};
 use super::types::{
     BodyType, FormDataRow, FormDataType, KeyValuePair, RawType, RequestSubTab, ResponseSubTab,
-    ResponseView,
+    ResponseView, SavedResponse,
 };
 use crate::collection::collection::{PostmanRequestDetails, PostmanRequestNode, PostmanUrl};
 use crate::collection::env::Environment;
@@ -47,6 +47,11 @@ pub struct Tab {
     pub binary_file_path: Option<String>,
     pub response: Option<Result<HttpResponse, String>>,
     pub response_body_editor: text_editor::Content,
+    /// saved response snapshots for this request, in the order they were saved.
+    pub saved_responses: Vec<SavedResponse>,
+    /// which response the response pane is currently displaying: the live
+    /// response (`None`) or a saved snapshot by index into `saved_responses`.
+    pub viewing_saved_response: Option<usize>,
     pub is_loading: bool,
     pub cancel_token: CancellationToken,
     /// true when this tab has edits that haven't been saved yet; drives the
@@ -101,6 +106,8 @@ impl Tab {
             body_urlencoded,
             binary_file_path: None,
             response: None,
+            saved_responses: Vec::new(),
+            viewing_saved_response: None,
             is_loading: false,
             cancel_token: CancellationToken::new(),
             response_body_editor: text_editor::Content::with_text(""),
@@ -150,6 +157,7 @@ impl Tab {
             },
             event: None,
             unsaved: false,
+            response: None,
         };
 
         node.update_from_tab(self);
@@ -410,6 +418,31 @@ impl Tab {
                 if self.is_loading {
                     self.cancel_token.cancel();
                 }
+            }
+
+            TabMessage::SaveResponse => {
+                if let Some(Ok(resp)) = &self.response {
+                    self.saved_responses.push(SavedResponse {
+                        name: format!("Response {}", self.saved_responses.len() + 1),
+                        status: resp.status,
+                        body: resp.body.clone(),
+                        headers: resp.headers.clone(),
+                        elapsed_ms: resp.elapsed.as_millis(),
+                    });
+                }
+            }
+            TabMessage::ViewSavedResponse(index) => {
+                self.viewing_saved_response = index;
+            }
+            TabMessage::DeleteSavedResponse(index) => {
+                if index < self.saved_responses.len() {
+                    self.saved_responses.remove(index);
+                }
+                self.viewing_saved_response = match self.viewing_saved_response {
+                    Some(current) if current == index => None,
+                    Some(current) if current > index => Some(current - 1),
+                    other => other,
+                };
             }
 
             // handled at the app level (needs the global cursor position), before

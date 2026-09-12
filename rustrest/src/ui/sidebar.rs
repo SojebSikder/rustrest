@@ -1,5 +1,5 @@
 use crate::app::Rustrest;
-use crate::collection::collection::CollectionItem;
+use crate::collection::collection::{CollectionItem, PostmanRequestNode, PostmanResponseExample};
 use crate::message::{Message, SidebarDragItem, SidebarDropTarget};
 use crate::ui::context_menu::{FieldTarget, with_context_menu};
 use crate::ui::unsaved::{
@@ -352,25 +352,73 @@ fn render_sidebar_item<'a>(
         }
         CollectionItem::Request(req_node) => {
             let req_clone = req_node.clone();
-            let label = format!("{} - {}", req_node.request.method, req_node.name);
             let path_for_right_click = current_path.clone();
             let path_for_drag = current_path.clone();
             let path_for_drop = current_path.clone();
             let req_id = req_node.id;
 
-            let mut label_row = row![text(label).size(13)]
-                .spacing(4)
-                .align_y(Alignment::Center);
-            if request_is_unsaved(app, req_node) {
-                label_row = label_row.push(unsaved_dot());
-            }
+            let is_editing_request = app.editing_request_collection_id == Some(collection_id)
+                && app.editing_request_id == Some(req_id);
+            let has_saved_responses = req_node
+                .response
+                .as_ref()
+                .map(|examples| !examples.is_empty())
+                .unwrap_or(false);
+            let is_responses_collapsed = app.collapsed_saved_responses.contains(&req_id);
 
-            let req_layout = column![
-                mouse_area(container(label_row).padding(Padding {
+            let request_title: Element<'_, Message> = if is_editing_request {
+                row![
+                    text_input("Request Name...", &req_node.name)
+                        .on_input(move |txt| Message::RequestNameChanged {
+                            collection_id,
+                            request_id: req_id,
+                            new_name: txt,
+                        })
+                        .on_submit(Message::SaveRequestNamePressed {
+                            collection_id,
+                            request_id: req_id,
+                        })
+                        .width(Length::Fixed(120.0))
+                        .padding(2)
+                        .size(13),
+                    button(text("💾").size(10))
+                        .on_press(Message::SaveRequestNamePressed {
+                            collection_id,
+                            request_id: req_id,
+                        })
+                        .style(button::text)
+                ]
+                .spacing(5)
+                .align_y(Alignment::Center)
+                .padding(Padding {
                     top: 2.0,
                     right: 0.0,
                     bottom: 2.0,
                     left: 15.0,
+                })
+                .into()
+            } else {
+                let mut label_row = row![].spacing(4).align_y(Alignment::Center);
+                if has_saved_responses {
+                    label_row = label_row.push(
+                        button(text(if is_responses_collapsed { "▶" } else { "▼" }).size(9))
+                            .on_press(Message::ToggleSavedResponsesCollapsed(req_id))
+                            .style(button::text)
+                            .padding(1),
+                    );
+                }
+                label_row = label_row.push(
+                    text(format!("{} - {}", req_node.request.method, req_node.name)).size(13),
+                );
+                if request_is_unsaved(app, req_node) {
+                    label_row = label_row.push(unsaved_dot());
+                }
+
+                mouse_area(container(label_row).padding(Padding {
+                    top: 2.0,
+                    right: 0.0,
+                    bottom: 2.0,
+                    left: if has_saved_responses { 8.0 } else { 15.0 },
                 }))
                 .on_press(Message::SidebarRequestClicked {
                     req_node: req_clone,
@@ -382,17 +430,99 @@ fn render_sidebar_item<'a>(
                     folder_path: path_for_right_click,
                     request_id: req_id,
                 })
-                .on_release(Message::SidebarDropped(
-                    SidebarDropTarget::Request {
-                        collection_id,
-                        parent_path: path_for_drop,
-                        request_id: req_id,
+                .on_release(Message::SidebarDropped(SidebarDropTarget::Request {
+                    collection_id,
+                    parent_path: path_for_drop,
+                    request_id: req_id,
+                }))
+                .into()
+            };
+
+            let mut req_layout = column![request_title].spacing(2);
+
+            if !is_responses_collapsed {
+                if let Some(examples) = &req_node.response {
+                    for (index, example) in examples.iter().enumerate() {
+                        req_layout = req_layout.push(render_saved_response_row(
+                            app,
+                            req_node,
+                            collection_id,
+                            index,
+                            example,
+                        ));
                     }
-                ))
-            ];
+                }
+            }
 
             layout.push(req_layout)
         }
+    }
+}
+
+/// renders one saved response row nested under its parent request
+fn render_saved_response_row<'a>(
+    app: &'a Rustrest,
+    req_node: &'a PostmanRequestNode,
+    collection_id: usize,
+    index: usize,
+    example: &'a PostmanResponseExample,
+) -> Element<'a, Message> {
+    let request_id = req_node.id;
+    let is_editing = app.editing_saved_response == Some((collection_id, request_id, index));
+
+    if is_editing {
+        row![
+            text_input("Response Name...", &example.name)
+                .on_input(move |txt| Message::SavedResponseNameChanged {
+                    collection_id,
+                    request_id,
+                    index,
+                    new_name: txt,
+                })
+                .on_submit(Message::SaveSavedResponseNamePressed)
+                .width(Length::Fixed(120.0))
+                .padding(2)
+                .size(12),
+            button(text("💾").size(10))
+                .on_press(Message::SaveSavedResponseNamePressed)
+                .style(button::text)
+        ]
+        .spacing(5)
+        .align_y(Alignment::Center)
+        .padding(Padding {
+            top: 2.0,
+            right: 0.0,
+            bottom: 2.0,
+            left: 30.0,
+        })
+        .into()
+    } else {
+        let title_row = row![
+            text("📄").size(11),
+            text(example.name.clone())
+                .size(12)
+                .color(iced::Color::from_rgb(0.55, 0.55, 0.55)),
+        ]
+        .spacing(4)
+        .align_y(Alignment::Center);
+
+        mouse_area(container(title_row).padding(Padding {
+            top: 2.0,
+            right: 0.0,
+            bottom: 2.0,
+            left: 30.0,
+        }))
+        .on_press(Message::SidebarSavedResponseClicked {
+            req_node: req_node.clone(),
+            collection_id,
+            index,
+        })
+        .on_right_press(Message::ShowSavedResponseContextMenu {
+            collection_id,
+            request_id,
+            index,
+        })
+        .into()
     }
 }
 

@@ -3,7 +3,9 @@ use crate::collection::collection::{
     PostmanUrl, PostmanVariable,
 };
 use crate::collection::env::Environment;
-use crate::collection_adapter::create_tab_from_request;
+use crate::collection_adapter::{
+    create_tab_from_request, examples_to_saved_responses, saved_responses_to_examples,
+};
 use crate::http_client::send_request;
 use crate::message::{Message, ResizeKind, SidebarDragItem};
 use crate::session::{SavedSession, SavedTabEntry};
@@ -12,7 +14,7 @@ use crate::ui::context_menu::{ContextMenu, FieldTarget, apply_field_paste};
 use crate::ui::menu::menu::DropdownMenuState;
 use crate::ui::menu::menu_message::MenuMessage;
 use crate::ui::save_request_model::types::SaveRequestModalState;
-use crate::ui::tab::types::{KeyValuePair, ResponseView};
+use crate::ui::tab::types::{KeyValuePair, ResponseSubTab, ResponseView};
 use crate::ui::tab::{Tab, TabMessage};
 use crate::ui::toast::toast::{ToastManager, ToastStatus};
 use crate::updater::{UpdateInfo, check_for_update, perform_update};
@@ -80,6 +82,10 @@ pub struct Rustrest {
     pub editing_collection_id: Option<usize>,
     pub editing_folder_collection_id: Option<usize>,
     pub editing_folder_path: Vec<String>,
+    pub editing_request_collection_id: Option<usize>,
+    pub editing_request_id: Option<usize>,
+    /// (collection_id, request_id, index) of the saved response currently being renamed.
+    pub editing_saved_response: Option<(usize, usize, usize)>,
     pub active_context_menu: Option<ContextMenu>,
     pub context_menu_position: iced::Point,
     pub cursor_position: iced::Point,
@@ -120,6 +126,8 @@ pub struct Rustrest {
     pub sidebar_drag: Option<SidebarDragItem>,
     pub collapsed_collections: std::collections::HashSet<usize>,
     pub collapsed_folders: std::collections::HashSet<(usize, Vec<String>)>,
+    /// request ids whose saved-responses list is collapsed in the sidebar.
+    pub collapsed_saved_responses: std::collections::HashSet<usize>,
 
     // tab bar drag-to-reorder
     pub dragging_tab_index: Option<usize>,
@@ -187,6 +195,9 @@ impl Rustrest {
             environments: self.environments.clone(),
             active_env_index: self.active_env_index,
             globals: self.globals.clone(),
+            collapsed_collections: self.collapsed_collections.clone(),
+            collapsed_folders: self.collapsed_folders.clone(),
+            collapsed_saved_responses: self.collapsed_saved_responses.clone(),
             session: self.build_session_snapshot(),
         };
         (ws, dropped)
@@ -235,6 +246,9 @@ impl Rustrest {
         self.environments = ws.environments.clone();
         self.active_env_index = ws.active_env_index;
         self.globals = ws.globals.clone();
+        self.collapsed_collections = ws.collapsed_collections.clone();
+        self.collapsed_folders = ws.collapsed_folders.clone();
+        self.collapsed_saved_responses = ws.collapsed_saved_responses.clone();
 
         restore_session_into_app(self, &ws.session);
 
@@ -297,6 +311,52 @@ impl Rustrest {
             }
         }
     }
+
+    /// after saving/deleting a response snapshot from an open tab's response
+    /// pane, mirrors that tab's saved responses into the collection tree
+    pub fn sync_active_tab_saved_responses_to_collection(&mut self, idx: usize) {
+        let Some(tab_state) = self.tabs.get(idx) else {
+            return;
+        };
+        let (Some(req_id), Some(col_id)) = (tab_state.tab.request_id, tab_state.tab.collection_id)
+        else {
+            return;
+        };
+        let saved = tab_state.tab.saved_responses.clone();
+
+        if let Some(col) = self.collections.iter_mut().find(|c| c.id == col_id) {
+            if let Some(node) = find_request_mut(&mut col.item, req_id) {
+                node.response = saved_responses_to_examples(&saved);
+                node.unsaved = true;
+            }
+        }
+    }
+
+    /// re-reads a request's saved responses from the collection tree into any
+    /// currently open tab for that request
+    pub fn refresh_open_tab_saved_responses(&mut self, collection_id: usize, request_id: usize) {
+        let examples = self
+            .collections
+            .iter_mut()
+            .find(|c| c.id == collection_id)
+            .and_then(|c| find_request_mut(&mut c.item, request_id))
+            .and_then(|node| node.response.clone())
+            .unwrap_or_default();
+        let saved = examples_to_saved_responses(&examples);
+
+        for tab_state in self.tabs.iter_mut() {
+            if tab_state.tab.collection_id == Some(collection_id)
+                && tab_state.tab.request_id == Some(request_id)
+            {
+                tab_state.tab.saved_responses = saved.clone();
+                if let Some(viewing) = tab_state.tab.viewing_saved_response {
+                    if viewing >= tab_state.tab.saved_responses.len() {
+                        tab_state.tab.viewing_saved_response = None;
+                    }
+                }
+            }
+        }
+    }
 }
 
 pub fn init() -> (Rustrest, Task<Message>) {
@@ -317,6 +377,9 @@ pub fn init() -> (Rustrest, Task<Message>) {
         editing_collection_id: None,
         editing_folder_collection_id: None,
         editing_folder_path: Vec::new(),
+        editing_request_collection_id: None,
+        editing_request_id: None,
+        editing_saved_response: None,
         active_context_menu: None,
         context_menu_position: iced::Point::ORIGIN,
         cursor_position: iced::Point::ORIGIN,
@@ -344,6 +407,7 @@ pub fn init() -> (Rustrest, Task<Message>) {
         sidebar_drag: None,
         collapsed_collections: std::collections::HashSet::new(),
         collapsed_folders: std::collections::HashSet::new(),
+        collapsed_saved_responses: std::collections::HashSet::new(),
         dragging_tab_index: None,
     };
 
@@ -427,6 +491,9 @@ fn default_workspace(id: usize, legacy_session: Option<SavedSession>) -> SavedWo
         environments: vec![demo_env],
         active_env_index: None,
         globals: Vec::new(),
+        collapsed_collections: std::collections::HashSet::new(),
+        collapsed_folders: std::collections::HashSet::new(),
+        collapsed_saved_responses: std::collections::HashSet::new(),
         session: legacy_session.unwrap_or(SavedSession {
             tabs: Vec::new(),
             active_tab_index: 0,
@@ -1119,6 +1186,125 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             }
         }
 
+        Message::SidebarSavedResponseClicked {
+            req_node,
+            collection_id,
+            index,
+        } => {
+            let existing_tab_idx = app.tabs.iter().position(|t| {
+                t.tab.request_id == Some(req_node.id)
+                    && matches!(t.content, WorkspaceContent::HttpRequest)
+            });
+
+            let (tab_idx, opened_new_tab) = match existing_tab_idx {
+                Some(idx) => {
+                    app.active_tab_index = idx;
+                    (idx, false)
+                }
+                None => {
+                    let new_tab =
+                        create_tab_from_request(app.next_tab_id, &req_node, Some(collection_id));
+                    app.tabs.push(TabState {
+                        tab: new_tab,
+                        content: WorkspaceContent::HttpRequest,
+                        is_editing_name: false,
+                    });
+                    app.next_tab_id += 1;
+                    app.active_tab_index = app.tabs.len() - 1;
+                    (app.active_tab_index, true)
+                }
+            };
+
+            if let Some(tab_state) = app.tabs.get_mut(tab_idx) {
+                if index < tab_state.tab.saved_responses.len() {
+                    tab_state.tab.viewing_saved_response = Some(index);
+                    tab_state.tab.active_response_tab = ResponseSubTab::Body;
+                }
+            }
+
+            if opened_new_tab {
+                iced::widget::operation::snap_to_end(crate::ui::workspace::tab_bar_scroll_id())
+            } else {
+                Task::none()
+            }
+        }
+
+        Message::ShowSavedResponseContextMenu {
+            collection_id,
+            request_id,
+            index,
+        } => {
+            app.active_context_menu = Some(ContextMenu::SavedResponse {
+                col_id: collection_id,
+                req_id: request_id,
+                index,
+            });
+            app.context_menu_position = app.cursor_position;
+            Task::none()
+        }
+
+        Message::RenameSavedResponsePressed {
+            collection_id,
+            request_id,
+            index,
+        } => {
+            app.editing_saved_response = Some((collection_id, request_id, index));
+            app.active_context_menu = None;
+            Task::none()
+        }
+
+        Message::SavedResponseNameChanged {
+            collection_id,
+            request_id,
+            index,
+            new_name,
+        } => {
+            if let Some(col) = app.collections.iter_mut().find(|c| c.id == collection_id) {
+                if let Some(node) = find_request_mut(&mut col.item, request_id) {
+                    if let Some(example) = node
+                        .response
+                        .as_mut()
+                        .and_then(|responses| responses.get_mut(index))
+                    {
+                        example.name = new_name;
+                        node.unsaved = true;
+                    }
+                }
+            }
+            app.refresh_open_tab_saved_responses(collection_id, request_id);
+            Task::none()
+        }
+
+        Message::SaveSavedResponseNamePressed => {
+            app.editing_saved_response = None;
+            Task::none()
+        }
+
+        Message::DeleteSavedResponsePressed {
+            collection_id,
+            request_id,
+            index,
+        } => {
+            if let Some(col) = app.collections.iter_mut().find(|c| c.id == collection_id) {
+                if let Some(node) = find_request_mut(&mut col.item, request_id) {
+                    if let Some(responses) = node.response.as_mut() {
+                        if index < responses.len() {
+                            responses.remove(index);
+                            node.unsaved = true;
+                        }
+                        if responses.is_empty() {
+                            node.response = None;
+                        }
+                    }
+                }
+            }
+            if app.editing_saved_response == Some((collection_id, request_id, index)) {
+                app.editing_saved_response = None;
+            }
+            app.refresh_open_tab_saved_responses(collection_id, request_id);
+            Task::none()
+        }
+
         Message::NewTabPressed => {
             app.tabs.push(TabState {
                 tab: Tab::new(app.next_tab_id),
@@ -1149,7 +1335,9 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 app.context_menu_position = app.cursor_position;
                 return Task::none();
             }
-            if let Some(tab_state) = app.tabs.get_mut(app.active_tab_index) {
+            let active_idx = app.active_tab_index;
+            let mut syncs_saved_responses = false;
+            if let Some(tab_state) = app.tabs.get_mut(active_idx) {
                 if let TabMessage::ResponseViewChanged(view) = tab_msg {
                     tab_state.tab.response_view = view;
                     if let Some(Ok(resp)) = &tab_state.tab.response {
@@ -1161,8 +1349,18 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                             iced::widget::text_editor::Content::with_text(&body_text);
                     }
                 } else {
+                    syncs_saved_responses = matches!(
+                        tab_msg,
+                        TabMessage::SaveResponse | TabMessage::DeleteSavedResponse(_)
+                    );
                     tab_state.tab.update(tab_msg);
                 }
+            }
+            // saving/deleting a response snapshot mutates the request's saved-response
+            // list directly, so mirror it into the collection tree (sidebar) right away
+            // instead of waiting for an explicit "Save Request".
+            if syncs_saved_responses {
+                app.sync_active_tab_saved_responses_to_collection(active_idx);
             }
             Task::none()
         }
@@ -1781,6 +1979,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     },
                     event: None,
                     unsaved: true,
+                    response: None,
                 };
 
                 insert_nested_request(
@@ -1804,6 +2003,52 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 if app.active_tab_index >= app.tabs.len() && !app.tabs.is_empty() {
                     app.active_tab_index = app.tabs.len() - 1;
                 }
+            }
+            Task::none()
+        }
+
+        // request rename actions
+        Message::RenameRequestPressed {
+            collection_id,
+            request_id,
+        } => {
+            app.editing_request_collection_id = Some(collection_id);
+            app.editing_request_id = Some(request_id);
+            app.active_context_menu = None;
+            Task::none()
+        }
+
+        Message::RequestNameChanged {
+            collection_id,
+            request_id,
+            new_name,
+        } => {
+            if let Some(col) = app.collections.iter_mut().find(|c| c.id == collection_id) {
+                if let Some(node) = find_request_mut(&mut col.item, request_id) {
+                    node.name = new_name.clone();
+                    node.unsaved = true;
+                }
+            }
+            for t in &mut app.tabs {
+                if t.tab.collection_id == Some(collection_id)
+                    && t.tab.request_id == Some(request_id)
+                    && matches!(t.content, WorkspaceContent::HttpRequest)
+                {
+                    t.tab.name = new_name.clone();
+                }
+            }
+            Task::none()
+        }
+
+        Message::SaveRequestNamePressed { .. } => {
+            app.editing_request_collection_id = None;
+            app.editing_request_id = None;
+            Task::none()
+        }
+
+        Message::ToggleSavedResponsesCollapsed(request_id) => {
+            if !app.collapsed_saved_responses.remove(&request_id) {
+                app.collapsed_saved_responses.insert(request_id);
             }
             Task::none()
         }
@@ -2181,6 +2426,9 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 environments: vec![env],
                 active_env_index: None,
                 globals: Vec::new(),
+                collapsed_collections: std::collections::HashSet::new(),
+                collapsed_folders: std::collections::HashSet::new(),
+                collapsed_saved_responses: std::collections::HashSet::new(),
                 session: SavedSession {
                     tabs: Vec::new(),
                     active_tab_index: 0,

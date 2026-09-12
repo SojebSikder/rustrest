@@ -32,7 +32,7 @@ use message::{Message, ResizeKind};
 const APP_NAME: &str = "Rustrest";
 const APP_VERSION: &str = "0.1.6";
 
-const APP_ICON: &[u8] = include_bytes!("../assets/images/logo-transparent.png");
+const APP_ICON: &[u8] = include_bytes!("../../assets/images/logo-transparent.png");
 
 pub fn main() -> iced::Result {
     let icon = iced::window::icon::from_file_data(APP_ICON, None).ok();

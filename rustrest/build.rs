@@ -1,7 +1,7 @@
 #[cfg(windows)]
 fn main() {
     let mut res = winres::WindowsResource::new();
-    res.set_icon("assets/images/app-icon.ico");
+    res.set_icon("../assets/images/app-icon.ico");
 
     // executable file metadata details in Windows Properties
     res.set("ProductName", "Rustrest");

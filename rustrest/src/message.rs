@@ -74,6 +74,35 @@ pub enum Message {
         parent_path: Vec<String>,
     },
 
+    // saved response ("example") sidebar actions
+    SidebarSavedResponseClicked {
+        req_node: PostmanRequestNode,
+        collection_id: usize,
+        index: usize,
+    },
+    ShowSavedResponseContextMenu {
+        collection_id: usize,
+        request_id: usize,
+        index: usize,
+    },
+    RenameSavedResponsePressed {
+        collection_id: usize,
+        request_id: usize,
+        index: usize,
+    },
+    SavedResponseNameChanged {
+        collection_id: usize,
+        request_id: usize,
+        index: usize,
+        new_name: String,
+    },
+    SaveSavedResponseNamePressed,
+    DeleteSavedResponsePressed {
+        collection_id: usize,
+        request_id: usize,
+        index: usize,
+    },
+
     // sidebar drag-and-drop (reorder / move requests & folders)
     SidebarDragStarted(SidebarDragItem),
     SidebarDropped(SidebarDropTarget),
@@ -169,6 +198,24 @@ pub enum Message {
         request_id: usize,
         parent_folder_path: Vec<String>,
     },
+
+    // request rename actions
+    RenameRequestPressed {
+        collection_id: usize,
+        request_id: usize,
+    },
+    RequestNameChanged {
+        collection_id: usize,
+        request_id: usize,
+        new_name: String,
+    },
+    SaveRequestNamePressed {
+        collection_id: usize,
+        request_id: usize,
+    },
+
+    // sidebar collapse/expand of a request's saved-responses list
+    ToggleSavedResponsesCollapsed(usize),
 
     // collection Rename Actions
     RenameCollectionPressed(usize),       // trigger edit mode

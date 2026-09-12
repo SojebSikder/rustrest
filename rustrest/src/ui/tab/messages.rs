@@ -52,6 +52,13 @@ pub enum TabMessage {
     ResponseViewChanged(ResponseView),
     ResponseSubTabSelected(ResponseSubTab),
 
+    /// saves the current live response as a new named snapshot.
+    SaveResponse,
+    /// switches the response pane between the live response (`None`) and a
+    /// saved snapshot at the given index.
+    ViewSavedResponse(Option<usize>),
+    DeleteSavedResponse(usize),
+
     CookieRowChanged(usize, KeyValuePair),
     AddCookieRow,
     RemoveCookieRow(usize),
@@ -102,7 +109,9 @@ impl TabMessage {
             | TabMessage::RemoveUrlencodedRow(_)
             | TabMessage::CookieRowChanged(_, _)
             | TabMessage::AddCookieRow
-            | TabMessage::RemoveCookieRow(_) => true,
+            | TabMessage::RemoveCookieRow(_)
+            | TabMessage::SaveResponse
+            | TabMessage::DeleteSavedResponse(_) => true,
 
             TabMessage::AuthChanged(action)
             | TabMessage::BodyChanged(action)
@@ -117,6 +126,7 @@ impl TabMessage {
             | TabMessage::ResponseBodyEditorAction(_)
             | TabMessage::ScriptTabChanged(_)
             | TabMessage::CancelRequest
+            | TabMessage::ViewSavedResponse(_)
             | TabMessage::ShowFieldContextMenu(_, _) => false,
         }
     }

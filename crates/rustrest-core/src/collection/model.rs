@@ -224,6 +224,21 @@ pub struct PostmanRequestNode {
     /// true when this request was added since the last save.
     #[serde(skip)]
     pub unsaved: bool,
+
+    /// saved response snapshots for this request
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response: Option<Vec<PostmanResponseExample>>,
+}
+
+/// a saved snapshot of a response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PostmanResponseExample {
+    pub name: String,
+    pub code: u16,
+    pub header: Option<Vec<PostmanHeader>>,
+    pub body: Option<String>,
+    #[serde(rename = "responseTime")]
+    pub response_time: Option<u128>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
