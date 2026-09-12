@@ -3,7 +3,7 @@ use crate::{app::Rustrest, message::Message};
 use iced::widget::{button, column, container, pick_list, row, text, text_input};
 use iced::{Border, Color, Element, Font, Length, Shadow, Theme, Vector};
 
-pub fn view_save_request_modal(app: &Rustrest) -> Option<Element<Message>> {
+pub fn view_save_request_modal(app: &Rustrest) -> Option<Element<'_, Message>> {
     let modal = app.save_request_model.as_ref()?;
 
     let collection_options: Vec<String> = app
