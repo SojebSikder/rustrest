@@ -1,6 +1,6 @@
 use crate::collection::collection::{
     CollectionInfo, CollectionItem, PostmanCollection, PostmanRequestDetails, PostmanRequestNode,
-    PostmanUrl, PostmanVariable,
+    PostmanUrl, PostmanVariable, RemoteDirRef,
 };
 use crate::collection::env::Environment;
 use crate::collection_adapter::{
@@ -226,6 +226,11 @@ impl Rustrest {
                 collection_sources.push(CollectionSource::Dir(dir.clone()));
             } else if let Some(path) = &c.file_path {
                 collection_sources.push(CollectionSource::File(path.clone()));
+            } else if let Some(remote) = &c.remote_dir {
+                collection_sources.push(CollectionSource::Remote {
+                    profile_id: remote.profile_id,
+                    root: remote.root.clone(),
+                });
             } else {
                 dropped += 1;
             }
@@ -569,6 +574,7 @@ pub fn init() -> (Rustrest, Task<Message>) {
         open_main_window.map(|_id| Message::None),
         load_errors_task,
         update_check_task,
+        auto_connect_remote_collections(&app),
     ]);
 
     (app, startup_task)
@@ -611,6 +617,38 @@ fn load_collection_from_source(source: &CollectionSource) -> Result<PostmanColle
             Ok(collection)
         }
         CollectionSource::Dir(dir) => crate::collection::dir_storage::load_collection_from_dir(dir),
+        // the real tree lives on the remote host; this placeholder shows up
+        // immediately in the sidebar (dimmed, until connected) and gets
+        // replaced once `RemoteConnected` manages to load it.
+        CollectionSource::Remote { profile_id, root } => {
+            Ok(placeholder_remote_collection(*profile_id, root.clone()))
+        }
+    }
+}
+
+fn placeholder_remote_collection(profile_id: usize, root: String) -> PostmanCollection {
+    let name = root
+        .trim_end_matches('/')
+        .rsplit('/')
+        .next()
+        .filter(|s| !s.is_empty())
+        .unwrap_or(&root)
+        .to_string();
+
+    PostmanCollection {
+        id: 0,
+        file_path: None,
+        storage_dir: None,
+        remote_dir: Some(RemoteDirRef { profile_id, root }),
+        unsaved: false,
+        info: CollectionInfo {
+            name,
+            postman_id: None,
+            schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+                .to_string(),
+        },
+        item: Vec::new(),
+        variable: Some(Vec::new()),
     }
 }
 
@@ -661,6 +699,35 @@ fn persist_collection_if_known_location(
     success_msg: String,
 ) -> Task<Message> {
     if let Some(collection) = app.collections.iter().find(|c| c.id == col_id) {
+        if let Some(remote) = &collection.remote_dir {
+            let profile_id = remote.profile_id;
+            let root = remote.root.clone();
+            return match app.remote_sessions.get(&profile_id).cloned() {
+                Some(session) => {
+                    let collection = collection.clone();
+                    Task::perform(
+                        async move {
+                            rustrest_remote::collection_sync::sync_collection_to_remote_dir(
+                                &session, &collection, &root,
+                            )
+                            .await
+                        },
+                        move |result| match result {
+                            Ok(()) => Message::ShowToast(success_msg.clone(), ToastStatus::Success),
+                            Err(err) => Message::ShowToast(
+                                format!("Saved in memory, but failed to reach remote host: {err}"),
+                                ToastStatus::Error,
+                            ),
+                        },
+                    )
+                }
+                None => Task::done(Message::ShowToast(
+                    "Saved in memory, but not connected — reconnect to push changes to the remote host".to_string(),
+                    ToastStatus::Error,
+                )),
+            };
+        }
+
         if let Some(ref dir) = collection.storage_dir {
             return match crate::collection::dir_storage::save_collection_to_dir_clean(
                 collection, dir,
@@ -741,6 +808,92 @@ fn remote_known_hosts_path() -> std::path::PathBuf {
         .unwrap_or_else(std::env::temp_dir)
         .join(APP_NAME)
         .join("remote_known_hosts")
+}
+
+/// connects to `profile` over SSH (provisioning the remote agent if needed)
+/// and reports the outcome as a `RemoteConnected` message. `secret` is the
+/// password/passphrase to use, or empty for agent auth / a keyless key.
+fn spawn_remote_connect(profile: &SshProfile, secret: String) -> Task<Message> {
+    let auth = match &profile.auth_method {
+        SshAuthMethod::Password => AuthMethod::Password(secret.clone()),
+        SshAuthMethod::PrivateKey { path } => AuthMethod::PrivateKey {
+            path: path.clone(),
+            passphrase: if secret.is_empty() {
+                None
+            } else {
+                Some(secret.clone())
+            },
+        },
+        SshAuthMethod::Agent => AuthMethod::Agent,
+    };
+    let config = SshConfig {
+        host: profile.host.clone(),
+        port: profile.port,
+        username: profile.username.clone(),
+        auth,
+    };
+    let known_hosts_path = remote_known_hosts_path();
+    let app_version = APP_VERSION.to_string();
+    let app_version_for_download = app_version.clone();
+    let profile_id = profile.id;
+
+    Task::perform(
+        async move {
+            rustrest_remote::RemoteSession::connect(
+                &config,
+                &known_hosts_path,
+                &app_version,
+                move |platform| async move {
+                    let target = platform.target_triple()?.to_string();
+                    tokio::task::spawn_blocking(move || {
+                        crate::remote_agent::provision(&target, &app_version_for_download)
+                    })
+                    .await
+                    .map_err(|e| rustrest_remote::RemoteError::Remote(e.to_string()))?
+                    .map_err(rustrest_remote::RemoteError::Remote)
+                },
+            )
+            .await
+            .map_err(|e| e.to_string())
+        },
+        move |result| Message::RemoteConnected(profile_id, result.map(Arc::new)),
+    )
+}
+
+/// attempts a silent (no user-entered secret) connect for every distinct SSH
+/// profile referenced by a remote-backed collection currently in
+/// `app.collections` that isn't already connected - covers auto-reconnect on
+/// startup and workspace switches. profiles whose auth needs an interactive
+/// secret (password, or a passphrase-protected key) are skipped; those stay
+/// offline until the user clicks Connect.
+fn auto_connect_remote_collections(app: &Rustrest) -> Task<Message> {
+    let mut seen = std::collections::HashSet::new();
+    let mut tasks = Vec::new();
+
+    for col in &app.collections {
+        let Some(remote) = &col.remote_dir else {
+            continue;
+        };
+        if app.remote_sessions.contains_key(&remote.profile_id) {
+            continue;
+        }
+        if !seen.insert(remote.profile_id) {
+            continue;
+        }
+        let Some(profile) = app
+            .remote_profiles
+            .iter()
+            .find(|p| p.id == remote.profile_id)
+        else {
+            continue;
+        };
+        if matches!(profile.auth_method, SshAuthMethod::Password) {
+            continue;
+        }
+        tasks.push(spawn_remote_connect(profile, String::new()));
+    }
+
+    Task::batch(tasks)
 }
 
 pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
@@ -824,7 +977,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 .collections
                 .iter()
                 .find(|c| c.id == col_id)
-                .map(|c| c.storage_dir.is_some() || c.file_path.is_some())
+                .map(|c| c.storage_dir.is_some() || c.file_path.is_some() || c.remote_dir.is_some())
                 .unwrap_or(false);
 
             if !has_known_location {
@@ -2027,6 +2180,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 variable: Some(Vec::new()),
                 file_path: None,
                 storage_dir: None,
+                remote_dir: None,
                 unsaved: false,
             };
             app.collections.push(new_col);
@@ -2561,10 +2715,13 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             let load_errors = app.apply_workspace(&target);
             app.active_workspace_id = target_id;
 
-            let mut tasks = vec![Task::done(Message::ShowToast(
-                format!("Switched to workspace '{}'", target.name),
-                ToastStatus::Success,
-            ))];
+            let mut tasks = vec![
+                Task::done(Message::ShowToast(
+                    format!("Switched to workspace '{}'", target.name),
+                    ToastStatus::Success,
+                )),
+                auto_connect_remote_collections(app),
+            ];
             if dropped > 0 {
                 tasks.push(Task::done(Message::ShowToast(
                     format!(
@@ -3083,64 +3240,44 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             else {
                 return Task::none();
             };
-
-            let auth = match &profile.auth_method {
-                SshAuthMethod::Password => AuthMethod::Password(pending.secret.clone()),
-                SshAuthMethod::PrivateKey { path } => AuthMethod::PrivateKey {
-                    path: path.clone(),
-                    passphrase: if pending.secret.is_empty() {
-                        None
-                    } else {
-                        Some(pending.secret.clone())
-                    },
-                },
-                SshAuthMethod::Agent => AuthMethod::Agent,
-            };
-            let config = SshConfig {
-                host: profile.host.clone(),
-                port: profile.port,
-                username: profile.username.clone(),
-                auth,
-            };
-            let known_hosts_path = remote_known_hosts_path();
-            let app_version = APP_VERSION.to_string();
-            let app_version_for_download = app_version.clone();
-            let profile_id = profile.id;
-
-            Task::perform(
-                async move {
-                    rustrest_remote::RemoteSession::connect(
-                        &config,
-                        &known_hosts_path,
-                        &app_version,
-                        move |platform| async move {
-                            let target = platform.target_triple()?.to_string();
-                            tokio::task::spawn_blocking(move || {
-                                crate::remote_agent::provision(&target, &app_version_for_download)
-                            })
-                            .await
-                            .map_err(|e| rustrest_remote::RemoteError::Remote(e.to_string()))?
-                            .map_err(rustrest_remote::RemoteError::Remote)
-                        },
-                    )
-                    .await
-                    .map_err(|e| e.to_string())
-                },
-                move |result| Message::RemoteConnected(profile_id, result.map(Arc::new)),
-            )
+            spawn_remote_connect(&profile, pending.secret)
         }
         Message::RemoteConnected(profile_id, Ok(session)) => {
-            app.remote_sessions.insert(profile_id, session);
+            app.remote_sessions.insert(profile_id, session.clone());
             let name = app
                 .remote_profiles
                 .iter()
                 .find(|p| p.id == profile_id)
                 .map(|p| p.name.clone())
                 .unwrap_or_default();
-            Task::done(Message::ShowToast(
+
+            // reload any remote-backed collections waiting on this profile
+            let mut tasks = vec![Task::done(Message::ShowToast(
                 format!("Connected to {name}"),
                 ToastStatus::Success,
-            ))
+            ))];
+            for col in &app.collections {
+                let Some(remote) = &col.remote_dir else {
+                    continue;
+                };
+                if remote.profile_id != profile_id {
+                    continue;
+                }
+                let col_id = col.id;
+                let root = remote.root.clone();
+                let session = session.clone();
+                tasks.push(Task::perform(
+                    async move {
+                        rustrest_remote::collection_sync::load_collection_from_remote_dir(
+                            &session, &root,
+                        )
+                        .await
+                        .map_err(|e| e.to_string())
+                    },
+                    move |result| Message::RemoteCollectionLoaded(col_id, result.map(Box::new)),
+                ));
+            }
+            Task::batch(tasks)
         }
         Message::RemoteConnected(_, Err(err)) => Task::done(Message::ShowToast(
             format!("Connect failed: {err}"),
@@ -3314,6 +3451,159 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 ToastStatus::Error,
             )),
         },
+
+        // remote development (SSH) - remote collections
+        Message::RemoteImportDirAsCollectionPressed(profile_id, path) => {
+            let Some(session) = app.remote_sessions.get(&profile_id).cloned() else {
+                return Task::none();
+            };
+            let path_for_result = path.clone();
+            Task::perform(
+                async move {
+                    rustrest_remote::collection_sync::load_collection_from_remote_dir(
+                        &session, &path,
+                    )
+                    .await
+                    .map_err(|e| e.to_string())
+                },
+                move |result| {
+                    Message::RemoteCollectionImported(
+                        profile_id,
+                        path_for_result.clone(),
+                        result.map(Box::new),
+                    )
+                },
+            )
+        }
+        Message::RemoteCollectionImported(profile_id, root, Ok(mut collection)) => {
+            collection.remote_dir = Some(RemoteDirRef {
+                profile_id,
+                root: root.clone(),
+            });
+
+            let existing_id = app.collections.iter().find_map(|c| {
+                let remote = c.remote_dir.as_ref()?;
+                (remote.profile_id == profile_id && remote.root == root).then_some(c.id)
+            });
+
+            if let Some(existing_id) = existing_id {
+                app.sync_collection_tabs(existing_id);
+                let existing_name = app
+                    .collections
+                    .iter()
+                    .find(|c| c.id == existing_id)
+                    .map(|c| c.info.name.clone())
+                    .unwrap_or_default();
+                collection.id = existing_id;
+
+                return Task::done(Message::ShowConfirmDialog(ConfirmDialogState {
+                    title: "Reload collection from remote host?".to_string(),
+                    message: format!(
+                        "\"{existing_name}\" is already open. Reloading will discard any unsaved changes."
+                    ),
+                    confirm_label: "Reload".to_string(),
+                    on_confirm: Box::new(Message::ReplaceCollectionConfirmed(
+                        existing_id,
+                        collection,
+                    )),
+                }));
+            }
+
+            let col_name = collection.info.name.clone();
+            collection.id = app.next_tab_id;
+            app.next_tab_id += 1;
+            collection.assign_request_ids(&mut app.next_request_id);
+            app.collections.push(*collection);
+
+            Task::done(Message::ShowToast(
+                format!("Collection '{}' imported from remote host", col_name),
+                ToastStatus::Success,
+            ))
+        }
+        Message::RemoteCollectionImported(_, _, Err(err)) => Task::done(Message::ShowToast(
+            format!("Failed to import remote collection: {err}"),
+            ToastStatus::Error,
+        )),
+
+        Message::RemoteCollectionLoaded(collection_id, Ok(mut collection)) => {
+            let remote_dir = app
+                .collections
+                .iter()
+                .find(|c| c.id == collection_id)
+                .and_then(|c| c.remote_dir.clone());
+
+            if remote_dir.is_some() {
+                collection.id = collection_id;
+                collection.remote_dir = remote_dir;
+                collection.assign_request_ids(&mut app.next_request_id);
+                if let Some(existing) = app.collections.iter_mut().find(|c| c.id == collection_id) {
+                    *existing = *collection;
+                }
+            }
+            Task::none()
+        }
+        Message::RemoteCollectionLoaded(_, Err(err)) => Task::done(Message::ShowToast(
+            format!("Failed to load remote collection: {err}"),
+            ToastStatus::Error,
+        )),
+
+        Message::RemoteNewCollectionNameChanged(profile_id, name) => {
+            if let Some(explorer) = app.remote_explorers.get_mut(&profile_id) {
+                explorer.new_collection_name = name;
+            }
+            Task::none()
+        }
+        Message::RemoteNewCollectionPressed(profile_id) => {
+            let Some(explorer) = app.remote_explorers.get(&profile_id) else {
+                return Task::none();
+            };
+            let name = explorer.new_collection_name.trim().to_string();
+            if name.is_empty() {
+                return Task::done(Message::ShowToast(
+                    "Enter a name for the new collection".to_string(),
+                    ToastStatus::Error,
+                ));
+            }
+            let Some(session) = app.remote_sessions.get(&profile_id).cloned() else {
+                return Task::none();
+            };
+            let root = join_remote_path(&explorer.path, &name);
+            let collection = PostmanCollection {
+                id: 0,
+                file_path: None,
+                storage_dir: None,
+                remote_dir: None,
+                unsaved: false,
+                info: CollectionInfo {
+                    name: name.clone(),
+                    postman_id: None,
+                    schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+                        .to_string(),
+                },
+                item: Vec::new(),
+                variable: Some(Vec::new()),
+            };
+            let root_for_result = root.clone();
+            Task::perform(
+                async move {
+                    rustrest_remote::collection_sync::sync_collection_to_remote_dir(
+                        &session,
+                        &collection,
+                        &root,
+                    )
+                    .await
+                    .map(|()| collection)
+                    .map_err(|e| e.to_string())
+                },
+                move |result| {
+                    Message::RemoteCollectionImported(
+                        profile_id,
+                        root_for_result.clone(),
+                        result.map(Box::new),
+                    )
+                },
+            )
+        }
 
         // remote development (SSH) - open remote file tab
         Message::RemoteFileContentChanged(tab_id, action) => {

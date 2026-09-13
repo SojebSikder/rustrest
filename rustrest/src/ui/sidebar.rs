@@ -7,7 +7,8 @@ use crate::ui::unsaved::{
 };
 use iced::Padding;
 use iced::widget::{
-    Column, button, column, container, mouse_area, pick_list, row, scrollable, text, text_input,
+    Column, Space, button, column, container, mouse_area, pick_list, row, scrollable, text,
+    text_input,
 };
 use iced::{Alignment, Element, Font, Length};
 
@@ -47,11 +48,22 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
                 .align_y(Alignment::Center)
                 .into()
             } else {
+                let remote_profile_id = col.remote_dir.as_ref().map(|r| r.profile_id);
+                let is_online = remote_profile_id
+                    .map(|id| app.remote_sessions.contains_key(&id))
+                    .unwrap_or(true);
+
                 let collapse_arrow =
                     button(text(if is_collapsed_col { "▶" } else { "▼" }).size(10))
                         .on_press(Message::ToggleCollectionCollapsed(col_id))
                         .style(button::text)
                         .padding(2);
+
+                let name_color = if is_online {
+                    None
+                } else {
+                    Some(iced::Color::from_rgb(0.55, 0.55, 0.55))
+                };
 
                 let mut header_row = row![
                     collapse_arrow,
@@ -60,7 +72,8 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
                             weight: iced::font::Weight::Bold,
                             ..Font::DEFAULT
                         })
-                        .size(14),
+                        .size(14)
+                        .style(move |_theme: &iced::Theme| text::Style { color: name_color }),
                 ]
                 .spacing(4)
                 .align_y(Alignment::Center);
@@ -82,6 +95,19 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
                             text("●")
                                 .size(9)
                                 .color(iced::Color::from_rgb(0.85, 0.55, 0.10)),
+                        );
+                    }
+                }
+
+                if let Some(profile_id) = remote_profile_id {
+                    header_row = header_row.push(text("🔗").size(11));
+                    if !is_online {
+                        header_row = header_row.push(Space::new().width(Length::Fill));
+                        header_row = header_row.push(
+                            button(text("Connect").size(10))
+                                .on_press(Message::RemoteConnectPressed(profile_id))
+                                .padding([1, 6])
+                                .style(button::secondary),
                         );
                     }
                 }

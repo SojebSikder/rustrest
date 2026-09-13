@@ -1,70 +1,12 @@
+use crate::collection::dir_format::{
+    COLLECTION_META_FILE, CollectionMeta, FOLDER_META_FILE, FolderMeta, dedupe_name, sanitize_name,
+};
 use crate::collection::model::{
-    CollectionInfo, CollectionItem, PostmanCollection, PostmanEvent, PostmanFolder,
-    PostmanProtocolProfileBehavior, PostmanRequestNode, PostmanVariable,
+    CollectionItem, PostmanCollection, PostmanFolder, PostmanRequestNode,
 };
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
-
-const COLLECTION_META_FILE: &str = "_collection.json";
-const FOLDER_META_FILE: &str = "_folder.json";
-
-/// metadata persisted at the root of a directory-backed collection.
-/// mirrors `CollectionInfo` + variables + explicit child ordering.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct CollectionMeta {
-    info: CollectionInfo,
-    variable: Option<Vec<PostmanVariable>>,
-    /// ordered list of child entry names (file or directory names,
-    /// relative to this directory).
-    order: Vec<String>,
-}
-
-/// metadata persisted inside every folder directory.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct FolderMeta {
-    description: Option<String>,
-    #[serde(rename = "protocolProfileBehavior")]
-    protocol_profile_behavior: Option<PostmanProtocolProfileBehavior>,
-    event: Option<Vec<PostmanEvent>>,
-    order: Vec<String>,
-}
-
-/// turns an arbitrary item name into a filesystem-safe slug. Keeps things
-/// human-readable (good for diffs) while avoiding characters that are
-/// illegal or awkward on common filesystems.
-fn sanitize_name(name: &str) -> String {
-    let mut out: String = name
-        .trim()
-        .chars()
-        .map(|c| match c {
-            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '-',
-            c if c.is_control() => '-',
-            c => c,
-        })
-        .collect();
-
-    if out.is_empty() {
-        out = "untitled".to_string();
-    }
-    out
-}
-
-/// ensures a filename is unique within `used`, appending `-2`, `-3`, ... on
-/// collision (e.g. two requests both named "Get User").
-fn dedupe_name(base: &str, used: &mut std::collections::HashSet<String>) -> String {
-    if used.insert(base.to_string()) {
-        return base.to_string();
-    }
-    let mut n = 2;
-    loop {
-        let candidate = format!("{base}-{n}");
-        if used.insert(candidate.clone()) {
-            return candidate;
-        }
-        n += 1;
-    }
-}
 
 /// a planned (or applied) set of changes to a directory-backed collection's
 /// working tree, expressed as paths relative to the collection root.
@@ -288,6 +230,7 @@ pub fn load_collection_from_dir(root: &Path) -> Result<PostmanCollection, String
         id: 0,
         file_path: None,
         storage_dir: Some(root.to_path_buf()),
+        remote_dir: None,
         unsaved: false,
         info: meta.info,
         item,

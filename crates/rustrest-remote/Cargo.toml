@@ -7,11 +7,14 @@ edition = "2024"
 name = "rustrest_remote"
 
 [dependencies]
+rustrest-core = { path = "../rustrest-core" }
 rustrest-ssh = { path = "../rustrest-ssh" }
 rustrest-remote-protocol = { path = "../rustrest-remote-protocol" }
 rustrest-terminal = { path = "../rustrest-terminal" }
 tokio = { version = "1", features = ["rt", "sync", "macros", "io-util", "process"] }
 thiserror = "2.0.20"
+serde = "1.0"
+serde_json = "1.0.150"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "io-util"] }

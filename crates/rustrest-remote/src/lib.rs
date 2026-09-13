@@ -1,3 +1,4 @@
+pub mod collection_sync;
 mod error;
 mod rpc;
 mod session;

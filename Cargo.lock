@@ -5460,9 +5460,12 @@ dependencies = [
 name = "rustrest-remote"
 version = "0.1.0"
 dependencies = [
+ "rustrest-core",
  "rustrest-remote-protocol",
  "rustrest-ssh",
  "rustrest-terminal",
+ "serde",
+ "serde_json",
  "thiserror 2.0.20",
  "tokio",
 ]

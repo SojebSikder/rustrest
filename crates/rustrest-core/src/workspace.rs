@@ -10,6 +10,12 @@ use std::path::PathBuf;
 pub enum CollectionSource {
     File(PathBuf),
     Dir(PathBuf),
+    /// a directory-backed collection living on a remote SSH host, identified
+    /// by `SshProfile::id` and its remote root path.
+    Remote {
+        profile_id: usize,
+        root: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

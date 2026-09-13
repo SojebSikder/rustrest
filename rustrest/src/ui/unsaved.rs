@@ -58,7 +58,8 @@ pub fn folder_is_unsaved(app: &Rustrest, items: &[CollectionItem]) -> bool {
 /// whether a collection has unsaved changes: it has never been saved to
 /// disk, its own info/variables were edited, or any descendant item is.
 pub fn collection_is_unsaved(app: &Rustrest, col: &PostmanCollection) -> bool {
-    let never_saved_to_disk = col.storage_dir.is_none() && col.file_path.is_none();
+    let never_saved_to_disk =
+        col.storage_dir.is_none() && col.file_path.is_none() && col.remote_dir.is_none();
 
     never_saved_to_disk || col.unsaved || folder_is_unsaved(app, &col.item)
 }

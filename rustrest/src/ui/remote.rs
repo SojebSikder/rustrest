@@ -73,6 +73,8 @@ pub struct RemoteExplorerState {
     pub entries: Vec<rustrest_remote::RemoteEntry>,
     pub loading: bool,
     pub error: Option<String>,
+    /// name typed into the inline "New Collection" form for the current path.
+    pub new_collection_name: String,
 }
 
 pub fn view_remote_config_window(app: &Rustrest) -> Element<'_, Message> {
@@ -283,16 +285,46 @@ fn render_explorer<'a>(
     for entry in &explorer.entries {
         let full_path = join_remote_path(&explorer.path, &entry.name);
         let icon = if entry.is_dir { "📁" } else { "📄" };
-        entries_col = entries_col.push(
+        let mut entry_row = row![
             button(text(format!("{icon} {}", entry.name)).size(12))
-                .on_press(Message::RemoteEntryClicked(profile_id, full_path))
+                .on_press(Message::RemoteEntryClicked(profile_id, full_path.clone()))
                 .style(button::text)
                 .padding(2)
                 .width(Length::Fill),
-        );
+        ]
+        .align_y(Alignment::Center);
+
+        if entry.is_dir {
+            entry_row = entry_row.push(
+                button(text("Import as collection").size(10))
+                    .on_press(Message::RemoteImportDirAsCollectionPressed(
+                        profile_id, full_path,
+                    ))
+                    .padding([2, 6])
+                    .style(button::secondary),
+            );
+        }
+
+        entries_col = entries_col.push(entry_row);
     }
     body = body
         .push(scrollable(container(entries_col).width(Length::Fill)).height(Length::Fixed(160.0)));
+
+    let new_collection_row = row![
+        text_input("New collection name", &explorer.new_collection_name)
+            .on_input(move |txt| Message::RemoteNewCollectionNameChanged(profile_id, txt))
+            .on_submit(Message::RemoteNewCollectionPressed(profile_id))
+            .size(12)
+            .padding(4)
+            .width(Length::Fill),
+        button(text("New Collection").size(11))
+            .on_press(Message::RemoteNewCollectionPressed(profile_id))
+            .padding([3, 8])
+            .style(button::secondary),
+    ]
+    .spacing(4)
+    .align_y(Alignment::Center);
+    body = body.push(new_collection_row);
 
     container(body)
         .padding(6)

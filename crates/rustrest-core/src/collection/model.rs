@@ -12,6 +12,11 @@ pub struct PostmanCollection {
     #[serde(skip)]
     pub storage_dir: Option<std::path::PathBuf>,
 
+    /// set when this collection is backed by a directory on a remote host
+    /// (connected over SSH) instead of local disk.
+    #[serde(skip)]
+    pub remote_dir: Option<RemoteDirRef>,
+
     /// true when the collection tree/info has been mutated (folder/request
     /// added or renamed, collection renamed, variables edited, ...) since
     /// the last successful save to disk.
@@ -21,6 +26,15 @@ pub struct PostmanCollection {
     pub info: CollectionInfo,
     pub item: Vec<CollectionItem>,
     pub variable: Option<Vec<PostmanVariable>>,
+}
+
+/// identifies the remote host + directory a collection is synced against,
+/// when it's backed by a directory on a remote SSH host rather than local
+/// disk. `profile_id` refers to a `crate::remote::SshProfile::id`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RemoteDirRef {
+    pub profile_id: usize,
+    pub root: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

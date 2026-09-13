@@ -374,6 +374,17 @@ pub enum Message {
     RemoteEntryClicked(usize, String), // profile id, absolute path
     RemoteFileLoaded(usize, String, Result<Vec<u8>, String>), // profile id, path, bytes
 
+    // remote development (SSH) - remote collections
+    /// import an existing remote directory (in the dir-collection format) as
+    /// a collection. profile id, absolute remote path.
+    RemoteImportDirAsCollectionPressed(usize, String),
+    RemoteCollectionImported(usize, String, Result<Box<PostmanCollection>, String>), // profile id, root path, result
+    /// (re)loads a remote-backed collection already in `app.collections`
+    /// (e.g. right after connecting). collection id, result.
+    RemoteCollectionLoaded(usize, Result<Box<PostmanCollection>, String>),
+    RemoteNewCollectionNameChanged(usize, String), // profile id, name
+    RemoteNewCollectionPressed(usize),             // profile id
+
     // remote development (SSH) - open remote file tab
     RemoteFileContentChanged(usize, iced::widget::text_editor::Action), // tab id
     RemoteFileSavePressed(usize),                                       // tab id
