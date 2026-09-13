@@ -52,6 +52,13 @@ pub enum SidebarDropTarget {
 #[derive(Debug, Clone)]
 pub enum Message {
     NewTabPressed,
+    NewTerminalTabPressed,
+    /// widget -> app: write encoded key bytes to a terminal's PTY.
+    TerminalInput(u64, Vec<u8>),
+    /// widget -> app: the terminal widget was resized to this cell grid.
+    TerminalResized(u64, usize, usize, u16, u16),
+    /// PTY subscription -> app: a session needs a redraw, or has exited.
+    TerminalNotice(u64, rustrest_terminal::TerminalNotice),
     SidebarCollectionRootClicked(usize),
     CloseTabPressed(usize),
     ActiveTabMessage(TabMessage),

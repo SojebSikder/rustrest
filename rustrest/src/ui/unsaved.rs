@@ -21,6 +21,7 @@ pub fn tab_is_unsaved(app: &Rustrest, tab_state: &TabState) -> bool {
             .find(|c| c.id == *collection_id)
             .map(|c| collection_is_unsaved(app, c))
             .unwrap_or(false),
+        WorkspaceContent::Terminal { .. } => false,
     }
 }
 

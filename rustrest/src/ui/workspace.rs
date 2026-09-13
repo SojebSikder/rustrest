@@ -28,6 +28,9 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
                 button("New Collection")
                     .on_press(Message::CreateNewCollectionPressed)
                     .padding([8, 16]),
+                button("New Terminal")
+                    .on_press(Message::NewTerminalTabPressed)
+                    .padding([8, 16]),
             ]
             .spacing(10),
         ]
@@ -63,6 +66,7 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
                 text(format!("[{}]", method_str)).size(11).into()
             }
             WorkspaceContent::CollectionRoot { .. } => text("").size(11).into(),
+            WorkspaceContent::Terminal { .. } => text(">_").size(11).into(),
         };
 
         let tab_content: Element<Message> = if tab_state.is_editing_name {
@@ -141,7 +145,12 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
         .padding(6)
         .style(button::success);
 
-    tab_bar = tab_bar.push(add_tab_btn);
+    let add_terminal_btn = button(text("+ >_").size(13))
+        .on_press(Message::NewTerminalTabPressed)
+        .padding(6)
+        .style(button::secondary);
+
+    tab_bar = tab_bar.push(add_tab_btn).push(add_terminal_btn);
 
     // tabs scroll horizontally within their own lane so a growing tab count
     // never squeezes or overlaps the fixed-width env selector on the right
@@ -177,6 +186,21 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
             active_sub_tab,
             app,
         ),
+
+        WorkspaceContent::Terminal {
+            terminal_id,
+            widget_id,
+        } => match app.terminal_manager.get(*terminal_id) {
+            Some(session) => {
+                super::terminal_view::TerminalView::show(session, *terminal_id, widget_id.clone())
+            }
+            None => container(text("Terminal session closed"))
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .align_x(Alignment::Center)
+                .align_y(Alignment::Center)
+                .into(),
+        },
     };
 
     column![tab_bar_row, tab_view].spacing(15).into()
