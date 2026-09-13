@@ -2,6 +2,7 @@ use crate::app::CollectionSubTab;
 use crate::collection::collection::{PostmanCollection, PostmanRequestNode};
 use crate::collection::git_ops::GitStatusSnapshot;
 use crate::http_client::HttpResponse;
+use crate::ui::command_palette::AppCommand;
 use crate::ui::confirm_dialog::ConfirmDialogState;
 use crate::ui::context_menu::FieldTarget;
 use crate::ui::menu::menu::DropdownMessage;
@@ -378,6 +379,18 @@ pub enum Message {
     RemoteFileContentChanged(usize, iced::widget::text_editor::Action), // tab id
     RemoteFileSavePressed(usize),                                       // tab id
     RemoteFileSaved(usize, Result<(), String>),                         // tab id
+
+    // command palette (Ctrl+Shift+P)
+    ToggleCommandPalette,
+    CommandPaletteQueryChanged(String),
+    CommandPaletteMoveSelection(i32),
+    CommandPaletteConfirm,
+    CommandPaletteClosed,
+    CommandPaletteItemClicked(AppCommand),
+
+    // remote development (SSH) - dedicated configuration window
+    OpenRemoteConfigWindow,
+    WindowCloseRequested(iced::window::Id),
 
     AppExit,
     None,

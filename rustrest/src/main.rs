@@ -13,6 +13,7 @@ mod updater;
 mod utils;
 mod workspace;
 
+use crate::ui::command_palette::view as view_command_palette;
 use crate::ui::commit_modal::view_commit_modal;
 use crate::ui::confirm_dialog::view_confirm_dialog;
 use crate::ui::console_panel::{render_console_bar, render_console_panel};
@@ -21,13 +22,16 @@ use crate::ui::menu::menu::{
     DropdownItem, DropdownMessage, MenuGroup, render_menu_bar, render_menu_overlay,
 };
 use crate::ui::menu::menu_message::MenuMessage;
-use crate::ui::remote::view_remote_connect_modal;
+use crate::ui::remote::{view_remote_config_window, view_remote_connect_modal};
 use crate::ui::resize_handle::{DividerOrientation, resize_handle};
 use crate::ui::save_request_model::save_request_model::view_save_request_modal;
 use app::Rustrest;
 use iced::futures::{SinkExt, StreamExt, stream::BoxStream};
+use iced::keyboard::Key;
+use iced::keyboard::key::Named;
 use iced::widget::{column, container, row, stack};
-use iced::{Alignment, Element, Length, Padding, Size};
+use iced::window;
+use iced::{Alignment, Element, Length, Padding};
 use iced::{Event, Subscription, event};
 use message::{Message, ResizeKind};
 use std::hash::{Hash, Hasher};
@@ -36,23 +40,27 @@ use tokio::sync::Mutex;
 use tokio::sync::mpsc::UnboundedReceiver;
 
 const APP_NAME: &str = "Rustrest";
-const APP_VERSION: &str = "0.1.7";
+const APP_VERSION: &str = "0.1.8";
 
 const APP_ICON: &[u8] = include_bytes!("../../assets/images/logo-transparent.png");
 
 pub fn main() -> iced::Result {
-    let icon = iced::window::icon::from_file_data(APP_ICON, None).ok();
-
-    iced::application(app::init, app::update, view)
-        .title(|_: &Rustrest| format!("{} - API Testing Platform", APP_NAME))
+    // a daemon (rather than a single-window `application`) so a second,
+    // independent OS window can be opened at runtime for the "Remote
+    // Development over SSH" configuration screen; `app::init` opens the
+    // main window itself since a daemon doesn't open one automatically.
+    iced::daemon(app::init, app::update, view)
+        .title(title)
         .subscription(subscription)
-        .exit_on_close_request(false)
-        .window(iced::window::Settings {
-            size: Size::new(1250.0, 850.0),
-            icon: icon,
-            ..Default::default()
-        })
         .run()
+}
+
+fn title(app: &Rustrest, window_id: window::Id) -> String {
+    if Some(window_id) == app.remote_config_window_id {
+        "Remote Development over SSH".to_string()
+    } else {
+        format!("{} - API Testing Platform", APP_NAME)
+    }
 }
 
 pub fn subscription(app: &Rustrest) -> Subscription<Message> {
@@ -86,11 +94,37 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         iced::time::every(std::time::Duration::from_secs(5)).map(|_| Message::AutosaveTick);
 
     // catch the native window close button so we can flush the session
-    // before the process actually exits, instead of letting iced exit immediately
-    let close_requested = event::listen_with(|event, _status, _window| match event {
-        Event::Window(iced::window::Event::CloseRequested) => Some(Message::AppExit),
+    // before the process actually exits (for the main window), or just
+    // close that one window (for the secondary remote-config window),
+    // instead of letting iced close/exit immediately.
+    let close_requested = event::listen_with(|event, _status, window_id| match event {
+        Event::Window(iced::window::Event::CloseRequested) => {
+            Some(Message::WindowCloseRequested(window_id))
+        }
         _ => None,
     });
+
+    // while the command palette is open, Up/Down move the selection and
+    // Escape closes it; typing and Enter are handled by its text input directly.
+    let command_palette_sub = if app.command_palette.is_some() {
+        event::listen_with(|event, _status, _window| match event {
+            Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                key: Key::Named(Named::ArrowUp),
+                ..
+            }) => Some(Message::CommandPaletteMoveSelection(-1)),
+            Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                key: Key::Named(Named::ArrowDown),
+                ..
+            }) => Some(Message::CommandPaletteMoveSelection(1)),
+            Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                key: Key::Named(Named::Escape),
+                ..
+            }) => Some(Message::CommandPaletteClosed),
+            _ => None,
+        })
+    } else {
+        Subscription::none()
+    };
 
     // tracks the cursor position so context menus can be anchored where they
     // were triggered
@@ -154,6 +188,7 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         resize_drag_sub,
         tab_drag_sub,
         terminal_sub,
+        command_palette_sub,
     ])
 }
 
@@ -189,7 +224,11 @@ fn terminal_events_stream(data: &TerminalEventsData) -> BoxStream<'static, Messa
     .boxed()
 }
 
-fn view(app: &Rustrest) -> Element<'_, Message> {
+fn view(app: &Rustrest, window_id: window::Id) -> Element<'_, Message> {
+    if Some(window_id) == app.remote_config_window_id {
+        return view_remote_config_window(app);
+    }
+
     let menu_structure = vec![
         MenuGroup::new(
             "File",
@@ -334,6 +373,16 @@ fn view(app: &Rustrest) -> Element<'_, Message> {
     // sidebar item context menu overlay
     if let Some(overlay) = ui::sidebar::render_context_menu_overlay(app) {
         main_interface_stack = main_interface_stack.push(overlay);
+    }
+
+    // command palette overlay (Ctrl+Shift+P)
+    if let Some(palette_state) = app.command_palette.as_ref() {
+        let palette_overlay = container(view_command_palette(palette_state))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(Alignment::Center)
+            .align_y(Alignment::Center);
+        main_interface_stack = main_interface_stack.push(palette_overlay);
     }
 
     stack![main_interface_stack, toast_layer].into()

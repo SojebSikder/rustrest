@@ -172,6 +172,14 @@ pub struct Rustrest {
     /// caveat" in the remote-dev plan: cross-building/bundling this per
     /// target platform is a release-engineering follow-up, not code.
     pub remote_agent_binary_path: String,
+
+    // multi-window: the id of the always-open main window, and the id of the
+    // "Remote development over SSH" configuration window when it's open
+    pub main_window_id: iced::window::Id,
+    pub remote_config_window_id: Option<iced::window::Id>,
+
+    // command palette (Ctrl+Shift+P)
+    pub command_palette: Option<rustrest_command_palette::PaletteState>,
 }
 
 impl Rustrest {
@@ -426,6 +434,18 @@ impl Rustrest {
 pub fn init() -> (Rustrest, Task<Message>) {
     let (terminal_event_tx, terminal_event_rx) = tokio::sync::mpsc::unbounded_channel();
 
+    // as a daemon, iced won't open a window on our behalf; open the main
+    // window ourselves so `Rustrest` can be constructed with a real id (the
+    // id is returned synchronously - only the window actually appearing on
+    // screen is asynchronous, tracked by `open_main_window` below).
+    let icon = iced::window::icon::from_file_data(crate::APP_ICON, None).ok();
+    let (main_window_id, open_main_window) = iced::window::open(iced::window::Settings {
+        size: iced::Size::new(1250.0, 850.0),
+        icon,
+        exit_on_close_request: false,
+        ..Default::default()
+    });
+
     let mut app = Rustrest {
         collections: Vec::new(),
         environments: Vec::new(),
@@ -484,6 +504,9 @@ pub fn init() -> (Rustrest, Task<Message>) {
         remote_connect_pending: None,
         remote_explorers: std::collections::HashMap::new(),
         remote_agent_binary_path: String::new(),
+        main_window_id,
+        remote_config_window_id: None,
+        command_palette: None,
     };
 
     let load_errors = if let Some(manifest) = crate::workspace::load() {
@@ -548,7 +571,11 @@ pub fn init() -> (Rustrest, Task<Message>) {
     // silently check for updates on startup; surfaces a toast only if one is found
     let update_check_task = Task::done(Message::CheckForUpdateSilently);
 
-    let startup_task = Task::batch([load_errors_task, update_check_task]);
+    let startup_task = Task::batch([
+        open_main_window.map(|_id| Message::None),
+        load_errors_task,
+        update_check_task,
+    ]);
 
     (app, startup_task)
 }
@@ -3362,7 +3389,74 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 ToastStatus::Error,
             )),
         },
+        // remote development (SSH)
+        Message::OpenRemoteConfigWindow => {
+            if app.remote_config_window_id.is_some() {
+                // already open
+                return Task::none();
+            }
+            let icon = iced::window::icon::from_file_data(crate::APP_ICON, None).ok();
+            let (id, open_task) = iced::window::open(iced::window::Settings {
+                size: iced::Size::new(560.0, 700.0),
+                icon,
+                exit_on_close_request: false,
+                ..Default::default()
+            });
+            app.remote_config_window_id = Some(id);
+            open_task.map(|_id| Message::None)
+        }
+        Message::WindowCloseRequested(window_id) => {
+            if app.remote_config_window_id == Some(window_id) {
+                app.remote_config_window_id = None;
+                iced::window::close(window_id)
+            } else {
+                update(app, Message::AppExit)
+            }
+        }
         // end remote development (SSH)
+
+        // command palette (Ctrl+Shift+P)
+        Message::ToggleCommandPalette => {
+            if app.command_palette.take().is_some() {
+                Task::none()
+            } else {
+                app.command_palette = Some(rustrest_command_palette::PaletteState::new());
+                iced::widget::operation::focus(crate::ui::command_palette::input_id())
+            }
+        }
+        Message::CommandPaletteQueryChanged(query) => {
+            if let Some(state) = app.command_palette.as_mut() {
+                state.query = query;
+                state.selected = 0;
+            }
+            Task::none()
+        }
+        Message::CommandPaletteMoveSelection(delta) => {
+            if let Some(state) = app.command_palette.as_mut() {
+                let len = crate::ui::command_palette::matches_for(state).len();
+                state.move_selection(delta, len);
+            }
+            Task::none()
+        }
+        Message::CommandPaletteConfirm => {
+            let Some(state) = app.command_palette.take() else {
+                return Task::none();
+            };
+            let matches = crate::ui::command_palette::matches_for(&state);
+            match matches.get(state.selected) {
+                Some(cmd) => update(app, crate::ui::command_palette::to_message(cmd.action)),
+                None => Task::none(),
+            }
+        }
+        Message::CommandPaletteClosed => {
+            app.command_palette = None;
+            Task::none()
+        }
+        Message::CommandPaletteItemClicked(action) => {
+            app.command_palette = None;
+            update(app, crate::ui::command_palette::to_message(action))
+        }
+
         Message::DismissToast(id) => {
             app.toast_manager.dismiss(id);
             iced::Task::none()

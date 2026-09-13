@@ -5418,12 +5418,13 @@ dependencies = [
 
 [[package]]
 name = "rustrest"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "dirs 7.0.0",
  "iced",
  "reqwest 0.12.28",
  "rfd",
+ "rustrest-command-palette",
  "rustrest-core",
  "rustrest-remote",
  "rustrest-terminal",
@@ -5437,6 +5438,10 @@ dependencies = [
  "urlencoding",
  "winres",
 ]
+
+[[package]]
+name = "rustrest-command-palette"
+version = "0.1.0"
 
 [[package]]
 name = "rustrest-core"

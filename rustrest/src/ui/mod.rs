@@ -1,4 +1,5 @@
 pub mod collection_viewer;
+pub mod command_palette;
 pub mod commit_modal;
 pub mod confirm_dialog;
 pub mod console_panel;

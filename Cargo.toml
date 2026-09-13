@@ -7,6 +7,7 @@ members = [
     "crates/rustrest-remote-protocol",
     "crates/rustrest-remote-agent",
     "crates/rustrest-remote",
+    "crates/rustrest-command-palette",
 ]
 resolver = "2"
 

@@ -75,9 +75,7 @@ pub struct RemoteExplorerState {
     pub error: Option<String>,
 }
 
-/// the "Remote" section appended to the bottom of the sidebar: saved SSH
-/// profiles (with connect/disconnect/terminal/browse actions) plus an inline
-/// form to add a new one.
+/// the "Remote" section in sidebar
 pub fn render_remote_section(app: &Rustrest) -> Element<'_, Message> {
     let header = text("REMOTE (SSH)")
         .size(11)
@@ -152,57 +150,116 @@ pub fn render_remote_section(app: &Rustrest) -> Element<'_, Message> {
         list = list.push(item);
     }
 
+    let configure_row = row![
+        Space::new().width(Length::Fill),
+        button(text("Configure SSH hosts...").size(11))
+            .on_press(Message::OpenRemoteConfigWindow)
+            .padding([3, 8])
+            .style(button::secondary),
+    ];
+
+    column![header, list, configure_row].spacing(8).into()
+}
+
+pub fn view_remote_config_window(app: &Rustrest) -> Element<'_, Message> {
+    let title = text("Remote Development over SSH").size(18).font(Font {
+        weight: iced::font::Weight::Bold,
+        ..Font::DEFAULT
+    });
+    let description = text(
+        "Manage saved SSH hosts here. Connect, open a terminal, or browse \
+         files from the Remote (SSH) section of the sidebar in the main window.",
+    )
+    .size(12)
+    .style(|_theme: &iced::Theme| text::Style {
+        color: Some(Color::from_rgb(0.55, 0.55, 0.6)),
+    });
+
+    let section_header = |label: &'static str| {
+        text(label).size(13).font(Font {
+            weight: iced::font::Weight::Bold,
+            ..Font::DEFAULT
+        })
+    };
+
+    let mut saved_hosts = column![].spacing(6);
+    if app.remote_profiles.is_empty() {
+        saved_hosts = saved_hosts.push(text("No saved hosts yet.").size(12).style(
+            |_theme: &iced::Theme| text::Style {
+                color: Some(Color::from_rgb(0.55, 0.55, 0.6)),
+            },
+        ));
+    }
+    for profile in &app.remote_profiles {
+        saved_hosts = saved_hosts.push(
+            row![
+                text(format!(
+                    "{} ({}@{}:{})",
+                    profile.name, profile.username, profile.host, profile.port
+                ))
+                .size(12),
+                Space::new().width(Length::Fill),
+                button(text("Delete").size(11))
+                    .on_press(Message::RemoteDeleteProfilePressed(profile.id))
+                    .padding([3, 8])
+                    .style(button::danger),
+            ]
+            .spacing(6)
+            .align_y(Alignment::Center),
+        );
+    }
+
     let form = &app.remote_profile_form;
     let add_form = column![
         text_input("Name", &form.name)
             .on_input(Message::RemoteProfileNameChanged)
-            .size(12)
-            .padding(4),
+            .size(13)
+            .padding(6),
         row![
             text_input("Host", &form.host)
                 .on_input(Message::RemoteProfileHostChanged)
-                .size(12)
-                .padding(4)
+                .size(13)
+                .padding(6)
                 .width(Length::FillPortion(3)),
             text_input("Port", &form.port)
                 .on_input(Message::RemoteProfilePortChanged)
-                .size(12)
-                .padding(4)
+                .size(13)
+                .padding(6)
                 .width(Length::FillPortion(1)),
         ]
-        .spacing(4),
+        .spacing(6),
         text_input("Username", &form.username)
             .on_input(Message::RemoteProfileUsernameChanged)
-            .size(12)
-            .padding(4),
+            .size(13)
+            .padding(6),
         pick_list(RemoteAuthKind::ALL, Some(form.auth_kind), |kind| {
             Message::RemoteProfileAuthKindChanged(kind)
         })
-        .text_size(12),
+        .text_size(13),
     ]
-    .spacing(4);
+    .spacing(6);
 
     let add_form = if matches!(form.auth_kind, RemoteAuthKind::PrivateKey) {
         add_form.push(
             text_input("Private key path", &form.key_path)
                 .on_input(Message::RemoteProfileKeyPathChanged)
-                .size(12)
-                .padding(4),
+                .size(13)
+                .padding(6),
         )
     } else {
         add_form
     };
 
     let add_form = add_form.push(
-        button(text("+ Add host").size(12))
+        button(text("+ Add host").size(13))
             .on_press(Message::RemoteAddProfilePressed)
-            .padding([4, 8])
-            .style(button::secondary),
+            .padding([5, 10])
+            .style(button::primary),
     );
 
-    let agent_binary_row = column![
+    let agent_binary_section = column![
         text("Remote agent binary (built for the remote host's OS/arch)")
-            .size(10)
+            .size(11)
             .style(|_theme: &iced::Theme| text::Style {
                 color: Some(Color::from_rgb(0.55, 0.55, 0.6)),
             }),
@@ -211,20 +268,29 @@ pub fn render_remote_section(app: &Rustrest) -> Element<'_, Message> {
             &app.remote_agent_binary_path
         )
         .on_input(Message::RemoteAgentBinaryPathChanged)
-        .size(12)
-        .padding(4),
+        .size(13)
+        .padding(6),
     ]
-    .spacing(2);
+    .spacing(4);
 
-    column![
-        header,
-        list,
-        container(text("").size(2)),
-        agent_binary_row,
+    let body = column![
+        title,
+        description,
+        section_header("Saved hosts"),
+        saved_hosts,
+        section_header("Add a host"),
         add_form,
+        section_header("Remote agent"),
+        agent_binary_section,
     ]
-    .spacing(8)
-    .into()
+    .spacing(14)
+    .padding(20)
+    .width(Length::Fill);
+
+    container(scrollable(body))
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
 }
 
 fn render_explorer<'a>(
