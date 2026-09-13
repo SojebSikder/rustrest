@@ -1,11 +1,13 @@
 [package]
 name = "rustrest-remote-agent"
-version = "0.1.0"
+version.workspace = true
 edition = "2024"
 
 # built and published as a GitHub release artifact per target (see
 # dist-workspace.toml) alongside the main `rustrest` binary, so the remote
 # development feature can download the one matching a detected remote host.
+# version is inherited from [workspace.package] so dist always builds this
+# alongside `rustrest` (it only builds packages whose version matches the tag).
 [package.metadata.dist]
 dist = true
 
