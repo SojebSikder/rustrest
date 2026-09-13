@@ -12,6 +12,7 @@ pub mod resize_handle;
 pub mod save_request_model;
 pub mod sidebar;
 pub mod tab;
+pub mod terminal_view;
 pub mod toast;
 pub mod unsaved;
 pub mod workspace;

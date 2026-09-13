@@ -1,5 +1,5 @@
 use crate::message::Message;
-use iced::widget::{Space, button, column, container, row, scrollable, text};
+use iced::widget::{button, column, container, row, scrollable, text, Space};
 use iced::{Alignment, Element, Font, Length};
 
 /// render the bottom bar header strip: title + log count, expand/collapse toggle, and a clear button.
@@ -16,6 +16,10 @@ pub fn render_console_bar<'a>(logs: &'a [String], collapsed: bool) -> Element<'a
             .style(button::text)
             .padding([4, 6])
             .on_press(Message::ToggleConsolePanel),
+        button(text("Terminal").size(13))
+            .style(button::text)
+            .padding([4, 6])
+            .on_press(Message::NewTerminalTabPressed),
         Space::new().width(Length::Fill),
         button(text("Clear").size(12))
             .style(button::text)

@@ -26,6 +26,8 @@ use crate::utils::{
 use crate::workspace::{CollectionSource, SavedWorkspace, WorkspaceManifest};
 use crate::{APP_NAME, APP_VERSION};
 use iced::Task;
+use rustrest_terminal::TerminalManager;
+use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -42,6 +44,10 @@ pub enum WorkspaceContent {
         collection_id: usize,
         collection_name: String,
         active_sub_tab: CollectionSubTab,
+    },
+    Terminal {
+        terminal_id: u64,
+        widget_id: iced::widget::Id,
     },
 }
 
@@ -131,6 +137,18 @@ pub struct Rustrest {
 
     // tab bar drag-to-reorder
     pub dragging_tab_index: Option<usize>,
+
+    pub terminal_manager: TerminalManager,
+    /// clone of this and hand to every spawned session so its background I/O
+    /// thread can report activity; the app-wide subscription drains the
+    /// matching receiver and turns each notice into a `Message`.
+    pub terminal_event_tx:
+        tokio::sync::mpsc::UnboundedSender<(u64, rustrest_terminal::TerminalNotice)>,
+    pub terminal_event_rx: Arc<
+        tokio::sync::Mutex<
+            tokio::sync::mpsc::UnboundedReceiver<(u64, rustrest_terminal::TerminalNotice)>,
+        >,
+    >,
 }
 
 impl Rustrest {
@@ -153,6 +171,9 @@ impl Rustrest {
                         collection_id: *collection_id,
                     })
                 }
+                // shell sessions can't be serialized; terminal tabs simply
+                // don't come back after a restart.
+                WorkspaceContent::Terminal { .. } => None,
             })
             .collect();
 
@@ -227,6 +248,11 @@ impl Rustrest {
     /// its environments and restores its tabs
     pub fn apply_workspace(&mut self, ws: &SavedWorkspace) -> Vec<String> {
         self.collections.clear();
+        for tab in &self.tabs {
+            if let WorkspaceContent::Terminal { terminal_id, .. } = tab.content {
+                self.terminal_manager.close(terminal_id);
+            }
+        }
         self.tabs.clear();
         self.active_tab_index = 0;
 
@@ -262,6 +288,7 @@ impl Rustrest {
             let belongs = match &self.tabs[idx].content {
                 WorkspaceContent::HttpRequest => self.tabs[idx].tab.collection_id == Some(col_id),
                 WorkspaceContent::CollectionRoot { collection_id, .. } => *collection_id == col_id,
+                WorkspaceContent::Terminal { .. } => false,
             };
             if belongs {
                 self.sync_tab_to_collection(idx);
@@ -308,6 +335,7 @@ impl Rustrest {
                         }
                     }
                 }
+                WorkspaceContent::Terminal { .. } => {}
             }
         }
     }
@@ -360,6 +388,8 @@ impl Rustrest {
 }
 
 pub fn init() -> (Rustrest, Task<Message>) {
+    let (terminal_event_tx, terminal_event_rx) = tokio::sync::mpsc::unbounded_channel();
+
     let mut app = Rustrest {
         collections: Vec::new(),
         environments: Vec::new(),
@@ -409,6 +439,9 @@ pub fn init() -> (Rustrest, Task<Message>) {
         collapsed_folders: std::collections::HashSet::new(),
         collapsed_saved_responses: std::collections::HashSet::new(),
         dragging_tab_index: None,
+        terminal_manager: TerminalManager::new(),
+        terminal_event_tx,
+        terminal_event_rx: Arc::new(tokio::sync::Mutex::new(terminal_event_rx)),
     };
 
     let load_errors = if let Some(manifest) = crate::workspace::load() {
@@ -607,6 +640,7 @@ fn finalize_tab_rename(app: &mut Rustrest, idx: usize) {
                 WorkspaceContent::CollectionRoot {
                     collection_name, ..
                 } => collection_name.clone(),
+                WorkspaceContent::Terminal { .. } => "Terminal".to_string(),
             };
         }
     }
@@ -621,6 +655,9 @@ fn close_tab(app: &mut Rustrest, index: usize) {
     if let Some(tab_state) = app.tabs.get(index) {
         if tab_state.tab.is_loading {
             tab_state.tab.cancel_token.cancel();
+        }
+        if let WorkspaceContent::Terminal { terminal_id, .. } = tab_state.content {
+            app.terminal_manager.close(terminal_id);
         }
     } else {
         return;
@@ -730,6 +767,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     WorkspaceContent::CollectionRoot { collection_id, .. } => {
                         *collection_id == col_id
                     }
+                    WorkspaceContent::Terminal { .. } => false,
                 };
                 if belongs {
                     tab_state.tab.dirty = false;
@@ -772,6 +810,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                                 WorkspaceContent::CollectionRoot { collection_id, .. } => {
                                     *collection_id == col_id
                                 }
+                                WorkspaceContent::Terminal { .. } => false,
                             };
                             if belongs {
                                 tab_state.tab.dirty = false;
@@ -1321,6 +1360,64 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             Task::none()
         }
 
+        Message::NewTerminalTabPressed => {
+            let tx = app.terminal_event_tx.clone();
+            match app.terminal_manager.spawn(80, 24, move |id, notice| {
+                let _ = tx.send((id, notice));
+            }) {
+                Ok(terminal_id) => {
+                    let widget_id = iced::widget::Id::unique();
+                    let mut term_tab = Tab::new(app.next_tab_id);
+                    term_tab.name = format!("Terminal {}", terminal_id + 1);
+                    app.tabs.push(TabState {
+                        tab: term_tab,
+                        content: WorkspaceContent::Terminal {
+                            terminal_id,
+                            widget_id: widget_id.clone(),
+                        },
+                        is_editing_name: false,
+                    });
+                    app.next_tab_id += 1;
+                    app.active_tab_index = app.tabs.len() - 1;
+
+                    Task::batch([
+                        iced::widget::operation::snap_to_end(
+                            crate::ui::workspace::tab_bar_scroll_id(),
+                        ),
+                        iced::widget::operation::focus(widget_id),
+                    ])
+                }
+                Err(err) => Task::done(Message::ShowToast(
+                    format!("Failed to start terminal: {err}"),
+                    ToastStatus::Error,
+                )),
+            }
+        }
+
+        Message::TerminalInput(id, bytes) => {
+            if let Some(session) = app.terminal_manager.get(id) {
+                session.write(bytes);
+            }
+            Task::none()
+        }
+
+        Message::TerminalResized(id, columns, rows, cell_width, cell_height) => {
+            app.terminal_manager
+                .resize(id, columns, rows, cell_width, cell_height);
+            Task::none()
+        }
+
+        Message::TerminalNotice(id, notice) => {
+            if notice == rustrest_terminal::TerminalNotice::Exited {
+                if let Some(idx) = app.tabs.iter().position(|t| {
+                    matches!(t.content, WorkspaceContent::Terminal { terminal_id, .. } if terminal_id == id)
+                }) {
+                    close_tab(app, idx);
+                }
+            }
+            Task::none()
+        }
+
         Message::CloseActiveTabShortcut => {
             close_tab(app, app.active_tab_index);
             Task::none()
@@ -1368,7 +1465,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         // script engine used
         Message::SendPressed => {
             if let Some(tab_state) = app.tabs.get_mut(app.active_tab_index) {
-                if let WorkspaceContent::CollectionRoot { .. } = tab_state.content {
+                if !matches!(tab_state.content, WorkspaceContent::HttpRequest) {
                     return Task::none();
                 }
                 let tab = &mut tab_state.tab;
@@ -2686,6 +2783,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     WorkspaceContent::CollectionRoot { collection_id, .. } => {
                         update(app, Message::SaveCollectionPressed(*collection_id))
                     }
+                    WorkspaceContent::Terminal { .. } => Task::none(),
                 }
             } else {
                 Task::none()

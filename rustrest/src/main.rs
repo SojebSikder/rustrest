@@ -24,10 +24,15 @@ use crate::ui::menu::menu_message::MenuMessage;
 use crate::ui::resize_handle::{DividerOrientation, resize_handle};
 use crate::ui::save_request_model::save_request_model::view_save_request_modal;
 use app::Rustrest;
+use iced::futures::{SinkExt, StreamExt, stream::BoxStream};
 use iced::widget::{column, container, row, stack};
 use iced::{Alignment, Element, Length, Padding, Size};
 use iced::{Event, Subscription, event};
 use message::{Message, ResizeKind};
+use std::hash::{Hash, Hasher};
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use tokio::sync::mpsc::UnboundedReceiver;
 
 const APP_NAME: &str = "Rustrest";
 const APP_VERSION: &str = "0.1.7";
@@ -132,6 +137,11 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         Subscription::none()
     };
 
+    let terminal_events_data = TerminalEventsData {
+        receiver: app.terminal_event_rx.clone(),
+    };
+    let terminal_sub = Subscription::run_with(terminal_events_data, terminal_events_stream);
+
     Subscription::batch([
         context_menu_sub,
         menu_bar_sub,
@@ -142,7 +152,40 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         tab_rename_sub,
         resize_drag_sub,
         tab_drag_sub,
+        terminal_sub,
     ])
+}
+
+/// wraps the shared PTY-notice receiver so `Subscription::run_with` can
+/// identify a single, app-wide instance of the stream below (there is only
+/// ever one, regardless of how many terminal tabs are open).
+struct TerminalEventsData {
+    receiver: Arc<Mutex<UnboundedReceiver<(u64, rustrest_terminal::TerminalNotice)>>>,
+}
+
+impl Hash for TerminalEventsData {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        "rustrest-terminal-events".hash(state);
+    }
+}
+
+fn terminal_events_stream(data: &TerminalEventsData) -> BoxStream<'static, Message> {
+    let receiver = data.receiver.clone();
+    iced::stream::channel(100, async move |mut output| {
+        loop {
+            let next = {
+                let mut rx = receiver.lock().await;
+                rx.recv().await
+            };
+            match next {
+                Some((id, notice)) => {
+                    let _ = output.send(Message::TerminalNotice(id, notice)).await;
+                }
+                None => break,
+            }
+        }
+    })
+    .boxed()
 }
 
 fn view(app: &Rustrest) -> Element<'_, Message> {

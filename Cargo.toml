@@ -1,5 +1,5 @@
 [workspace]
-members = ["rustrest", "crates/rustrest-core"]
+members = ["rustrest", "crates/rustrest-core", "crates/rustrest-terminal"]
 resolver = "2"
 
 # The profile that 'dist' will build with

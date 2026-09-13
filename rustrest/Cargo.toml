@@ -6,8 +6,9 @@ repository = "https://github.com/SojebSikder/rustrest"
 
 [dependencies]
 rustrest-core = { path = "../crates/rustrest-core" }
+rustrest-terminal = { path = "../crates/rustrest-terminal" }
 
-iced = { version = "0.14", features = ["tokio", "image"] }
+iced = { version = "0.14", features = ["tokio", "image", "advanced", "canvas"] }
 
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["compat"] }

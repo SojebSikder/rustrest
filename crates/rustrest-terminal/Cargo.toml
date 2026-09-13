@@ -1,0 +1,10 @@
+[package]
+name = "rustrest-terminal"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "rustrest_terminal"
+
+[dependencies]
+alacritty_terminal = "0.26"

@@ -28,6 +28,13 @@ fn bindings() -> Vec<Shortcut> {
             alt: false,
             message: Message::CloseActiveTabShortcut,
         },
+        Shortcut {
+            key: "`",
+            command: true,
+            shift: false,
+            alt: false,
+            message: Message::NewTerminalTabPressed,
+        },
     ]
 }
 
