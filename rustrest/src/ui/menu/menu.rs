@@ -46,6 +46,7 @@ pub enum DropdownMessage<T> {
 pub struct DropdownItem<T> {
     label: String,
     action: T,
+    shortcut: Option<String>,
 }
 
 impl<T> DropdownItem<T> {
@@ -53,7 +54,14 @@ impl<T> DropdownItem<T> {
         Self {
             label: label.into(),
             action,
+            shortcut: None,
         }
+    }
+
+    /// attaches a keyboard shortcut hint (e.g. "Ctrl+Shift+P") shown next to the label.
+    pub fn with_shortcut(mut self, shortcut: impl Into<String>) -> Self {
+        self.shortcut = Some(shortcut.into());
+        self
     }
 }
 
@@ -83,8 +91,20 @@ pub fn render_menu_overlay<'a, T: 'static + Clone>(
     let mut items_column = column![].spacing(2);
 
     for item in &target_group.items {
+        let mut item_row = row![text(item.label.clone()).size(14)]
+            .width(Length::Fill)
+            .spacing(12);
+
+        if let Some(shortcut) = &item.shortcut {
+            item_row = item_row.push(text(shortcut.clone()).size(12).style(
+                |theme: &iced::Theme| text::Style {
+                    color: Some(theme.extended_palette().background.strong.text),
+                },
+            ));
+        }
+
         items_column = items_column.push(
-            button(text(item.label.clone()).size(14))
+            button(item_row.align_y(alignment::Vertical::Center))
                 .width(Length::Fill)
                 .padding([6, 12])
                 .style(button::text)
@@ -93,7 +113,7 @@ pub fn render_menu_overlay<'a, T: 'static + Clone>(
     }
 
     let dropdown_panel = container(items_column)
-        .width(140)
+        .width(220)
         .padding(4)
         .style(|theme| container::Style {
             background: Some(theme.palette().background.into()),

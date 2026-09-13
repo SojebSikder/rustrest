@@ -2857,6 +2857,9 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     MenuMessage::FileExit => {
                         return update(app, Message::AppExit);
                     }
+                    MenuMessage::CommandPalette => {
+                        return update(app, Message::ToggleCommandPalette);
+                    }
                     MenuMessage::CheckForUpdate => {
                         return update(app, Message::CheckForUpdate);
                     }

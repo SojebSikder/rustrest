@@ -147,12 +147,7 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
         .padding(6)
         .style(button::success);
 
-    let add_terminal_btn = button(text("+ >_").size(13))
-        .on_press(Message::NewTerminalTabPressed)
-        .padding(6)
-        .style(button::secondary);
-
-    tab_bar = tab_bar.push(add_tab_btn).push(add_terminal_btn);
+    tab_bar = tab_bar.push(add_tab_btn);
 
     // tabs scroll horizontally within their own lane so a growing tab count
     // never squeezes or overlaps the fixed-width env selector on the right

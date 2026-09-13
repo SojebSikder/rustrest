@@ -241,6 +241,13 @@ fn view(app: &Rustrest, window_id: window::Id) -> Element<'_, Message> {
             ],
         ),
         MenuGroup::new(
+            "Go",
+            vec![
+                DropdownItem::new("Command Palette", MenuMessage::CommandPalette)
+                    .with_shortcut("Ctrl+Shift+P"),
+            ],
+        ),
+        MenuGroup::new(
             "Help",
             vec![
                 DropdownItem::new("Check for Updates", MenuMessage::CheckForUpdate),
