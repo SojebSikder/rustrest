@@ -6,9 +6,11 @@ use crate::ui::confirm_dialog::ConfirmDialogState;
 use crate::ui::context_menu::FieldTarget;
 use crate::ui::menu::menu::DropdownMessage;
 use crate::ui::menu::menu_message::MenuMessage;
+use crate::ui::remote::RemoteAuthKind;
 use crate::ui::tab::TabMessage;
 use crate::ui::toast::toast::ToastStatus;
 use crate::updater::UpdateInfo;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResizeKind {
@@ -330,6 +332,52 @@ pub enum Message {
     SilentUpdateCheckResult(Result<Option<UpdateInfo>, String>),
     InstallUpdate,
     UpdateInstallResult(Result<String, String>),
+
+    // remote development (SSH) - inline "add host" form
+    RemoteProfileNameChanged(String),
+    RemoteProfileHostChanged(String),
+    RemoteProfilePortChanged(String),
+    RemoteProfileUsernameChanged(String),
+    RemoteProfileAuthKindChanged(RemoteAuthKind),
+    RemoteProfileKeyPathChanged(String),
+    RemoteAgentBinaryPathChanged(String),
+    RemoteAddProfilePressed,
+    RemoteDeleteProfilePressed(usize), // profile id
+
+    // remote development (SSH) - connecting
+    RemoteConnectPressed(usize), // profile id
+    RemoteConnectSecretChanged(String),
+    RemoteConnectConfirmed,
+    RemoteConnectCancelled,
+    RemoteConnected(usize, Result<Arc<rustrest_remote::RemoteSession>, String>), // profile id
+    RemoteDisconnectPressed(usize),                                              // profile id
+
+    // remote development (SSH) - terminal
+    RemoteOpenTerminalPressed(usize), // profile id
+    /// a `ShellChannel` isn't `Clone`, but `Message` derives it; the
+    /// mutex-guarded option is a take-once box so this variant can still be
+    /// constructed once and handled once, same as any other message.
+    RemoteShellReady(
+        usize,
+        Result<Arc<std::sync::Mutex<Option<rustrest_remote::ShellChannel>>>, String>,
+    ),
+
+    // remote development (SSH) - file explorer
+    RemoteExplorerToggled(usize), // profile id
+    RemoteExplorerPathChanged(usize, String),
+    RemoteExplorerGoPressed(usize),
+    RemoteDirListingLoaded(
+        usize,
+        String,
+        Result<Vec<rustrest_remote::RemoteEntry>, String>,
+    ),
+    RemoteEntryClicked(usize, String), // profile id, absolute path
+    RemoteFileLoaded(usize, String, Result<Vec<u8>, String>), // profile id, path, bytes
+
+    // remote development (SSH) - open remote file tab
+    RemoteFileContentChanged(usize, iced::widget::text_editor::Action), // tab id
+    RemoteFileSavePressed(usize),                                       // tab id
+    RemoteFileSaved(usize, Result<(), String>),                         // tab id
 
     AppExit,
     None,

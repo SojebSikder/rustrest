@@ -102,11 +102,26 @@ impl EventListener for EventProxy {
     }
 }
 
-/// a live shell session: a PTY paired with Alacritty's grid/VT100 state,
-/// mutated in the background by the I/O thread `EventLoop::spawn` owns.
+/// a command sent to whatever is driving a remote session's real transport
+#[derive(Debug)]
+pub enum RemoteCommand {
+    Write(Vec<u8>),
+    Resize(usize, usize),
+}
+
+/// how a session's input reaches its shell: a local PTY (driven by
+/// Alacritty's own `EventLoop`/`Notifier`), or an arbitrary remote transport
+enum Backend {
+    Local(Notifier),
+    Remote(tokio::sync::mpsc::UnboundedSender<RemoteCommand>),
+}
+
+/// a live shell session: Alacritty's grid/VT100 state, paired with either a
+/// local PTY or a remote transport driven by the caller (see
+/// [`TerminalManager::spawn_remote`]).
 pub struct TerminalSession {
     term: Arc<FairMutex<Term<EventProxy>>>,
-    notifier: Notifier,
+    backend: Backend,
     columns: usize,
     rows: usize,
 }
@@ -114,7 +129,12 @@ pub struct TerminalSession {
 impl TerminalSession {
     /// writes raw bytes to the shell (already-encoded key input, pastes, etc).
     pub fn write(&self, bytes: Vec<u8>) {
-        self.notifier.notify(bytes);
+        match &self.backend {
+            Backend::Local(notifier) => notifier.notify(bytes),
+            Backend::Remote(sender) => {
+                let _ = sender.send(RemoteCommand::Write(bytes));
+            }
+        }
     }
 
     pub fn size(&self) -> (usize, usize) {
@@ -276,7 +296,7 @@ impl TerminalManager {
             id,
             TerminalSession {
                 term,
-                notifier,
+                backend: Backend::Local(notifier),
                 columns,
                 rows,
             },
@@ -285,14 +305,60 @@ impl TerminalManager {
         Ok(id)
     }
 
-    /// tears down the session: asks its I/O thread to shut down, which kills
-    /// the underlying shell process.
+    pub fn spawn_remote(
+        &mut self,
+        columns: usize,
+        rows: usize,
+        on_notice: impl Fn(u64, TerminalNotice) + Send + Sync + 'static,
+    ) -> (
+        u64,
+        RemoteTerminalFeed,
+        tokio::sync::mpsc::UnboundedReceiver<RemoteCommand>,
+    ) {
+        let id = self.next_id;
+
+        let event_proxy = EventProxy {
+            id,
+            on_notice: Arc::new(on_notice),
+        };
+        let term_size = TermSize::new(columns, rows);
+        let term = Arc::new(FairMutex::new(Term::new(
+            Config::default(),
+            &term_size,
+            event_proxy.clone(),
+        )));
+
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        self.sessions.insert(
+            id,
+            TerminalSession {
+                term: term.clone(),
+                backend: Backend::Remote(tx),
+                columns,
+                rows,
+            },
+        );
+        self.next_id += 1;
+
+        let feed = RemoteTerminalFeed {
+            term,
+            event_proxy,
+            parser: alacritty_terminal::vte::ansi::Processor::new(),
+        };
+        (id, feed, rx)
+    }
+
+    /// tears down the session: for a local session, asks its I/O thread to
+    /// shut down, which kills the underlying shell process; for a remote
+    /// session, drops the command channel, which ends the caller's forwarding
+    /// task.
     pub fn close(&mut self, id: u64) {
         if let Some(session) = self.sessions.remove(&id) {
-            let _ = session
-                .notifier
-                .0
-                .send(alacritty_terminal::event_loop::Msg::Shutdown);
+            if let Backend::Local(notifier) = session.backend {
+                let _ = notifier
+                    .0
+                    .send(alacritty_terminal::event_loop::Msg::Shutdown);
+            }
         }
     }
 
@@ -321,11 +387,38 @@ impl TerminalManager {
 
         let term_size = TermSize::new(columns, rows);
         session.term.lock().resize(term_size);
-        session.notifier.on_resize(WindowSize {
-            num_lines: rows as u16,
-            num_cols: columns as u16,
-            cell_width,
-            cell_height,
-        });
+
+        match &mut session.backend {
+            Backend::Local(notifier) => {
+                notifier.on_resize(WindowSize {
+                    num_lines: rows as u16,
+                    num_cols: columns as u16,
+                    cell_width,
+                    cell_height,
+                });
+            }
+            Backend::Remote(sender) => {
+                let _ = sender.send(RemoteCommand::Resize(columns, rows));
+            }
+        }
+    }
+}
+
+/// feeds bytes read from a remote transport into the shared `Term`, exactly
+/// as Alacritty's own local event loop feeds bytes read from a PTY. Owned
+/// exclusively by whatever task is reading from that transport.
+pub struct RemoteTerminalFeed {
+    term: Arc<FairMutex<Term<EventProxy>>>,
+    event_proxy: EventProxy,
+    parser: alacritty_terminal::vte::ansi::Processor,
+}
+
+impl RemoteTerminalFeed {
+    pub fn feed(&mut self, bytes: &[u8]) {
+        {
+            let mut term = self.term.lock();
+            self.parser.advance(&mut *term, bytes);
+        }
+        self.event_proxy.send_event(Event::Wakeup);
     }
 }

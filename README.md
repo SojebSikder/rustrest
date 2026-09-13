@@ -21,6 +21,18 @@ Modern API clients like Postman or Insomnia carry massive resource overhead. Rus
 - **Focused**: Just what you need to test APIs, nothing you don't.
 - **Postman Compatible**: You can import Postman collections (including scripts) directly into Rustrest.
 
+## Features
+
+- Native, Lightweight, and instant startup time.
+- **Fast**: Send request and get responses in real time.
+- **HTTP Methods**: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS and CUSTOM
+- **Test APIs** using test suites
+- **Local Vault**: Local storage for collections and other resources
+- **Git-native**: Collaborate via Git or any other version control system
+- **Postman Compatible**: Import Postman collections, environments and scripts
+- **Remote Development over SSH**: Remote development using SSH for accessing collections on remote servers.
+- And many more...
+
 [Download Rustrest](https://github.com/SojebSikder/rustrest/releases)
 
 ![Rustrest](screenshots/Screenshot1.png)
@@ -58,17 +70,6 @@ git clone https://github.com/SojebSikder/rustrest.git
 cd rustrest
 cargo run --release
 ```
-
-## Features
-
-- Native, Lightweight, and instant startup time.
-- **Fast**: Send request and get responses in real time.
-- **HTTP Methods**: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS and CUSTOM
-- **Test APIs** using test suites
-- **Local Vault**: Local storage for collections and other resources
-- **Git-native**: Collaborate via Git or any other version control system
-- **Postman Compatible**: Import Postman collections, environments and scripts
-- And many more...
 
 ## Trademark
 

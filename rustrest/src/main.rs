@@ -21,6 +21,7 @@ use crate::ui::menu::menu::{
     DropdownItem, DropdownMessage, MenuGroup, render_menu_bar, render_menu_overlay,
 };
 use crate::ui::menu::menu_message::MenuMessage;
+use crate::ui::remote::view_remote_connect_modal;
 use crate::ui::resize_handle::{DividerOrientation, resize_handle};
 use crate::ui::save_request_model::save_request_model::view_save_request_modal;
 use app::Rustrest;
@@ -310,6 +311,16 @@ fn view(app: &Rustrest) -> Element<'_, Message> {
             .align_x(Alignment::Center)
             .align_y(Alignment::Center);
         main_interface_stack = main_interface_stack.push(confirm_overlay);
+    }
+
+    // remote-connect (password/passphrase) modal overlay
+    if let Some(pending) = app.remote_connect_pending.as_ref() {
+        let remote_connect_overlay = container(view_remote_connect_modal(pending))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(Alignment::Center)
+            .align_y(Alignment::Center);
+        main_interface_stack = main_interface_stack.push(remote_connect_overlay);
     }
 
     // menu bar layer

@@ -13,6 +13,7 @@ use crate::ui::confirm_dialog::ConfirmDialogState;
 use crate::ui::context_menu::{ContextMenu, FieldTarget, apply_field_paste};
 use crate::ui::menu::menu::DropdownMenuState;
 use crate::ui::menu::menu_message::MenuMessage;
+use crate::ui::remote::{PendingRemoteConnect, RemoteAuthKind, join_remote_path};
 use crate::ui::save_request_model::types::SaveRequestModalState;
 use crate::ui::tab::types::{KeyValuePair, ResponseSubTab, ResponseView};
 use crate::ui::tab::{Tab, TabMessage};
@@ -26,6 +27,8 @@ use crate::utils::{
 use crate::workspace::{CollectionSource, SavedWorkspace, WorkspaceManifest};
 use crate::{APP_NAME, APP_VERSION};
 use iced::Task;
+use rustrest_core::remote::{SshAuthMethod, SshProfile};
+use rustrest_remote::{AuthMethod, SshConfig};
 use rustrest_terminal::TerminalManager;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
@@ -48,6 +51,12 @@ pub enum WorkspaceContent {
     Terminal {
         terminal_id: u64,
         widget_id: iced::widget::Id,
+    },
+    RemoteFile {
+        profile_id: usize,
+        path: String,
+        contents: iced::widget::text_editor::Content,
+        dirty: bool,
     },
 }
 
@@ -72,6 +81,7 @@ pub struct Rustrest {
     pub environments: Vec<Environment>,
     pub active_env_index: Option<usize>,
     pub globals: Vec<KeyValuePair>,
+    pub remote_profiles: Vec<SshProfile>,
     pub editing_env_index: Option<usize>,
     pub editing_env_name: bool,
     pub tabs: Vec<TabState>,
@@ -149,6 +159,19 @@ pub struct Rustrest {
             tokio::sync::mpsc::UnboundedReceiver<(u64, rustrest_terminal::TerminalNotice)>,
         >,
     >,
+
+    // remote development (SSH) - connected sessions keyed by SshProfile::id,
+    // the inline "add host" form, a pending connect awaiting its
+    // password/passphrase, and per-profile file explorer state.
+    pub remote_sessions: std::collections::HashMap<usize, Arc<rustrest_remote::RemoteSession>>,
+    pub remote_profile_form: crate::ui::remote::RemoteProfileForm,
+    pub remote_connect_pending: Option<crate::ui::remote::PendingRemoteConnect>,
+    pub remote_explorers: std::collections::HashMap<usize, crate::ui::remote::RemoteExplorerState>,
+    /// path to a `rustrest-remote-agent` binary built for the remote host's
+    /// OS/arch; not persisted (re-enter after restart). See the "Known
+    /// caveat" in the remote-dev plan: cross-building/bundling this per
+    /// target platform is a release-engineering follow-up, not code.
+    pub remote_agent_binary_path: String,
 }
 
 impl Rustrest {
@@ -174,6 +197,9 @@ impl Rustrest {
                 // shell sessions can't be serialized; terminal tabs simply
                 // don't come back after a restart.
                 WorkspaceContent::Terminal { .. } => None,
+                // remote file tabs are tied to a live RemoteSession, which
+                // also doesn't survive a restart.
+                WorkspaceContent::RemoteFile { .. } => None,
             })
             .collect();
 
@@ -219,6 +245,7 @@ impl Rustrest {
             collapsed_collections: self.collapsed_collections.clone(),
             collapsed_folders: self.collapsed_folders.clone(),
             collapsed_saved_responses: self.collapsed_saved_responses.clone(),
+            remote_profiles: self.remote_profiles.clone(),
             session: self.build_session_snapshot(),
         };
         (ws, dropped)
@@ -256,6 +283,12 @@ impl Rustrest {
         self.tabs.clear();
         self.active_tab_index = 0;
 
+        // remote sessions (and their explorer state) belong to the
+        // workspace being left; the new workspace has its own profile list.
+        self.remote_sessions.clear();
+        self.remote_explorers.clear();
+        self.remote_connect_pending = None;
+
         let mut errors = Vec::new();
         for source in &ws.collection_sources {
             match load_collection_from_source(source) {
@@ -272,6 +305,7 @@ impl Rustrest {
         self.environments = ws.environments.clone();
         self.active_env_index = ws.active_env_index;
         self.globals = ws.globals.clone();
+        self.remote_profiles = ws.remote_profiles.clone();
         self.collapsed_collections = ws.collapsed_collections.clone();
         self.collapsed_folders = ws.collapsed_folders.clone();
         self.collapsed_saved_responses = ws.collapsed_saved_responses.clone();
@@ -289,6 +323,7 @@ impl Rustrest {
                 WorkspaceContent::HttpRequest => self.tabs[idx].tab.collection_id == Some(col_id),
                 WorkspaceContent::CollectionRoot { collection_id, .. } => *collection_id == col_id,
                 WorkspaceContent::Terminal { .. } => false,
+                WorkspaceContent::RemoteFile { .. } => false,
             };
             if belongs {
                 self.sync_tab_to_collection(idx);
@@ -336,6 +371,7 @@ impl Rustrest {
                     }
                 }
                 WorkspaceContent::Terminal { .. } => {}
+                WorkspaceContent::RemoteFile { .. } => {}
             }
         }
     }
@@ -395,6 +431,7 @@ pub fn init() -> (Rustrest, Task<Message>) {
         environments: Vec::new(),
         active_env_index: None,
         globals: Vec::new(),
+        remote_profiles: Vec::new(),
         tabs: vec![],
         active_tab_index: 0,
         editing_env_index: None,
@@ -442,6 +479,11 @@ pub fn init() -> (Rustrest, Task<Message>) {
         terminal_manager: TerminalManager::new(),
         terminal_event_tx,
         terminal_event_rx: Arc::new(tokio::sync::Mutex::new(terminal_event_rx)),
+        remote_sessions: std::collections::HashMap::new(),
+        remote_profile_form: crate::ui::remote::RemoteProfileForm::default(),
+        remote_connect_pending: None,
+        remote_explorers: std::collections::HashMap::new(),
+        remote_agent_binary_path: String::new(),
     };
 
     let load_errors = if let Some(manifest) = crate::workspace::load() {
@@ -527,6 +569,7 @@ fn default_workspace(id: usize, legacy_session: Option<SavedSession>) -> SavedWo
         collapsed_collections: std::collections::HashSet::new(),
         collapsed_folders: std::collections::HashSet::new(),
         collapsed_saved_responses: std::collections::HashSet::new(),
+        remote_profiles: Vec::new(),
         session: legacy_session.unwrap_or(SavedSession {
             tabs: Vec::new(),
             active_tab_index: 0,
@@ -641,6 +684,7 @@ fn finalize_tab_rename(app: &mut Rustrest, idx: usize) {
                     collection_name, ..
                 } => collection_name.clone(),
                 WorkspaceContent::Terminal { .. } => "Terminal".to_string(),
+                WorkspaceContent::RemoteFile { path, .. } => path.clone(),
             };
         }
     }
@@ -667,6 +711,15 @@ fn close_tab(app: &mut Rustrest, index: usize) {
     if app.active_tab_index >= app.tabs.len() && !app.tabs.is_empty() {
         app.active_tab_index = app.tabs.len() - 1;
     }
+}
+
+/// where SSH host keys seen by the remote-development feature are recorded
+/// (trust-on-first-use), separate from any system-wide `~/.ssh/known_hosts`.
+fn remote_known_hosts_path() -> std::path::PathBuf {
+    dirs::data_dir()
+        .unwrap_or_else(std::env::temp_dir)
+        .join(APP_NAME)
+        .join("remote_known_hosts")
 }
 
 pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
@@ -768,6 +821,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                         *collection_id == col_id
                     }
                     WorkspaceContent::Terminal { .. } => false,
+                    WorkspaceContent::RemoteFile { .. } => false,
                 };
                 if belongs {
                     tab_state.tab.dirty = false;
@@ -811,6 +865,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                                     *collection_id == col_id
                                 }
                                 WorkspaceContent::Terminal { .. } => false,
+                                WorkspaceContent::RemoteFile { .. } => false,
                             };
                             if belongs {
                                 tab_state.tab.dirty = false;
@@ -2526,6 +2581,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 collapsed_collections: std::collections::HashSet::new(),
                 collapsed_folders: std::collections::HashSet::new(),
                 collapsed_saved_responses: std::collections::HashSet::new(),
+                remote_profiles: Vec::new(),
                 session: SavedSession {
                     tabs: Vec::new(),
                     active_tab_index: 0,
@@ -2784,6 +2840,10 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                         update(app, Message::SaveCollectionPressed(*collection_id))
                     }
                     WorkspaceContent::Terminal { .. } => Task::none(),
+                    WorkspaceContent::RemoteFile { .. } => {
+                        let tab_id = tab_state.tab.id;
+                        update(app, Message::RemoteFileSavePressed(tab_id))
+                    }
                 }
             } else {
                 Task::none()
@@ -2892,6 +2952,417 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             crate::ui::toast::toast::TOAST_DURATION,
         ),
         // end self update
+
+        // remote development (SSH) - inline "add host" form
+        Message::RemoteProfileNameChanged(name) => {
+            app.remote_profile_form.name = name;
+            Task::none()
+        }
+        Message::RemoteProfileHostChanged(host) => {
+            app.remote_profile_form.host = host;
+            Task::none()
+        }
+        Message::RemoteProfilePortChanged(port) => {
+            app.remote_profile_form.port = port;
+            Task::none()
+        }
+        Message::RemoteProfileUsernameChanged(username) => {
+            app.remote_profile_form.username = username;
+            Task::none()
+        }
+        Message::RemoteProfileAuthKindChanged(kind) => {
+            app.remote_profile_form.auth_kind = kind;
+            Task::none()
+        }
+        Message::RemoteProfileKeyPathChanged(path) => {
+            app.remote_profile_form.key_path = path;
+            Task::none()
+        }
+        Message::RemoteAgentBinaryPathChanged(path) => {
+            app.remote_agent_binary_path = path;
+            Task::none()
+        }
+        Message::RemoteAddProfilePressed => {
+            let form = app.remote_profile_form.clone();
+            if form.name.trim().is_empty()
+                || form.host.trim().is_empty()
+                || form.username.trim().is_empty()
+            {
+                return Task::done(Message::ShowToast(
+                    "Name, host, and username are required".to_string(),
+                    ToastStatus::Error,
+                ));
+            }
+            let Ok(port) = form.port.trim().parse::<u16>() else {
+                return Task::done(Message::ShowToast(
+                    "Port must be a number".to_string(),
+                    ToastStatus::Error,
+                ));
+            };
+            let auth_method = match form.auth_kind {
+                RemoteAuthKind::Password => SshAuthMethod::Password,
+                RemoteAuthKind::PrivateKey => SshAuthMethod::PrivateKey {
+                    path: std::path::PathBuf::from(form.key_path.trim()),
+                },
+                RemoteAuthKind::Agent => SshAuthMethod::Agent,
+            };
+            let id = app
+                .remote_profiles
+                .iter()
+                .map(|p| p.id)
+                .max()
+                .map(|m| m + 1)
+                .unwrap_or(0);
+            app.remote_profiles.push(SshProfile {
+                id,
+                name: form.name.trim().to_string(),
+                host: form.host.trim().to_string(),
+                port,
+                username: form.username.trim().to_string(),
+                auth_method,
+            });
+            app.remote_profile_form = crate::ui::remote::RemoteProfileForm::default();
+            app.commit_active_workspace_snapshot();
+            crate::workspace::save(&app.build_workspace_manifest());
+            Task::none()
+        }
+        Message::RemoteDeleteProfilePressed(profile_id) => {
+            app.remote_profiles.retain(|p| p.id != profile_id);
+            app.remote_sessions.remove(&profile_id);
+            app.remote_explorers.remove(&profile_id);
+            app.commit_active_workspace_snapshot();
+            crate::workspace::save(&app.build_workspace_manifest());
+            Task::none()
+        }
+
+        // remote development (SSH) - connecting
+        Message::RemoteConnectPressed(profile_id) => {
+            app.remote_connect_pending = Some(PendingRemoteConnect {
+                profile_id,
+                secret: String::new(),
+            });
+            Task::none()
+        }
+        Message::RemoteConnectSecretChanged(secret) => {
+            if let Some(pending) = &mut app.remote_connect_pending {
+                pending.secret = secret;
+            }
+            Task::none()
+        }
+        Message::RemoteConnectCancelled => {
+            app.remote_connect_pending = None;
+            Task::none()
+        }
+        Message::RemoteConnectConfirmed => {
+            let Some(pending) = app.remote_connect_pending.take() else {
+                return Task::none();
+            };
+            let Some(profile) = app
+                .remote_profiles
+                .iter()
+                .find(|p| p.id == pending.profile_id)
+                .cloned()
+            else {
+                return Task::none();
+            };
+            if app.remote_agent_binary_path.trim().is_empty() {
+                return Task::done(Message::RemoteConnected(
+                    profile.id,
+                    Err("set the remote agent binary path first".to_string()),
+                ));
+            }
+
+            let auth = match &profile.auth_method {
+                SshAuthMethod::Password => AuthMethod::Password(pending.secret.clone()),
+                SshAuthMethod::PrivateKey { path } => AuthMethod::PrivateKey {
+                    path: path.clone(),
+                    passphrase: if pending.secret.is_empty() {
+                        None
+                    } else {
+                        Some(pending.secret.clone())
+                    },
+                },
+                SshAuthMethod::Agent => AuthMethod::Agent,
+            };
+            let config = SshConfig {
+                host: profile.host.clone(),
+                port: profile.port,
+                username: profile.username.clone(),
+                auth,
+            };
+            let known_hosts_path = remote_known_hosts_path();
+            let agent_binary_path = std::path::PathBuf::from(app.remote_agent_binary_path.clone());
+            let profile_id = profile.id;
+
+            Task::perform(
+                async move {
+                    let agent_bytes = tokio::fs::read(&agent_binary_path).await.map_err(|e| {
+                        format!("failed to read agent binary at {agent_binary_path:?}: {e}")
+                    })?;
+                    rustrest_remote::RemoteSession::connect(
+                        &config,
+                        &known_hosts_path,
+                        &agent_bytes,
+                        "/tmp/.rustrest-remote-agent",
+                    )
+                    .await
+                    .map_err(|e| e.to_string())
+                },
+                move |result| Message::RemoteConnected(profile_id, result.map(Arc::new)),
+            )
+        }
+        Message::RemoteConnected(profile_id, Ok(session)) => {
+            app.remote_sessions.insert(profile_id, session);
+            let name = app
+                .remote_profiles
+                .iter()
+                .find(|p| p.id == profile_id)
+                .map(|p| p.name.clone())
+                .unwrap_or_default();
+            Task::done(Message::ShowToast(
+                format!("Connected to {name}"),
+                ToastStatus::Success,
+            ))
+        }
+        Message::RemoteConnected(_, Err(err)) => Task::done(Message::ShowToast(
+            format!("Connect failed: {err}"),
+            ToastStatus::Error,
+        )),
+        Message::RemoteDisconnectPressed(profile_id) => {
+            app.remote_sessions.remove(&profile_id);
+            app.remote_explorers.remove(&profile_id);
+            Task::none()
+        }
+
+        // remote development (SSH) - terminal
+        Message::RemoteOpenTerminalPressed(profile_id) => {
+            let Some(session) = app.remote_sessions.get(&profile_id).cloned() else {
+                return Task::none();
+            };
+            Task::perform(
+                async move {
+                    session
+                        .open_shell(80, 24)
+                        .await
+                        .map(|shell| Arc::new(std::sync::Mutex::new(Some(shell))))
+                        .map_err(|e| e.to_string())
+                },
+                move |result| Message::RemoteShellReady(profile_id, result),
+            )
+        }
+        Message::RemoteShellReady(profile_id, Ok(shell_holder)) => {
+            let Some(shell) = shell_holder.lock().unwrap().take() else {
+                return Task::none();
+            };
+            let tx = app.terminal_event_tx.clone();
+            let (terminal_id, feed, commands) =
+                app.terminal_manager
+                    .spawn_remote(80, 24, move |id, notice| {
+                        let _ = tx.send((id, notice));
+                    });
+            rustrest_remote::bridge_shell_to_terminal(shell, feed, commands);
+
+            let profile_name = app
+                .remote_profiles
+                .iter()
+                .find(|p| p.id == profile_id)
+                .map(|p| p.name.clone())
+                .unwrap_or_else(|| "remote".to_string());
+
+            let widget_id = iced::widget::Id::unique();
+            let mut term_tab = Tab::new(app.next_tab_id);
+            term_tab.name = format!("{profile_name} (remote)");
+            app.tabs.push(TabState {
+                tab: term_tab,
+                content: WorkspaceContent::Terminal {
+                    terminal_id,
+                    widget_id: widget_id.clone(),
+                },
+                is_editing_name: false,
+            });
+            app.next_tab_id += 1;
+            app.active_tab_index = app.tabs.len() - 1;
+
+            Task::batch([
+                iced::widget::operation::snap_to_end(crate::ui::workspace::tab_bar_scroll_id()),
+                iced::widget::operation::focus(widget_id),
+            ])
+        }
+        Message::RemoteShellReady(_, Err(err)) => Task::done(Message::ShowToast(
+            format!("Failed to open remote terminal: {err}"),
+            ToastStatus::Error,
+        )),
+
+        // remote development (SSH) - file explorer
+        Message::RemoteExplorerToggled(profile_id) => {
+            let explorer = app.remote_explorers.entry(profile_id).or_default();
+            explorer.visible = !explorer.visible;
+            if explorer.path.is_empty() {
+                explorer.path = ".".to_string();
+            }
+            let should_load = explorer.visible && explorer.entries.is_empty();
+            if should_load {
+                Task::done(Message::RemoteExplorerGoPressed(profile_id))
+            } else {
+                Task::none()
+            }
+        }
+        Message::RemoteExplorerPathChanged(profile_id, path) => {
+            let explorer = app.remote_explorers.entry(profile_id).or_default();
+            explorer.path = path;
+            Task::none()
+        }
+        Message::RemoteExplorerGoPressed(profile_id) => {
+            let Some(session) = app.remote_sessions.get(&profile_id).cloned() else {
+                return Task::none();
+            };
+            let explorer = app.remote_explorers.entry(profile_id).or_default();
+            explorer.loading = true;
+            explorer.error = None;
+            let path = explorer.path.clone();
+            let path_for_result = path.clone();
+
+            Task::perform(
+                async move { session.list_dir(&path).await.map_err(|e| e.to_string()) },
+                move |result| {
+                    Message::RemoteDirListingLoaded(profile_id, path_for_result.clone(), result)
+                },
+            )
+        }
+        Message::RemoteDirListingLoaded(profile_id, path, result) => {
+            let explorer = app.remote_explorers.entry(profile_id).or_default();
+            explorer.loading = false;
+            if explorer.path == path {
+                match result {
+                    Ok(entries) => {
+                        explorer.entries = entries;
+                        explorer.error = None;
+                    }
+                    Err(err) => explorer.error = Some(err),
+                }
+            }
+            Task::none()
+        }
+        Message::RemoteEntryClicked(profile_id, path) => {
+            let Some(explorer) = app.remote_explorers.get(&profile_id) else {
+                return Task::none();
+            };
+            let is_dir = explorer
+                .entries
+                .iter()
+                .find(|e| join_remote_path(&explorer.path, &e.name) == path)
+                .map(|e| e.is_dir)
+                .unwrap_or(false);
+
+            if is_dir {
+                Task::batch([
+                    Task::done(Message::RemoteExplorerPathChanged(profile_id, path)),
+                    Task::done(Message::RemoteExplorerGoPressed(profile_id)),
+                ])
+            } else {
+                let Some(session) = app.remote_sessions.get(&profile_id).cloned() else {
+                    return Task::none();
+                };
+                let path_for_result = path.clone();
+                Task::perform(
+                    async move { session.read_file(&path).await.map_err(|e| e.to_string()) },
+                    move |result| {
+                        Message::RemoteFileLoaded(profile_id, path_for_result.clone(), result)
+                    },
+                )
+            }
+        }
+        Message::RemoteFileLoaded(profile_id, path, result) => match result {
+            Ok(bytes) => {
+                let text = String::from_utf8_lossy(&bytes).into_owned();
+                let mut file_tab = Tab::new(app.next_tab_id);
+                file_tab.name = path.clone();
+                app.tabs.push(TabState {
+                    tab: file_tab,
+                    content: WorkspaceContent::RemoteFile {
+                        profile_id,
+                        path,
+                        contents: iced::widget::text_editor::Content::with_text(&text),
+                        dirty: false,
+                    },
+                    is_editing_name: false,
+                });
+                app.next_tab_id += 1;
+                app.active_tab_index = app.tabs.len() - 1;
+                Task::none()
+            }
+            Err(err) => Task::done(Message::ShowToast(
+                format!("Failed to open remote file: {err}"),
+                ToastStatus::Error,
+            )),
+        },
+
+        // remote development (SSH) - open remote file tab
+        Message::RemoteFileContentChanged(tab_id, action) => {
+            if let Some(tab_state) = app.tabs.iter_mut().find(|t| t.tab.id == tab_id) {
+                if let WorkspaceContent::RemoteFile {
+                    contents, dirty, ..
+                } = &mut tab_state.content
+                {
+                    let is_edit = matches!(action, iced::widget::text_editor::Action::Edit(_));
+                    contents.perform(action);
+                    if is_edit {
+                        *dirty = true;
+                    }
+                }
+            }
+            Task::none()
+        }
+        Message::RemoteFileSavePressed(tab_id) => {
+            let Some(tab_state) = app.tabs.iter().find(|t| t.tab.id == tab_id) else {
+                return Task::none();
+            };
+            let WorkspaceContent::RemoteFile {
+                profile_id,
+                path,
+                contents,
+                ..
+            } = &tab_state.content
+            else {
+                return Task::none();
+            };
+            let Some(session) = app.remote_sessions.get(profile_id).cloned() else {
+                return Task::done(Message::ShowToast(
+                    "Not connected to that remote host anymore".to_string(),
+                    ToastStatus::Error,
+                ));
+            };
+            let path = path.clone();
+            let bytes = contents.text().into_bytes();
+
+            Task::perform(
+                async move {
+                    session
+                        .write_file(&path, bytes)
+                        .await
+                        .map_err(|e| e.to_string())
+                },
+                move |result| Message::RemoteFileSaved(tab_id, result),
+            )
+        }
+        Message::RemoteFileSaved(tab_id, result) => match result {
+            Ok(()) => {
+                if let Some(tab_state) = app.tabs.iter_mut().find(|t| t.tab.id == tab_id) {
+                    if let WorkspaceContent::RemoteFile { dirty, .. } = &mut tab_state.content {
+                        *dirty = false;
+                    }
+                }
+                Task::done(Message::ShowToast(
+                    "Saved".to_string(),
+                    ToastStatus::Success,
+                ))
+            }
+            Err(err) => Task::done(Message::ShowToast(
+                format!("Save failed: {err}"),
+                ToastStatus::Error,
+            )),
+        },
+        // end remote development (SSH)
         Message::DismissToast(id) => {
             app.toast_manager.dismiss(id);
             iced::Task::none()

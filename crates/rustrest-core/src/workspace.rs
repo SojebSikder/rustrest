@@ -1,5 +1,6 @@
 use crate::KeyValuePair;
 use crate::collection::env::Environment;
+use crate::remote::SshProfile;
 use crate::session::SavedSession;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -20,6 +21,8 @@ pub struct SavedWorkspace {
     pub active_env_index: Option<usize>,
     #[serde(default)]
     pub globals: Vec<KeyValuePair>,
+    #[serde(default)]
+    pub remote_profiles: Vec<SshProfile>,
 
     // sidebar collapse/expand state, persisted per workspace
     #[serde(default)]

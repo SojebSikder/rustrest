@@ -8,3 +8,4 @@ name = "rustrest_terminal"
 
 [dependencies]
 alacritty_terminal = "0.26"
+tokio = { version = "1", features = ["sync"] }

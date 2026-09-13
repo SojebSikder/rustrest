@@ -1,0 +1,12 @@
+[package]
+name = "rustrest-remote-agent"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "rustrest-remote-agent"
+path = "src/main.rs"
+
+[dependencies]
+rustrest-remote-protocol = { path = "../rustrest-remote-protocol" }
+tokio = { version = "1", features = ["rt", "io-std", "fs", "macros"] }

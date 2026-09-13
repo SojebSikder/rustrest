@@ -2,6 +2,7 @@ mod common;
 
 pub mod collection;
 pub mod http;
+pub mod remote;
 pub mod script_engine;
 pub mod session;
 pub mod workspace;
