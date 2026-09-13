@@ -167,11 +167,6 @@ pub struct Rustrest {
     pub remote_profile_form: crate::ui::remote::RemoteProfileForm,
     pub remote_connect_pending: Option<crate::ui::remote::PendingRemoteConnect>,
     pub remote_explorers: std::collections::HashMap<usize, crate::ui::remote::RemoteExplorerState>,
-    /// path to a `rustrest-remote-agent` binary built for the remote host's
-    /// OS/arch; not persisted (re-enter after restart). See the "Known
-    /// caveat" in the remote-dev plan: cross-building/bundling this per
-    /// target platform is a release-engineering follow-up, not code.
-    pub remote_agent_binary_path: String,
 
     // multi-window: the id of the always-open main window, and the id of the
     // "Remote development over SSH" configuration window when it's open
@@ -503,7 +498,6 @@ pub fn init() -> (Rustrest, Task<Message>) {
         remote_profile_form: crate::ui::remote::RemoteProfileForm::default(),
         remote_connect_pending: None,
         remote_explorers: std::collections::HashMap::new(),
-        remote_agent_binary_path: String::new(),
         main_window_id,
         remote_config_window_id: None,
         command_palette: None,
@@ -3005,10 +2999,6 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             app.remote_profile_form.key_path = path;
             Task::none()
         }
-        Message::RemoteAgentBinaryPathChanged(path) => {
-            app.remote_agent_binary_path = path;
-            Task::none()
-        }
         Message::RemoteAddProfilePressed => {
             let form = app.remote_profile_form.clone();
             if form.name.trim().is_empty()
@@ -3092,12 +3082,6 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             else {
                 return Task::none();
             };
-            if app.remote_agent_binary_path.trim().is_empty() {
-                return Task::done(Message::RemoteConnected(
-                    profile.id,
-                    Err("set the remote agent binary path first".to_string()),
-                ));
-            }
 
             let auth = match &profile.auth_method {
                 SshAuthMethod::Password => AuthMethod::Password(pending.secret.clone()),
@@ -3118,19 +3102,25 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 auth,
             };
             let known_hosts_path = remote_known_hosts_path();
-            let agent_binary_path = std::path::PathBuf::from(app.remote_agent_binary_path.clone());
+            let app_version = APP_VERSION.to_string();
+            let app_version_for_download = app_version.clone();
             let profile_id = profile.id;
 
             Task::perform(
                 async move {
-                    let agent_bytes = tokio::fs::read(&agent_binary_path).await.map_err(|e| {
-                        format!("failed to read agent binary at {agent_binary_path:?}: {e}")
-                    })?;
                     rustrest_remote::RemoteSession::connect(
                         &config,
                         &known_hosts_path,
-                        &agent_bytes,
-                        "/tmp/.rustrest-remote-agent",
+                        &app_version,
+                        move |platform| async move {
+                            let target = platform.target_triple()?.to_string();
+                            tokio::task::spawn_blocking(move || {
+                                crate::remote_agent::provision(&target, &app_version_for_download)
+                            })
+                            .await
+                            .map_err(|e| rustrest_remote::RemoteError::Remote(e.to_string()))?
+                            .map_err(rustrest_remote::RemoteError::Remote)
+                        },
                     )
                     .await
                     .map_err(|e| e.to_string())

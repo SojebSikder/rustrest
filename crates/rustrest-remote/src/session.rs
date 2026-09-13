@@ -1,8 +1,9 @@
+use std::future::Future;
 use std::path::Path;
 use std::sync::Arc;
 
 use rustrest_remote_protocol::{Request, Response};
-use rustrest_ssh::{SshConfig, SshSession};
+use rustrest_ssh::{RemotePlatform, SshConfig, SshSession};
 use rustrest_terminal::RemoteCommand;
 
 use crate::error::RemoteError;
@@ -21,19 +22,36 @@ impl std::fmt::Debug for RemoteSession {
 }
 
 impl RemoteSession {
-    /// connects over SSH, uploads `agent_binary` to `remote_agent_path` on
-    /// the remote host (compiled for that host's OS/arch), and execs it to
+    /// connects over SSH, detects the remote host's OS/architecture, and
+    /// makes sure a matching `rustrest-remote-agent` binary tagged
+    /// `app_version` is present on the remote (skipping upload entirely if
+    /// it's already there from a previous connection) before running it to
     /// establish the RPC channel used by the file operations below.
-    pub async fn connect(
+    ///
+    /// `resolve_agent_binary` is only called on a cache miss, with the detected
+    /// platform, and must return the bytes of an agent binary built for it.
+    pub async fn connect<F, Fut>(
         config: &SshConfig,
         known_hosts_path: &Path,
-        agent_binary: &[u8],
-        remote_agent_path: &str,
-    ) -> Result<Self, RemoteError> {
+        app_version: &str,
+        resolve_agent_binary: F,
+    ) -> Result<Self, RemoteError>
+    where
+        F: FnOnce(RemotePlatform) -> Fut,
+        Fut: Future<Output = Result<Vec<u8>, RemoteError>>,
+    {
         let ssh = SshSession::connect(config, known_hosts_path).await?;
-        ssh.upload_executable(remote_agent_path, agent_binary)
-            .await?;
-        let exec = ssh.open_exec(remote_agent_path).await?;
+        let platform = rustrest_ssh::detect_remote_platform(&ssh).await?;
+        let (remote_dir, remote_path) = platform.agent_paths(app_version)?;
+
+        if !ssh.remote_file_exists(&remote_path, platform.os).await? {
+            let agent_binary = resolve_agent_binary(platform.clone()).await?;
+            ssh.ensure_remote_dir(&remote_dir, platform.os).await?;
+            ssh.upload_executable(&remote_path, &agent_binary, platform.os)
+                .await?;
+        }
+
+        let exec = ssh.open_exec(&remote_path).await?;
         let rpc = RpcClient::spawn(exec.into_stream());
 
         Ok(Self {

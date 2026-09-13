@@ -3,7 +3,7 @@ use russh::ChannelMsg;
 use crate::client::SshSession;
 use crate::error::SshError;
 
-/// a remote shell with a PTY attached — the transport a remote terminal
+/// a remote shell with a PTY attached - the transport a remote terminal
 /// session reads from and writes to.
 pub struct ShellChannel {
     channel: russh::Channel<russh::client::Msg>,

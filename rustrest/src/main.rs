@@ -5,6 +5,7 @@ mod collection;
 mod collection_adapter;
 mod http_client;
 mod message;
+mod remote_agent;
 mod script_engine;
 mod session;
 mod shortcuts;

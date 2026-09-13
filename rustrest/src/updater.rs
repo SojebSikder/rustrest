@@ -75,7 +75,7 @@ fn archive_name(target: &str) -> String {
     }
 }
 
-fn download_to_file(url: &str, dest: &Path) -> Result<(), String> {
+pub(crate) fn download_to_file(url: &str, dest: &Path) -> Result<(), String> {
     let mut response = reqwest::blocking::get(url).map_err(|e| e.to_string())?;
     if !response.status().is_success() {
         return Err(format!(
@@ -88,7 +88,7 @@ fn download_to_file(url: &str, dest: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn verify_sha256(path: &Path, sha256_path: &Path) -> Result<(), String> {
+pub(crate) fn verify_sha256(path: &Path, sha256_path: &Path) -> Result<(), String> {
     let sums = fs::read_to_string(sha256_path).map_err(|e| e.to_string())?;
     let expected = sums
         .split_whitespace()
@@ -112,7 +112,7 @@ fn verify_sha256(path: &Path, sha256_path: &Path) -> Result<(), String> {
 }
 
 /// recursively searches `dir` for a file named `name`, depth-first.
-fn find_file(dir: &Path, name: &str) -> Result<PathBuf, String> {
+pub(crate) fn find_file(dir: &Path, name: &str) -> Result<PathBuf, String> {
     let entries = fs::read_dir(dir).map_err(|e| e.to_string())?;
     let mut subdirs = Vec::new();
 

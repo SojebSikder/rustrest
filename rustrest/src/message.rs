@@ -341,7 +341,6 @@ pub enum Message {
     RemoteProfileUsernameChanged(String),
     RemoteProfileAuthKindChanged(RemoteAuthKind),
     RemoteProfileKeyPathChanged(String),
-    RemoteAgentBinaryPathChanged(String),
     RemoteAddProfilePressed,
     RemoteDeleteProfilePressed(usize), // profile id
 

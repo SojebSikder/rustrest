@@ -3,6 +3,12 @@ name = "rustrest-remote-agent"
 version = "0.1.0"
 edition = "2024"
 
+# built and published as a GitHub release artifact per target (see
+# dist-workspace.toml) alongside the main `rustrest` binary, so the remote
+# development feature can download the one matching a detected remote host.
+[package.metadata.dist]
+dist = true
+
 [[bin]]
 name = "rustrest-remote-agent"
 path = "src/main.rs"

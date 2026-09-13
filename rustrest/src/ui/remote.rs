@@ -257,21 +257,16 @@ pub fn view_remote_config_window(app: &Rustrest) -> Element<'_, Message> {
             .style(button::primary),
     );
 
-    let agent_binary_section = column![
-        text("Remote agent binary (built for the remote host's OS/arch)")
-            .size(11)
-            .style(|_theme: &iced::Theme| text::Style {
-                color: Some(Color::from_rgb(0.55, 0.55, 0.6)),
-            }),
-        text_input(
-            "Path to rustrest-remote-agent",
-            &app.remote_agent_binary_path
-        )
-        .on_input(Message::RemoteAgentBinaryPathChanged)
-        .size(13)
-        .padding(6),
-    ]
-    .spacing(4);
+    let agent_note = text(
+        "On connect, rustrest detects the remote host's OS/architecture over \
+         SSH and automatically downloads (and caches) a matching \
+         rustrest-remote-agent binary from this app's GitHub releases if one \
+         isn't already installed on the host.",
+    )
+    .size(11)
+    .style(|_theme: &iced::Theme| text::Style {
+        color: Some(Color::from_rgb(0.55, 0.55, 0.6)),
+    });
 
     let body = column![
         title,
@@ -281,7 +276,7 @@ pub fn view_remote_config_window(app: &Rustrest) -> Element<'_, Message> {
         section_header("Add a host"),
         add_form,
         section_header("Remote agent"),
-        agent_binary_section,
+        agent_note,
     ]
     .spacing(14)
     .padding(20)
