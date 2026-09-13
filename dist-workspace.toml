@@ -7,6 +7,9 @@ members = ["cargo:."]
 cargo-dist-version = "0.32.0"
 # CI backends to support
 ci = "github"
+# Allow release.yml to keep our manual --generate-notes addition (for the
+# categorized GitHub changelog) without CI failing the "up to date" check
+allow-dirty = ["ci"]
 # The installers to generate for each app
 installers = []
 # Target platforms to build apps for (Rust target-triple syntax)
