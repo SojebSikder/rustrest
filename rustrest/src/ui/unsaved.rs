@@ -22,6 +22,7 @@ pub fn tab_is_unsaved(app: &Rustrest, tab_state: &TabState) -> bool {
             .map(|c| collection_is_unsaved(app, c))
             .unwrap_or(false),
         WorkspaceContent::Terminal { .. } => false,
+        WorkspaceContent::RemoteFile { dirty, .. } => *dirty,
     }
 }
 

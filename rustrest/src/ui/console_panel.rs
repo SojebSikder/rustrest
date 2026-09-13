@@ -1,5 +1,5 @@
 use crate::message::Message;
-use iced::widget::{button, column, container, row, scrollable, text, Space};
+use iced::widget::{Space, button, column, container, row, scrollable, text};
 use iced::{Alignment, Element, Font, Length};
 
 /// render the bottom bar header strip: title + log count, expand/collapse toggle, and a clear button.

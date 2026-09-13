@@ -67,6 +67,7 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
             }
             WorkspaceContent::CollectionRoot { .. } => text("").size(11).into(),
             WorkspaceContent::Terminal { .. } => text(">_").size(11).into(),
+            WorkspaceContent::RemoteFile { .. } => text("☁").size(11).into(),
         };
 
         let tab_content: Element<Message> = if tab_state.is_editing_name {
@@ -201,6 +202,35 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
                 .align_y(Alignment::Center)
                 .into(),
         },
+
+        WorkspaceContent::RemoteFile {
+            path,
+            contents,
+            dirty,
+            ..
+        } => {
+            let tab_id = active_tab_state.tab.id;
+            let header = row![
+                text(path.clone()).size(12).width(Length::Fill),
+                button(text(if *dirty { "Save*" } else { "Save" }).size(12))
+                    .on_press(Message::RemoteFileSavePressed(tab_id))
+                    .padding([4, 10])
+                    .style(button::primary),
+            ]
+            .spacing(10)
+            .align_y(Alignment::Center);
+
+            let editor = iced::widget::text_editor(contents)
+                .placeholder("(empty file)")
+                .padding(8)
+                .height(Length::Fill)
+                .on_action(move |action| Message::RemoteFileContentChanged(tab_id, action));
+
+            column![header, editor]
+                .spacing(8)
+                .height(Length::Fill)
+                .into()
+        }
     };
 
     column![tab_bar_row, tab_view].spacing(15).into()

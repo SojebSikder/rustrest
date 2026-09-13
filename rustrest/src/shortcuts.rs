@@ -35,6 +35,13 @@ fn bindings() -> Vec<Shortcut> {
             alt: false,
             message: Message::NewTerminalTabPressed,
         },
+        Shortcut {
+            key: "p",
+            command: true,
+            shift: true,
+            alt: false,
+            message: Message::ToggleCommandPalette,
+        },
     ]
 }
 
@@ -46,7 +53,10 @@ pub fn subscription() -> Subscription<Message> {
             ..
         }) => bindings()
             .into_iter()
-            .find(|s| s.key == c.as_str() && matches(modifiers, s))
+            // shift changes the character winit/iced reports (e.g. "p" -> "P"),
+            // so compare case-insensitively rather than baking shifted variants
+            // into every binding's `key`.
+            .find(|s| s.key.eq_ignore_ascii_case(c.as_str()) && matches(modifiers, s))
             .map(|s| s.message),
         _ => None,
     })

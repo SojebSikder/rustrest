@@ -1,4 +1,5 @@
 pub mod collection_viewer;
+pub mod command_palette;
 pub mod commit_modal;
 pub mod confirm_dialog;
 pub mod console_panel;
@@ -8,6 +9,7 @@ pub mod git_panel;
 pub mod menu;
 pub mod modal;
 pub mod multiline_input;
+pub mod remote;
 pub mod resize_handle;
 pub mod save_request_model;
 pub mod sidebar;

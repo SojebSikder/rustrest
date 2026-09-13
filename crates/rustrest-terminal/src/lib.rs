@@ -9,6 +9,9 @@ mod palette;
 
 use alacritty_terminal::event::{Event, EventListener, Notify, OnResize, WindowSize};
 use alacritty_terminal::event_loop::{EventLoop, Notifier};
+use alacritty_terminal::grid::Scroll;
+use alacritty_terminal::index::{Column, Line, Point, Side};
+use alacritty_terminal::selection::{Selection, SelectionType};
 use alacritty_terminal::sync::FairMutex;
 use alacritty_terminal::term::cell::Flags as CellFlags;
 use alacritty_terminal::term::test::TermSize;
@@ -50,6 +53,7 @@ pub struct TerminalCell {
     pub fg: Rgb,
     pub bg: Rgb,
     pub style: CellStyle,
+    pub selected: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -72,6 +76,9 @@ pub struct TerminalGrid {
     pub cursor_row: usize,
     pub cursor_col: usize,
     pub cursor_shape: CursorShape,
+    /// how many lines back into scrollback history the view is currently
+    /// scrolled; `0` means pinned to the live bottom of the buffer.
+    pub scroll_offset: usize,
 }
 
 /// what a terminal session wants the host UI to do in response to backend activity.
@@ -102,11 +109,26 @@ impl EventListener for EventProxy {
     }
 }
 
-/// a live shell session: a PTY paired with Alacritty's grid/VT100 state,
-/// mutated in the background by the I/O thread `EventLoop::spawn` owns.
+/// a command sent to whatever is driving a remote session's real transport
+#[derive(Debug)]
+pub enum RemoteCommand {
+    Write(Vec<u8>),
+    Resize(usize, usize),
+}
+
+/// how a session's input reaches its shell: a local PTY (driven by
+/// Alacritty's own `EventLoop`/`Notifier`), or an arbitrary remote transport
+enum Backend {
+    Local(Notifier),
+    Remote(tokio::sync::mpsc::UnboundedSender<RemoteCommand>),
+}
+
+/// a live shell session: Alacritty's grid/VT100 state, paired with either a
+/// local PTY or a remote transport driven by the caller (see
+/// [`TerminalManager::spawn_remote`]).
 pub struct TerminalSession {
     term: Arc<FairMutex<Term<EventProxy>>>,
-    notifier: Notifier,
+    backend: Backend,
     columns: usize,
     rows: usize,
 }
@@ -114,7 +136,56 @@ pub struct TerminalSession {
 impl TerminalSession {
     /// writes raw bytes to the shell (already-encoded key input, pastes, etc).
     pub fn write(&self, bytes: Vec<u8>) {
-        self.notifier.notify(bytes);
+        match &self.backend {
+            Backend::Local(notifier) => notifier.notify(bytes),
+            Backend::Remote(sender) => {
+                let _ = sender.send(RemoteCommand::Write(bytes));
+            }
+        }
+    }
+
+    /// scrolls the view by `lines`; positive scrolls back into history,
+    /// negative scrolls forward towards the live bottom.
+    pub fn scroll(&self, lines: i32) {
+        self.term.lock().scroll_display(Scroll::Delta(lines));
+    }
+
+    pub fn scroll_to_bottom(&self) {
+        self.term.lock().scroll_display(Scroll::Bottom);
+    }
+
+    /// starts a fresh left-to-right text selection anchored at the given
+    /// view-relative cell.
+    pub fn start_selection(&self, row: usize, col: usize) {
+        let mut term = self.term.lock();
+        let point = self.view_point(&term, row, col);
+        term.selection = Some(Selection::new(SelectionType::Simple, point, Side::Left));
+    }
+
+    /// extends the in-progress selection to the given view-relative cell.
+    pub fn update_selection(&self, row: usize, col: usize) {
+        let mut term = self.term.lock();
+        let point = self.view_point(&term, row, col);
+        if let Some(selection) = term.selection.as_mut() {
+            selection.update(point, Side::Right);
+        }
+    }
+
+    pub fn clear_selection(&self) {
+        self.term.lock().selection = None;
+    }
+
+    /// the current selection's text, if any (trailing whitespace per line
+    /// stripped, as most terminals do when copying).
+    pub fn selection_text(&self) -> Option<String> {
+        self.term.lock().selection_to_string()
+    }
+
+    fn view_point(&self, term: &Term<EventProxy>, row: usize, col: usize) -> Point {
+        let display_offset = term.grid().display_offset() as i32;
+        let line = row as i32 - display_offset;
+        let col = col.min(self.columns.saturating_sub(1));
+        Point::new(Line(line), Column(col))
     }
 
     pub fn size(&self) -> (usize, usize) {
@@ -134,14 +205,20 @@ impl TerminalSession {
                 fg: DEFAULT_FG,
                 bg: DEFAULT_BG,
                 style: CellStyle::default(),
+                selected: false,
             };
             columns * rows
         ];
 
         let colors = content.colors;
         let cursor = content.cursor;
+        // `display_iter`/the cursor report positions in grid-absolute
+        // coordinates, which go negative once scrolled into history; shift by
+        // the display offset to land back in view-relative `0..rows`.
+        let display_offset = content.display_offset as i32;
+        let selection = content.selection;
         for indexed in content.display_iter {
-            let row = indexed.point.line.0;
+            let row = indexed.point.line.0 + display_offset;
             let col = indexed.point.column.0;
             if row < 0 || row as usize >= rows || col >= columns {
                 continue;
@@ -173,10 +250,12 @@ impl TerminalSession {
                     underline: indexed.cell.flags.intersects(CellFlags::ALL_UNDERLINES),
                     strikeout: indexed.cell.flags.contains(CellFlags::STRIKEOUT),
                 },
+                selected: selection.is_some_and(|s| s.contains(indexed.point)),
             };
         }
 
-        let cursor_shape = if cursor.point.line.0 >= 0 {
+        let cursor_row = cursor.point.line.0 + display_offset;
+        let cursor_shape = if cursor_row >= 0 && (cursor_row as usize) < rows {
             match cursor.shape {
                 AnsiCursorShape::Block => CursorShape::Block,
                 AnsiCursorShape::Underline => CursorShape::Underline,
@@ -192,9 +271,10 @@ impl TerminalSession {
             columns,
             rows,
             cells,
-            cursor_row: cursor.point.line.0.max(0) as usize,
+            cursor_row: cursor_row.max(0) as usize,
             cursor_col: cursor.point.column.0,
             cursor_shape,
+            scroll_offset: content.display_offset,
         }
     }
 }
@@ -276,7 +356,7 @@ impl TerminalManager {
             id,
             TerminalSession {
                 term,
-                notifier,
+                backend: Backend::Local(notifier),
                 columns,
                 rows,
             },
@@ -285,14 +365,60 @@ impl TerminalManager {
         Ok(id)
     }
 
-    /// tears down the session: asks its I/O thread to shut down, which kills
-    /// the underlying shell process.
+    pub fn spawn_remote(
+        &mut self,
+        columns: usize,
+        rows: usize,
+        on_notice: impl Fn(u64, TerminalNotice) + Send + Sync + 'static,
+    ) -> (
+        u64,
+        RemoteTerminalFeed,
+        tokio::sync::mpsc::UnboundedReceiver<RemoteCommand>,
+    ) {
+        let id = self.next_id;
+
+        let event_proxy = EventProxy {
+            id,
+            on_notice: Arc::new(on_notice),
+        };
+        let term_size = TermSize::new(columns, rows);
+        let term = Arc::new(FairMutex::new(Term::new(
+            Config::default(),
+            &term_size,
+            event_proxy.clone(),
+        )));
+
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        self.sessions.insert(
+            id,
+            TerminalSession {
+                term: term.clone(),
+                backend: Backend::Remote(tx),
+                columns,
+                rows,
+            },
+        );
+        self.next_id += 1;
+
+        let feed = RemoteTerminalFeed {
+            term,
+            event_proxy,
+            parser: alacritty_terminal::vte::ansi::Processor::new(),
+        };
+        (id, feed, rx)
+    }
+
+    /// tears down the session: for a local session, asks its I/O thread to
+    /// shut down, which kills the underlying shell process; for a remote
+    /// session, drops the command channel, which ends the caller's forwarding
+    /// task.
     pub fn close(&mut self, id: u64) {
         if let Some(session) = self.sessions.remove(&id) {
-            let _ = session
-                .notifier
-                .0
-                .send(alacritty_terminal::event_loop::Msg::Shutdown);
+            if let Backend::Local(notifier) = session.backend {
+                let _ = notifier
+                    .0
+                    .send(alacritty_terminal::event_loop::Msg::Shutdown);
+            }
         }
     }
 
@@ -321,11 +447,38 @@ impl TerminalManager {
 
         let term_size = TermSize::new(columns, rows);
         session.term.lock().resize(term_size);
-        session.notifier.on_resize(WindowSize {
-            num_lines: rows as u16,
-            num_cols: columns as u16,
-            cell_width,
-            cell_height,
-        });
+
+        match &mut session.backend {
+            Backend::Local(notifier) => {
+                notifier.on_resize(WindowSize {
+                    num_lines: rows as u16,
+                    num_cols: columns as u16,
+                    cell_width,
+                    cell_height,
+                });
+            }
+            Backend::Remote(sender) => {
+                let _ = sender.send(RemoteCommand::Resize(columns, rows));
+            }
+        }
+    }
+}
+
+/// feeds bytes read from a remote transport into the shared `Term`, exactly
+/// as Alacritty's own local event loop feeds bytes read from a PTY. Owned
+/// exclusively by whatever task is reading from that transport.
+pub struct RemoteTerminalFeed {
+    term: Arc<FairMutex<Term<EventProxy>>>,
+    event_proxy: EventProxy,
+    parser: alacritty_terminal::vte::ansi::Processor,
+}
+
+impl RemoteTerminalFeed {
+    pub fn feed(&mut self, bytes: &[u8]) {
+        {
+            let mut term = self.term.lock();
+            self.parser.advance(&mut *term, bytes);
+        }
+        self.event_proxy.send_event(Event::Wakeup);
     }
 }

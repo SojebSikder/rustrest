@@ -1,0 +1,13 @@
+[package]
+name = "rustrest-ssh"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "rustrest_ssh"
+
+[dependencies]
+russh = { version = "0.63.3", default-features = false, features = ["ring", "flate2", "rsa"] }
+thiserror = "2.0.20"
+tokio = { version = "1", features = ["rt", "net", "sync", "macros", "io-util", "time"] }
+base64 = "0.22"
