@@ -4,6 +4,7 @@ use iced::{Alignment, Border, Color, Length};
 use std::time::{Duration, Instant};
 
 pub const TOAST_DURATION: Duration = Duration::from_secs(4);
+pub const TOAST_DURATION_LONG: Duration = Duration::from_secs(15);
 
 /// Shows a toast and returns the `Task` that dismisses it once its duration elapses.
 pub fn show_and_schedule(

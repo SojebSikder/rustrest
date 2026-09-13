@@ -2829,7 +2829,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 &mut app.toast_manager,
                 msg,
                 ToastStatus::Info,
-                crate::ui::toast::toast::TOAST_DURATION,
+                crate::ui::toast::toast::TOAST_DURATION_LONG,
                 "Update",
             );
 
