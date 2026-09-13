@@ -9,6 +9,9 @@ mod palette;
 
 use alacritty_terminal::event::{Event, EventListener, Notify, OnResize, WindowSize};
 use alacritty_terminal::event_loop::{EventLoop, Notifier};
+use alacritty_terminal::grid::Scroll;
+use alacritty_terminal::index::{Column, Line, Point, Side};
+use alacritty_terminal::selection::{Selection, SelectionType};
 use alacritty_terminal::sync::FairMutex;
 use alacritty_terminal::term::cell::Flags as CellFlags;
 use alacritty_terminal::term::test::TermSize;
@@ -50,6 +53,7 @@ pub struct TerminalCell {
     pub fg: Rgb,
     pub bg: Rgb,
     pub style: CellStyle,
+    pub selected: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -72,6 +76,9 @@ pub struct TerminalGrid {
     pub cursor_row: usize,
     pub cursor_col: usize,
     pub cursor_shape: CursorShape,
+    /// how many lines back into scrollback history the view is currently
+    /// scrolled; `0` means pinned to the live bottom of the buffer.
+    pub scroll_offset: usize,
 }
 
 /// what a terminal session wants the host UI to do in response to backend activity.
@@ -137,6 +144,50 @@ impl TerminalSession {
         }
     }
 
+    /// scrolls the view by `lines`; positive scrolls back into history,
+    /// negative scrolls forward towards the live bottom.
+    pub fn scroll(&self, lines: i32) {
+        self.term.lock().scroll_display(Scroll::Delta(lines));
+    }
+
+    pub fn scroll_to_bottom(&self) {
+        self.term.lock().scroll_display(Scroll::Bottom);
+    }
+
+    /// starts a fresh left-to-right text selection anchored at the given
+    /// view-relative cell.
+    pub fn start_selection(&self, row: usize, col: usize) {
+        let mut term = self.term.lock();
+        let point = self.view_point(&term, row, col);
+        term.selection = Some(Selection::new(SelectionType::Simple, point, Side::Left));
+    }
+
+    /// extends the in-progress selection to the given view-relative cell.
+    pub fn update_selection(&self, row: usize, col: usize) {
+        let mut term = self.term.lock();
+        let point = self.view_point(&term, row, col);
+        if let Some(selection) = term.selection.as_mut() {
+            selection.update(point, Side::Right);
+        }
+    }
+
+    pub fn clear_selection(&self) {
+        self.term.lock().selection = None;
+    }
+
+    /// the current selection's text, if any (trailing whitespace per line
+    /// stripped, as most terminals do when copying).
+    pub fn selection_text(&self) -> Option<String> {
+        self.term.lock().selection_to_string()
+    }
+
+    fn view_point(&self, term: &Term<EventProxy>, row: usize, col: usize) -> Point {
+        let display_offset = term.grid().display_offset() as i32;
+        let line = row as i32 - display_offset;
+        let col = col.min(self.columns.saturating_sub(1));
+        Point::new(Line(line), Column(col))
+    }
+
     pub fn size(&self) -> (usize, usize) {
         (self.columns, self.rows)
     }
@@ -154,14 +205,20 @@ impl TerminalSession {
                 fg: DEFAULT_FG,
                 bg: DEFAULT_BG,
                 style: CellStyle::default(),
+                selected: false,
             };
             columns * rows
         ];
 
         let colors = content.colors;
         let cursor = content.cursor;
+        // `display_iter`/the cursor report positions in grid-absolute
+        // coordinates, which go negative once scrolled into history; shift by
+        // the display offset to land back in view-relative `0..rows`.
+        let display_offset = content.display_offset as i32;
+        let selection = content.selection;
         for indexed in content.display_iter {
-            let row = indexed.point.line.0;
+            let row = indexed.point.line.0 + display_offset;
             let col = indexed.point.column.0;
             if row < 0 || row as usize >= rows || col >= columns {
                 continue;
@@ -193,10 +250,12 @@ impl TerminalSession {
                     underline: indexed.cell.flags.intersects(CellFlags::ALL_UNDERLINES),
                     strikeout: indexed.cell.flags.contains(CellFlags::STRIKEOUT),
                 },
+                selected: selection.is_some_and(|s| s.contains(indexed.point)),
             };
         }
 
-        let cursor_shape = if cursor.point.line.0 >= 0 {
+        let cursor_row = cursor.point.line.0 + display_offset;
+        let cursor_shape = if cursor_row >= 0 && (cursor_row as usize) < rows {
             match cursor.shape {
                 AnsiCursorShape::Block => CursorShape::Block,
                 AnsiCursorShape::Underline => CursorShape::Underline,
@@ -212,9 +271,10 @@ impl TerminalSession {
             columns,
             rows,
             cells,
-            cursor_row: cursor.point.line.0.max(0) as usize,
+            cursor_row: cursor_row.max(0) as usize,
             cursor_col: cursor.point.column.0,
             cursor_shape,
+            scroll_offset: content.display_offset,
         }
     }
 }

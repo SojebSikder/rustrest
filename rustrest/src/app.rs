@@ -1472,6 +1472,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
 
         Message::TerminalInput(id, bytes) => {
             if let Some(session) = app.terminal_manager.get(id) {
+                session.scroll_to_bottom();
                 session.write(bytes);
             }
             Task::none()
