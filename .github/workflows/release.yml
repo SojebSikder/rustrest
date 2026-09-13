@@ -277,6 +277,13 @@ jobs:
           echo "$ANNOUNCEMENT_BODY" > $RUNNER_TEMP/notes.txt
 
           gh release create "${{ needs.plan.outputs.tag }}" --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --title "$ANNOUNCEMENT_TITLE" --notes-file "$RUNNER_TEMP/notes.txt" --generate-notes artifacts/*
+      - name: "Rename 'What's Changed' to 'Changelog'"
+        env:
+          RELEASE_TAG: "${{ needs.plan.outputs.tag }}"
+        run: |
+          gh release view "$RELEASE_TAG" --json body -q .body \
+            | sed "s/What's Changed/Changelog/" > "$RUNNER_TEMP/notes-updated.txt"
+          gh release edit "$RELEASE_TAG" --notes-file "$RUNNER_TEMP/notes-updated.txt"
 
   announce:
     needs:
