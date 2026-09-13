@@ -75,24 +75,42 @@ pub struct RemoteExplorerState {
     pub error: Option<String>,
 }
 
-/// the "Remote" section in sidebar
-pub fn render_remote_section(app: &Rustrest) -> Element<'_, Message> {
-    let header = text("REMOTE (SSH)")
-        .size(11)
-        .font(Font {
+pub fn view_remote_config_window(app: &Rustrest) -> Element<'_, Message> {
+    let title = text("Remote Development over SSH").size(18).font(Font {
+        weight: iced::font::Weight::Bold,
+        ..Font::DEFAULT
+    });
+    let description = text(
+        "Manage saved SSH hosts here. Connect, open a terminal, or browse \
+         remote files.",
+    )
+    .size(12)
+    .style(|_theme: &iced::Theme| text::Style {
+        color: Some(Color::from_rgb(0.55, 0.55, 0.6)),
+    });
+
+    let section_header = |label: &'static str| {
+        text(label).size(13).font(Font {
             weight: iced::font::Weight::Bold,
             ..Font::DEFAULT
         })
-        .color(Color::from_rgb(0.55, 0.55, 0.6));
+    };
 
-    let mut list = column![].spacing(6);
+    let mut saved_hosts = column![].spacing(6);
+    if app.remote_profiles.is_empty() {
+        saved_hosts = saved_hosts.push(text("No saved hosts yet.").size(12).style(
+            |_theme: &iced::Theme| text::Style {
+                color: Some(Color::from_rgb(0.55, 0.55, 0.6)),
+            },
+        ));
+    }
     for profile in &app.remote_profiles {
         let connected = app.remote_sessions.contains_key(&profile.id);
 
         let mut row_el = row![
             text(format!(
-                "{}@{}:{}",
-                profile.username, profile.host, profile.port
+                "{} ({}@{}:{})",
+                profile.name, profile.username, profile.host, profile.port
             ))
             .size(12)
         ]
@@ -131,9 +149,9 @@ pub fn render_remote_section(app: &Rustrest) -> Element<'_, Message> {
         }
 
         row_el = row_el.push(
-            button(text("✕").size(11))
+            button(text("Delete").size(11))
                 .on_press(Message::RemoteDeleteProfilePressed(profile.id))
-                .padding([3, 6])
+                .padding([3, 8])
                 .style(button::text),
         );
 
@@ -147,66 +165,7 @@ pub fn render_remote_section(app: &Rustrest) -> Element<'_, Message> {
             }
         }
 
-        list = list.push(item);
-    }
-
-    let configure_row = row![
-        Space::new().width(Length::Fill),
-        button(text("Configure SSH hosts...").size(11))
-            .on_press(Message::OpenRemoteConfigWindow)
-            .padding([3, 8])
-            .style(button::secondary),
-    ];
-
-    column![header, list, configure_row].spacing(8).into()
-}
-
-pub fn view_remote_config_window(app: &Rustrest) -> Element<'_, Message> {
-    let title = text("Remote Development over SSH").size(18).font(Font {
-        weight: iced::font::Weight::Bold,
-        ..Font::DEFAULT
-    });
-    let description = text(
-        "Manage saved SSH hosts here. Connect, open a terminal, or browse \
-         files from the Remote (SSH) section of the sidebar in the main window.",
-    )
-    .size(12)
-    .style(|_theme: &iced::Theme| text::Style {
-        color: Some(Color::from_rgb(0.55, 0.55, 0.6)),
-    });
-
-    let section_header = |label: &'static str| {
-        text(label).size(13).font(Font {
-            weight: iced::font::Weight::Bold,
-            ..Font::DEFAULT
-        })
-    };
-
-    let mut saved_hosts = column![].spacing(6);
-    if app.remote_profiles.is_empty() {
-        saved_hosts = saved_hosts.push(text("No saved hosts yet.").size(12).style(
-            |_theme: &iced::Theme| text::Style {
-                color: Some(Color::from_rgb(0.55, 0.55, 0.6)),
-            },
-        ));
-    }
-    for profile in &app.remote_profiles {
-        saved_hosts = saved_hosts.push(
-            row![
-                text(format!(
-                    "{} ({}@{}:{})",
-                    profile.name, profile.username, profile.host, profile.port
-                ))
-                .size(12),
-                Space::new().width(Length::Fill),
-                button(text("Delete").size(11))
-                    .on_press(Message::RemoteDeleteProfilePressed(profile.id))
-                    .padding([3, 8])
-                    .style(button::danger),
-            ]
-            .spacing(6)
-            .align_y(Alignment::Center),
-        );
+        saved_hosts = saved_hosts.push(item);
     }
 
     let form = &app.remote_profile_form;

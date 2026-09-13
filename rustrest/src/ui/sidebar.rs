@@ -106,8 +106,6 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
         }
     }
 
-    sidebar_contents = sidebar_contents.push(super::remote::render_remote_section(app));
-
     container(scrollable(sidebar_contents))
         .width(Length::Fixed(app.sidebar_width))
         .height(Length::Fill)

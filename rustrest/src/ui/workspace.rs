@@ -1,3 +1,4 @@
+use crate::APP_NAME;
 use crate::app::{Rustrest, WorkspaceContent};
 use crate::http_client::HttpMethod;
 use crate::message::{Message, ResizeKind};
@@ -18,7 +19,7 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
 
     if app.tabs.is_empty() {
         let empty_state = column![
-            iced::widget::text("No requests open").size(20),
+            iced::widget::text(format!("Welcome to {}", APP_NAME)).size(25),
             iced::widget::text("Create a new request or collection to get started.").size(13),
             row![
                 button("New Request")
@@ -43,7 +44,7 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .align_x(Alignment::Center)
-                .align_y(Alignment::Center),
+                .align_y(Alignment::Start),
         ]
         .spacing(15)
         .height(Length::Fill)
