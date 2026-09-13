@@ -66,8 +66,10 @@ fn title(app: &Rustrest, window_id: window::Id) -> String {
 
 pub fn subscription(app: &Rustrest) -> Subscription<Message> {
     let context_menu_sub = if app.active_context_menu.is_some() {
-        event::listen_with(|event, _status, _window| match event {
-            Event::Mouse(iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left)) => {
+        event::listen_with(|event, status, _window| match event {
+            Event::Mouse(iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left))
+                if status == iced::event::Status::Ignored =>
+            {
                 Some(Message::CloseContextMenu)
             }
             _ => None,
@@ -77,8 +79,13 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
     };
 
     let menu_bar_sub = if app.menu_state.open_index.is_some() {
-        event::listen_with(|event, _status, _window| match event {
-            Event::Mouse(iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left)) => {
+        event::listen_with(|event, status, _window| match event {
+            // Only treat this as an "outside" click if no widget (e.g. a menu
+            // header button switching to a different menu) already handled it;
+            // otherwise this stray Close would race and clobber a same-click Toggle.
+            Event::Mouse(iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left))
+                if status == iced::event::Status::Ignored =>
+            {
                 Some(Message::MenuInteraction(DropdownMessage::Close))
             }
             _ => None,
