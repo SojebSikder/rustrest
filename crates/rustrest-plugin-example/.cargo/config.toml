@@ -1,0 +1,5 @@
+[target.wasm32-unknown-unknown]
+# host functions (e.g. `host_log`) are undefined symbols at compile time -
+# they're resolved as wasm imports by the host (`rustrest-plugin-host`) at
+# instantiation time, not by the linker.
+rustflags = ["-C", "link-arg=--import-undefined"]

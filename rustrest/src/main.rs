@@ -23,6 +23,7 @@ use crate::ui::menu::menu::{
     DropdownItem, DropdownMessage, MenuGroup, render_menu_bar, render_menu_overlay,
 };
 use crate::ui::menu::menu_message::MenuMessage;
+use crate::ui::plugin_manager::view_plugin_manager;
 use crate::ui::remote::{view_remote_config_window, view_remote_connect_modal};
 use crate::ui::resize_handle::{DividerOrientation, resize_handle};
 use crate::ui::save_request_model::save_request_model::view_save_request_modal;
@@ -257,6 +258,19 @@ fn view(app: &Rustrest, window_id: window::Id) -> Element<'_, Message> {
                     .with_shortcut("Ctrl+Shift+P"),
             ],
         ),
+        {
+            let mut items = vec![DropdownItem::new(
+                "Manage Plugins...",
+                MenuMessage::OpenPluginManager,
+            )];
+            for (plugin_id, item) in app.plugin_manager.menu_items() {
+                items.push(DropdownItem::new(
+                    item.label,
+                    MenuMessage::Plugin(plugin_id, item.command_id),
+                ));
+            }
+            MenuGroup::new("Plugins", items)
+        },
         MenuGroup::new(
             "Help",
             vec![
@@ -370,6 +384,16 @@ fn view(app: &Rustrest, window_id: window::Id) -> Element<'_, Message> {
         main_interface_stack = main_interface_stack.push(confirm_overlay);
     }
 
+    // manage-plugins modal overlay
+    if app.plugin_manager_open {
+        let plugin_manager_overlay = container(view_plugin_manager(app))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(Alignment::Center)
+            .align_y(Alignment::Center);
+        main_interface_stack = main_interface_stack.push(plugin_manager_overlay);
+    }
+
     // remote-connect (password/passphrase) modal overlay
     if let Some(pending) = app.remote_connect_pending.as_ref() {
         let remote_connect_overlay = container(view_remote_connect_modal(pending))
@@ -395,7 +419,7 @@ fn view(app: &Rustrest, window_id: window::Id) -> Element<'_, Message> {
 
     // command palette overlay (Ctrl+Shift+P)
     if let Some(palette_state) = app.command_palette.as_ref() {
-        let palette_overlay = container(view_command_palette(palette_state))
+        let palette_overlay = container(view_command_palette(app, palette_state))
             .width(Length::Fill)
             .height(Length::Fill)
             .align_x(Alignment::Center)

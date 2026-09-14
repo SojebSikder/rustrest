@@ -1,0 +1,53 @@
+use crate::hooks::{RequestContext, ResponseContext};
+use crate::manifest::PluginManifest;
+use crate::ui::{UiEvent, UiNode};
+
+/// Implemented by a plugin's single entry-point type. Every method has a
+/// no-op default so a plugin only needs to override the capabilities it
+/// declared in `manifest()`; the host only ever calls the methods matching a
+/// declared `Capability`.
+pub trait Plugin: Default + Send + 'static {
+    fn manifest(&self) -> PluginManifest;
+
+    fn on_pre_request(&mut self, ctx: RequestContext) -> RequestContext {
+        ctx
+    }
+
+    fn on_post_response(&mut self, ctx: ResponseContext) -> ResponseContext {
+        ctx
+    }
+
+    /// `command_id` is one of the ids this plugin declared via
+    /// `Capability::Commands`/`Capability::MenuItems`. The returned string, if
+    /// any, is shown to the user as a toast.
+    fn on_command(&mut self, _command_id: &str) -> Result<Option<String>, String> {
+        Ok(None)
+    }
+
+    /// `panel_id` is one this plugin declared via `Capability::SidebarPanel`.
+    fn render_panel(&mut self, _panel_id: &str) -> UiNode {
+        UiNode::Column(Vec::new())
+    }
+
+    /// Returns the updated panel tree if the interaction changed anything,
+    /// or `None` to leave the currently rendered tree as-is.
+    fn on_panel_event(&mut self, _panel_id: &str, _event: UiEvent) -> Option<UiNode> {
+        None
+    }
+
+    /// `format_id` is one this plugin declared via `Capability::ImportFormat`.
+    /// Returns Rustrest's own collection JSON model on success.
+    fn import(&mut self, _format_id: &str, _bytes: Vec<u8>) -> Result<serde_json::Value, String> {
+        Err("import not supported by this plugin".to_string())
+    }
+
+    /// `format_id` is one this plugin declared via `Capability::ExportFormat`.
+    /// `collection` is Rustrest's own collection JSON model.
+    fn export(
+        &mut self,
+        _format_id: &str,
+        _collection: serde_json::Value,
+    ) -> Result<Vec<u8>, String> {
+        Err("export not supported by this plugin".to_string())
+    }
+}

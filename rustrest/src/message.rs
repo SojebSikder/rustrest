@@ -402,6 +402,18 @@ pub enum Message {
     OpenRemoteConfigWindow,
     WindowCloseRequested(iced::window::Id),
 
+    // native plugins (wasm)
+    /// plugin_id, command_id - dispatched from the command palette or menu.
+    PluginCommand(String, String),
+    /// plugin_id, panel_id, event - a widget interaction inside an open
+    /// plugin panel tab.
+    PluginPanelEvent(String, String, rustrest_plugin_host::UiEvent),
+    /// opens (or focuses) a tab for the given plugin's sidebar panel.
+    OpenPluginPanel(String, String),
+    OpenPluginManagerPressed,
+    ClosePluginManagerPressed,
+    TogglePluginEnabled(String, bool),
+
     AppExit,
     None,
 }

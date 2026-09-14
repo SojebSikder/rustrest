@@ -58,6 +58,12 @@ pub enum WorkspaceContent {
         contents: iced::widget::text_editor::Content,
         dirty: bool,
     },
+    /// a sidebar panel contributed by a plugin, identified by the plugin's
+    /// id and the panel id it declared via `Capability::SidebarPanel`.
+    Plugin {
+        plugin_id: String,
+        panel_id: String,
+    },
 }
 
 pub struct TabState {
@@ -175,6 +181,14 @@ pub struct Rustrest {
 
     // command palette (Ctrl+Shift+P)
     pub command_palette: Option<rustrest_command_palette::PaletteState>,
+
+    // native plugins (wasm, via rustrest-plugin-host)
+    pub plugin_manager: rustrest_plugin_host::PluginManager,
+    /// last-rendered declarative UI tree for each open plugin panel,
+    /// keyed by (plugin_id, panel_id); refreshed on open and after each event.
+    pub plugin_panel_state:
+        std::collections::HashMap<(String, String), rustrest_plugin_host::UiNode>,
+    pub plugin_manager_open: bool,
 }
 
 impl Rustrest {
@@ -203,6 +217,9 @@ impl Rustrest {
                 // remote file tabs are tied to a live RemoteSession, which
                 // also doesn't survive a restart.
                 WorkspaceContent::RemoteFile { .. } => None,
+                // plugin panels are re-derived from the plugin on demand;
+                // nothing to persist.
+                WorkspaceContent::Plugin { .. } => None,
             })
             .collect();
 
@@ -332,6 +349,7 @@ impl Rustrest {
                 WorkspaceContent::CollectionRoot { collection_id, .. } => *collection_id == col_id,
                 WorkspaceContent::Terminal { .. } => false,
                 WorkspaceContent::RemoteFile { .. } => false,
+                WorkspaceContent::Plugin { .. } => false,
             };
             if belongs {
                 self.sync_tab_to_collection(idx);
@@ -380,6 +398,7 @@ impl Rustrest {
                 }
                 WorkspaceContent::Terminal { .. } => {}
                 WorkspaceContent::RemoteFile { .. } => {}
+                WorkspaceContent::Plugin { .. } => {}
             }
         }
     }
@@ -506,7 +525,28 @@ pub fn init() -> (Rustrest, Task<Message>) {
         main_window_id,
         remote_config_window_id: None,
         command_palette: None,
+        plugin_manager: rustrest_plugin_host::PluginManager::new().unwrap_or_else(|e| {
+            eprintln!("plugin manager unavailable: {e}");
+            rustrest_plugin_host::PluginManager::with_dirs(
+                std::env::temp_dir().join("rustrest-plugins-fallback"),
+                std::env::temp_dir().join("rustrest-plugins-fallback.json"),
+            )
+            .expect("PluginManager::with_dirs with a temp-dir fallback never fails")
+        }),
+        plugin_panel_state: std::collections::HashMap::new(),
+        plugin_manager_open: false,
     };
+    app.plugin_manager.load_all();
+    let plugin_load_errors: Vec<String> = app
+        .plugin_manager
+        .installed()
+        .iter()
+        .filter_map(|p| {
+            p.load_error
+                .as_ref()
+                .map(|e| format!("Plugin '{}' failed to load: {e}", p.dir_name))
+        })
+        .collect();
 
     let load_errors = if let Some(manifest) = crate::workspace::load() {
         app.workspaces = manifest.workspaces;
@@ -570,10 +610,17 @@ pub fn init() -> (Rustrest, Task<Message>) {
     // silently check for updates on startup; surfaces a toast only if one is found
     let update_check_task = Task::done(Message::CheckForUpdateSilently);
 
+    let plugin_errors_task = Task::batch(
+        plugin_load_errors
+            .into_iter()
+            .map(|err| Task::done(Message::ShowToast(err, ToastStatus::Error))),
+    );
+
     let startup_task = Task::batch([
         open_main_window.map(|_id| Message::None),
         load_errors_task,
         update_check_task,
+        plugin_errors_task,
         auto_connect_remote_collections(&app),
     ]);
 
@@ -762,6 +809,13 @@ fn persist_collection_if_known_location(
     Task::done(Message::ShowToast(success_msg, ToastStatus::Success))
 }
 
+/// forwards any pending `host_log()` lines from plugins into the app's
+/// existing console panel, so plugin activity shows up alongside request
+/// logs without a separate UI surface.
+fn drain_plugin_logs(app: &mut Rustrest) {
+    app.console_logs.extend(app.plugin_manager.drain_logs());
+}
+
 fn finalize_tab_rename(app: &mut Rustrest, idx: usize) {
     if let Some(tab_state) = app.tabs.get_mut(idx) {
         tab_state.is_editing_name = false;
@@ -773,6 +827,7 @@ fn finalize_tab_rename(app: &mut Rustrest, idx: usize) {
                 } => collection_name.clone(),
                 WorkspaceContent::Terminal { .. } => "Terminal".to_string(),
                 WorkspaceContent::RemoteFile { path, .. } => path.clone(),
+                WorkspaceContent::Plugin { panel_id, .. } => panel_id.clone(),
             };
         }
     }
@@ -996,6 +1051,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     }
                     WorkspaceContent::Terminal { .. } => false,
                     WorkspaceContent::RemoteFile { .. } => false,
+                    WorkspaceContent::Plugin { .. } => false,
                 };
                 if belongs {
                     tab_state.tab.dirty = false;
@@ -1040,6 +1096,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                                 }
                                 WorkspaceContent::Terminal { .. } => false,
                                 WorkspaceContent::RemoteFile { .. } => false,
+                                WorkspaceContent::Plugin { .. } => false,
                             };
                             if belongs {
                                 tab_state.tab.dirty = false;
@@ -1840,6 +1897,23 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     }
                 }
 
+                // native plugin request hooks run after the per-request JS
+                // script, as an app-wide policy layer (e.g. injecting an
+                // auth header for every request). method changes aren't
+                // applied back in v1 - only url/headers/body/variables are.
+                let plugin_ctx = rustrest_plugin_host::RequestContext {
+                    method: tab.method.to_string(),
+                    url: final_url,
+                    headers: filtered_headers,
+                    body: compiled_body,
+                    variables: script_vars.clone(),
+                };
+                let plugin_ctx = app.plugin_manager.run_pre_request_hooks(plugin_ctx);
+                app.console_logs.extend(app.plugin_manager.drain_logs());
+                let final_url = plugin_ctx.url;
+                let filtered_headers = plugin_ctx.headers;
+                let compiled_body = plugin_ctx.body;
+
                 let spec = crate::http_client::RequestSpec::new(final_url, tab.method.clone())
                     .body_type(tab.body_type)
                     .raw_body(compiled_body)
@@ -1969,6 +2043,63 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                             }
                         }
                     }
+                }
+
+                // native plugin response hooks run after the per-request JS
+                // test script, same app-wide-policy ordering as the
+                // pre-request side. response status/headers/body are
+                // read-only here (mirroring `pm.response` in JS scripts);
+                // only variables and additional test results are applied back.
+                if let Ok(resp) = &res {
+                    let plugin_vars: std::collections::HashMap<String, String> = app
+                        .active_env_index
+                        .and_then(|idx| app.environments.get(idx))
+                        .map(|e| {
+                            e.variables
+                                .iter()
+                                .filter(|v| v.is_active)
+                                .map(|v| (v.key.clone(), v.value.clone()))
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    let plugin_vars_snapshot = plugin_vars.clone();
+
+                    let plugin_ctx = rustrest_plugin_host::ResponseContext {
+                        status: resp.status,
+                        headers: resp.headers.clone(),
+                        body: resp.body.clone(),
+                        variables: plugin_vars,
+                        test_results: Vec::new(),
+                    };
+                    let plugin_ctx = app.plugin_manager.run_post_response_hooks(plugin_ctx);
+                    app.console_logs.extend(app.plugin_manager.drain_logs());
+
+                    if let Some(idx) = app.active_env_index {
+                        if let Some(env) = app.environments.get_mut(idx) {
+                            for (k, v) in plugin_ctx.variables {
+                                if plugin_vars_snapshot.get(&k) == Some(&v) {
+                                    continue;
+                                }
+                                if let Some(existing) =
+                                    env.variables.iter_mut().find(|kv| kv.key == k)
+                                {
+                                    existing.value = v;
+                                    existing.is_active = true;
+                                } else {
+                                    let mut kv = KeyValuePair::new(&k, &v);
+                                    kv.is_active = true;
+                                    env.variables.push(kv);
+                                }
+                            }
+                        }
+                    }
+
+                    test_results.extend(plugin_ctx.test_results.into_iter().map(|t| {
+                        crate::http_client::TestResult {
+                            name: t.name,
+                            passed: t.passed,
+                        }
+                    }));
                 }
 
                 let mut res = res;
@@ -2867,6 +2998,12 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                         let version_info = format!("{} v{}", APP_NAME, APP_VERSION);
                         return update(app, Message::ShowToast(version_info, ToastStatus::Info));
                     }
+                    MenuMessage::OpenPluginManager => {
+                        return update(app, Message::OpenPluginManagerPressed);
+                    }
+                    MenuMessage::Plugin(plugin_id, command_id) => {
+                        return update(app, Message::PluginCommand(plugin_id, command_id));
+                    }
                 }
             }
             Task::none()
@@ -3026,6 +3163,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                         let tab_id = tab_state.tab.id;
                         update(app, Message::RemoteFileSavePressed(tab_id))
                     }
+                    WorkspaceContent::Plugin { .. } => Task::none(),
                 }
             } else {
                 Task::none()
@@ -3716,9 +3854,10 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             Task::none()
         }
         Message::CommandPaletteMoveSelection(delta) => {
-            if let Some(state) = app.command_palette.as_mut() {
-                let len = crate::ui::command_palette::matches_for(state).len();
+            if let Some(mut state) = app.command_palette.take() {
+                let len = crate::ui::command_palette::matches_for(app, &state).len();
                 state.move_selection(delta, len);
+                app.command_palette = Some(state);
             }
             Task::none()
         }
@@ -3726,9 +3865,12 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             let Some(state) = app.command_palette.take() else {
                 return Task::none();
             };
-            let matches = crate::ui::command_palette::matches_for(&state);
+            let matches = crate::ui::command_palette::matches_for(app, &state);
             match matches.get(state.selected) {
-                Some(cmd) => update(app, crate::ui::command_palette::to_message(cmd.action)),
+                Some(cmd) => {
+                    let action = cmd.action.clone();
+                    update(app, crate::ui::command_palette::to_message(action))
+                }
                 None => Task::none(),
             }
         }
@@ -3739,6 +3881,93 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         Message::CommandPaletteItemClicked(action) => {
             app.command_palette = None;
             update(app, crate::ui::command_palette::to_message(action))
+        }
+
+        // native plugins (wasm)
+        Message::OpenPluginManagerPressed => {
+            app.plugin_manager_open = true;
+            Task::none()
+        }
+        Message::ClosePluginManagerPressed => {
+            app.plugin_manager_open = false;
+            Task::none()
+        }
+        Message::TogglePluginEnabled(plugin_id, enabled) => {
+            app.plugin_manager.set_enabled(&plugin_id, enabled);
+            Task::none()
+        }
+        Message::PluginCommand(plugin_id, command_id) => {
+            let task = match app.plugin_manager.run_command(&plugin_id, &command_id) {
+                Ok(Some(msg)) => Task::done(Message::ShowToast(msg, ToastStatus::Info)),
+                Ok(None) => Task::none(),
+                Err(e) => Task::done(Message::ShowToast(
+                    format!("Plugin command failed: {e}"),
+                    ToastStatus::Error,
+                )),
+            };
+            drain_plugin_logs(app);
+            task
+        }
+        Message::OpenPluginPanel(plugin_id, panel_id) => {
+            let existing = app.tabs.iter().position(|t| {
+                matches!(
+                    &t.content,
+                    WorkspaceContent::Plugin { plugin_id: p, panel_id: pa }
+                        if *p == plugin_id && *pa == panel_id
+                )
+            });
+            if let Some(idx) = existing {
+                app.active_tab_index = idx;
+                return Task::none();
+            }
+
+            match app.plugin_manager.render_panel(&plugin_id, &panel_id) {
+                Ok(tree) => {
+                    let title = app
+                        .plugin_manager
+                        .sidebar_panels()
+                        .into_iter()
+                        .find(|(pid, panel)| *pid == plugin_id && panel.id == panel_id)
+                        .map(|(_, panel)| panel.title)
+                        .unwrap_or_else(|| panel_id.clone());
+
+                    app.plugin_panel_state
+                        .insert((plugin_id.clone(), panel_id.clone()), tree);
+
+                    let mut tab = Tab::new(app.next_tab_id);
+                    tab.name = title;
+                    app.next_tab_id += 1;
+                    app.tabs.push(TabState {
+                        tab,
+                        content: WorkspaceContent::Plugin {
+                            plugin_id,
+                            panel_id,
+                        },
+                        is_editing_name: false,
+                    });
+                    app.active_tab_index = app.tabs.len() - 1;
+                    Task::none()
+                }
+                Err(e) => Task::done(Message::ShowToast(
+                    format!("Failed to open plugin panel: {e}"),
+                    ToastStatus::Error,
+                )),
+            }
+        }
+        Message::PluginPanelEvent(plugin_id, panel_id, event) => {
+            let task = match app.plugin_manager.panel_event(&plugin_id, &panel_id, event) {
+                Ok(Some(tree)) => {
+                    app.plugin_panel_state.insert((plugin_id, panel_id), tree);
+                    Task::none()
+                }
+                Ok(None) => Task::none(),
+                Err(e) => Task::done(Message::ShowToast(
+                    format!("Plugin panel action failed: {e}"),
+                    ToastStatus::Error,
+                )),
+            };
+            drain_plugin_logs(app);
+            task
         }
 
         Message::DismissToast(id) => {

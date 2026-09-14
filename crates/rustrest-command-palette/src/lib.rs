@@ -5,28 +5,28 @@
 //! rendering the palette as a widget (styling, layout, focus handling) is
 //! left to the consuming application
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Command<T> {
     /// stable identifier, useful for tests and for widget keys.
-    pub id: &'static str,
-    pub title: &'static str,
+    pub id: String,
+    pub title: String,
     /// short hint shown alongside the title (e.g. a keybinding or description).
-    pub subtitle: Option<&'static str>,
+    pub subtitle: Option<String>,
     pub action: T,
 }
 
 impl<T> Command<T> {
-    pub fn new(id: &'static str, title: &'static str, action: T) -> Self {
+    pub fn new(id: impl Into<String>, title: impl Into<String>, action: T) -> Self {
         Self {
-            id,
-            title,
+            id: id.into(),
+            title: title.into(),
             subtitle: None,
             action,
         }
     }
 
-    pub fn with_subtitle(mut self, subtitle: &'static str) -> Self {
-        self.subtitle = Some(subtitle);
+    pub fn with_subtitle(mut self, subtitle: impl Into<String>) -> Self {
+        self.subtitle = Some(subtitle.into());
         self
     }
 }
@@ -69,7 +69,7 @@ pub fn filter<'a, T>(commands: &'a [Command<T>], query: &str) -> Vec<&'a Command
     let mut scored: Vec<(i32, usize, &Command<T>)> = commands
         .iter()
         .enumerate()
-        .filter_map(|(idx, cmd)| score(cmd.title, &query).map(|s| (s, idx, cmd)))
+        .filter_map(|(idx, cmd)| score(&cmd.title, &query).map(|s| (s, idx, cmd)))
         .collect();
 
     // highest score first; ties keep the original, caller-defined order

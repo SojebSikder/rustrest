@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum MenuMessage {
     FileNew,
     FileOpen,
@@ -7,4 +7,7 @@ pub enum MenuMessage {
     CommandPalette,
     HelpAbout,
     CheckForUpdate,
+    OpenPluginManager,
+    /// plugin_id, command_id.
+    Plugin(String, String),
 }

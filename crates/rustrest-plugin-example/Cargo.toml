@@ -1,0 +1,24 @@
+[workspace]
+# deliberately its own standalone workspace, kept out of the main
+# `rustrest` workspace (see root Cargo.toml) so a normal `cargo build`
+# doesn't require the wasm32-unknown-unknown target.
+
+[package]
+name = "rustrest-plugin-example"
+version = "0.1.0"
+edition = "2024"
+description = "Example native Rustrest plugin: a template for third-party plugin authors"
+publish = false
+
+[lib]
+name = "rustrest_plugin_example"
+crate-type = ["cdylib"]
+
+[dependencies]
+rustrest-plugin-api = { path = "../rustrest-plugin-api" }
+serde_json = "1.0"
+
+[profile.release]
+panic = "abort"
+strip = true
+opt-level = "s"
