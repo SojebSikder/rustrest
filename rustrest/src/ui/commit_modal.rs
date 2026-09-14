@@ -2,10 +2,10 @@ use crate::collection::git_ops::GitFileEntry;
 use crate::message::Message;
 use crate::ui::context_menu::FieldTarget;
 use crate::ui::git_panel::status_badge;
-use crate::ui::modal::card;
+use crate::ui::modal::{card, muted_text_color};
 use crate::ui::multiline_input::multiline_input;
 use iced::widget::{button, column, container, row, scrollable, text, text_editor};
-use iced::{Alignment, Color, Element, Font, Length};
+use iced::{Alignment, Element, Font, Length, Theme};
 
 #[derive(Debug, Clone)]
 pub struct CommitModalState {
@@ -25,7 +25,9 @@ pub fn view_commit_modal(state: &CommitModalState) -> Element<'_, Message> {
 
     let summary = text(format!("{} file(s) changed", state.files.len()))
         .size(12)
-        .color(Color::from_rgb(0.55, 0.55, 0.6));
+        .style(|theme: &Theme| text::Style {
+            color: Some(muted_text_color(theme)),
+        });
 
     let mut file_list = column![].spacing(2);
     for entry in &state.files {
@@ -44,7 +46,9 @@ pub fn view_commit_modal(state: &CommitModalState) -> Element<'_, Message> {
 
     let message_label = text("Commit message")
         .size(13)
-        .color(Color::from_rgb(0.55, 0.55, 0.6));
+        .style(|theme: &Theme| text::Style {
+            color: Some(muted_text_color(theme)),
+        });
     let message_input = multiline_input(
         "e.g. Update login request",
         &state.message,

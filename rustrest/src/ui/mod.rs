@@ -15,6 +15,7 @@ pub mod plugin_panel;
 pub mod remote;
 pub mod resize_handle;
 pub mod save_request_model;
+pub mod settings;
 pub mod sidebar;
 pub mod tab;
 pub mod terminal_view;

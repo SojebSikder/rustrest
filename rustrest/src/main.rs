@@ -1,6 +1,7 @@
 #![windows_subsystem = "windows"]
 
 mod app;
+mod app_settings;
 mod collection;
 mod collection_adapter;
 mod http_client;
@@ -28,6 +29,7 @@ use crate::ui::plugin_manager::view_plugin_manager;
 use crate::ui::remote::{view_remote_config_window, view_remote_connect_modal};
 use crate::ui::resize_handle::{DividerOrientation, resize_handle};
 use crate::ui::save_request_model::save_request_model::view_save_request_modal;
+use crate::ui::settings::view_settings_modal;
 use app::Rustrest;
 use iced::futures::{SinkExt, StreamExt, stream::BoxStream};
 use iced::keyboard::Key;
@@ -57,8 +59,13 @@ pub fn main() -> iced::Result {
     // main window itself since a daemon doesn't open one automatically.
     iced::daemon(app::init, app::update, view)
         .title(title)
+        .theme(theme)
         .subscription(subscription)
         .run()
+}
+
+fn theme(app: &Rustrest, _window_id: window::Id) -> iced::Theme {
+    app.theme.to_iced()
 }
 
 fn title(app: &Rustrest, window_id: window::Id) -> String {
@@ -279,6 +286,10 @@ fn view(app: &Rustrest, window_id: window::Id) -> Element<'_, Message> {
             MenuGroup::new("Plugins", items)
         },
         MenuGroup::new(
+            "Settings",
+            vec![DropdownItem::new("Preferences...", MenuMessage::OpenSettings)],
+        ),
+        MenuGroup::new(
             "Help",
             vec![
                 DropdownItem::new("Check for Updates", MenuMessage::CheckForUpdate),
@@ -399,6 +410,16 @@ fn view(app: &Rustrest, window_id: window::Id) -> Element<'_, Message> {
             .align_x(Alignment::Center)
             .align_y(Alignment::Center);
         main_interface_stack = main_interface_stack.push(plugin_manager_overlay);
+    }
+
+    // settings modal overlay
+    if app.settings_open {
+        let settings_overlay = container(view_settings_modal(app))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(Alignment::Center)
+            .align_y(Alignment::Center);
+        main_interface_stack = main_interface_stack.push(settings_overlay);
     }
 
     // export-via-plugin format picker modal overlay

@@ -427,6 +427,12 @@ pub enum Message {
     ExportViaPluginPressed(usize),
     CloseExportPluginPicker,
 
+    // settings
+    OpenSettingsPressed,
+    CloseSettingsPressed,
+    SettingsTabSelected(crate::ui::settings::SettingsTab),
+    ThemeSelected(crate::ui::settings::AppTheme),
+
     AppExit,
     None,
 }

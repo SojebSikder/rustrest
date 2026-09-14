@@ -4,9 +4,9 @@
 
 use crate::app::Rustrest;
 use crate::message::Message;
-use crate::ui::modal::card;
+use crate::ui::modal::{card, danger_text_color, muted_text_color};
 use iced::widget::{button, checkbox, column, container, row, scrollable, text};
-use iced::{Alignment, Color, Element, Font, Length};
+use iced::{Alignment, Element, Font, Length, Theme};
 
 pub fn view_plugin_manager(app: &Rustrest) -> Element<'_, Message> {
     let title = text("Manage Plugins").size(18).font(Font {
@@ -24,7 +24,9 @@ pub fn view_plugin_manager(app: &Rustrest) -> Element<'_, Message> {
                 app.plugin_manager.plugins_dir().display()
             ))
             .size(12)
-            .color(Color::from_rgb(0.6, 0.6, 0.65)),
+            .style(|theme: &Theme| text::Style {
+                color: Some(muted_text_color(theme)),
+            }),
         );
     }
 
@@ -40,10 +42,14 @@ pub fn view_plugin_manager(app: &Rustrest) -> Element<'_, Message> {
                         }),
                     text(format!("v{}", manifest.version))
                         .size(11)
-                        .color(Color::from_rgb(0.6, 0.6, 0.65)),
+                        .style(|theme: &Theme| text::Style {
+                            color: Some(muted_text_color(theme)),
+                        }),
                     text(format!("by {}", manifest.author))
                         .size(11)
-                        .color(Color::from_rgb(0.6, 0.6, 0.65)),
+                        .style(|theme: &Theme| text::Style {
+                            color: Some(muted_text_color(theme)),
+                        }),
                 ]
                 .spacing(8)
                 .align_y(Alignment::Center);
@@ -52,7 +58,9 @@ pub fn view_plugin_manager(app: &Rustrest) -> Element<'_, Message> {
                     header,
                     text(manifest.description.clone())
                         .size(11)
-                        .color(Color::from_rgb(0.6, 0.6, 0.65)),
+                        .style(|theme: &Theme| text::Style {
+                            color: Some(muted_text_color(theme)),
+                        }),
                 ]
                 .spacing(4)
                 .into()
@@ -60,10 +68,14 @@ pub fn view_plugin_manager(app: &Rustrest) -> Element<'_, Message> {
             None => column![
                 text(format!("{} (failed to load)", plugin.dir_name))
                     .size(13)
-                    .color(Color::from_rgb(0.85, 0.35, 0.35)),
+                    .style(|theme: &Theme| text::Style {
+                        color: Some(danger_text_color(theme)),
+                    }),
                 text(plugin.load_error.clone().unwrap_or_default())
                     .size(11)
-                    .color(Color::from_rgb(0.85, 0.35, 0.35)),
+                    .style(|theme: &Theme| text::Style {
+                        color: Some(danger_text_color(theme)),
+                    }),
             ]
             .spacing(4)
             .into(),

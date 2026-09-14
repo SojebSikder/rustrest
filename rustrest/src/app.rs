@@ -15,6 +15,7 @@ use crate::ui::menu::menu::DropdownMenuState;
 use crate::ui::menu::menu_message::MenuMessage;
 use crate::ui::remote::{PendingRemoteConnect, RemoteAuthKind, join_remote_path};
 use crate::ui::save_request_model::types::SaveRequestModalState;
+use crate::ui::settings::{AppTheme, SettingsTab};
 use crate::ui::tab::types::{KeyValuePair, ResponseSubTab, ResponseView};
 use crate::ui::tab::{Tab, TabMessage};
 use crate::ui::toast::toast::{ToastManager, ToastStatus};
@@ -193,6 +194,11 @@ pub struct Rustrest {
     /// to export a collection through (only shown when more than one
     /// plugin/format is available - a single option is used directly).
     pub export_plugin_picker: Option<(usize, Vec<(String, rustrest_plugin_host::FormatDef)>)>,
+
+    // settings (reusable preferences modal - currently just theme)
+    pub settings_open: bool,
+    pub settings_tab: SettingsTab,
+    pub theme: AppTheme,
 }
 
 impl Rustrest {
@@ -540,6 +546,9 @@ pub fn init() -> (Rustrest, Task<Message>) {
         plugin_panel_state: std::collections::HashMap::new(),
         plugin_manager_open: false,
         export_plugin_picker: None,
+        settings_open: false,
+        settings_tab: SettingsTab::default(),
+        theme: crate::app_settings::load().unwrap_or_default(),
     };
     app.plugin_manager.load_all();
     let plugin_load_errors: Vec<String> = app
@@ -3153,6 +3162,9 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     MenuMessage::OpenPluginManager => {
                         return update(app, Message::OpenPluginManagerPressed);
                     }
+                    MenuMessage::OpenSettings => {
+                        return update(app, Message::OpenSettingsPressed);
+                    }
                     MenuMessage::Plugin(plugin_id, command_id) => {
                         return update(app, Message::PluginCommand(plugin_id, command_id));
                     }
@@ -4050,6 +4062,25 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         }
         Message::ClosePluginManagerPressed => {
             app.plugin_manager_open = false;
+            Task::none()
+        }
+
+        // settings (reusable preferences modal)
+        Message::OpenSettingsPressed => {
+            app.settings_open = true;
+            Task::none()
+        }
+        Message::CloseSettingsPressed => {
+            app.settings_open = false;
+            Task::none()
+        }
+        Message::SettingsTabSelected(tab) => {
+            app.settings_tab = tab;
+            Task::none()
+        }
+        Message::ThemeSelected(theme) => {
+            app.theme = theme;
+            crate::app_settings::save(theme);
             Task::none()
         }
         Message::TogglePluginEnabled(plugin_id, enabled) => {

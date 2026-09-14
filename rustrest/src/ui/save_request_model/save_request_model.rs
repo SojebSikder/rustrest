@@ -1,7 +1,8 @@
 use crate::ui::context_menu::{FieldTarget, with_context_menu};
+use crate::ui::modal::{card, danger_text_color, muted_text_color};
 use crate::{app::Rustrest, message::Message};
 use iced::widget::{button, column, container, pick_list, row, text, text_input};
-use iced::{Border, Color, Element, Font, Length, Shadow, Theme, Vector};
+use iced::{Element, Font, Length, Theme};
 
 pub fn view_save_request_modal(app: &Rustrest) -> Option<Element<'_, Message>> {
     let modal = app.save_request_model.as_ref()?;
@@ -24,7 +25,9 @@ pub fn view_save_request_modal(app: &Rustrest) -> Option<Element<'_, Message>> {
 
     let name_label = text("Request name")
         .size(13)
-        .color(Color::from_rgb(0.55, 0.55, 0.6));
+        .style(|theme: &Theme| text::Style {
+            color: Some(muted_text_color(theme)),
+        });
     let name_input = with_context_menu(
         text_input("e.g. Get user profile", &modal.request_name)
             .on_input(Message::SaveRequestNameChanged)
@@ -36,7 +39,9 @@ pub fn view_save_request_modal(app: &Rustrest) -> Option<Element<'_, Message>> {
 
     let collection_label = text("Save to collection")
         .size(13)
-        .color(Color::from_rgb(0.55, 0.55, 0.6));
+        .style(|theme: &Theme| text::Style {
+            color: Some(muted_text_color(theme)),
+        });
     let collection_picker = pick_list(collection_options, selected_label, |picked_name| {
         let col_id = app
             .collections
@@ -54,7 +59,9 @@ pub fn view_save_request_modal(app: &Rustrest) -> Option<Element<'_, Message>> {
         Some(
             text("You don't have any collections yet. Create one first.")
                 .size(12)
-                .color(Color::from_rgb(0.8, 0.4, 0.3))
+                .style(|theme: &Theme| text::Style {
+                    color: Some(danger_text_color(theme)),
+                })
                 .into(),
         )
     } else {
@@ -94,22 +101,5 @@ pub fn view_save_request_modal(app: &Rustrest) -> Option<Element<'_, Message>> {
             .align_x(iced::alignment::Horizontal::Right),
     );
 
-    let card = container(body.spacing(18).padding(24))
-        .width(Length::Fixed(380.0))
-        .style(|_theme: &Theme| container::Style {
-            background: Some(Color::from_rgb(0.13, 0.13, 0.15).into()),
-            border: Border {
-                color: Color::from_rgb(0.25, 0.25, 0.28),
-                width: 1.0,
-                radius: 10.0.into(),
-            },
-            shadow: Shadow {
-                color: Color::from_rgba(0.0, 0.0, 0.0, 0.4),
-                offset: Vector::new(0.0, 6.0),
-                blur_radius: 24.0,
-            },
-            ..Default::default()
-        });
-
-    Some(card.into())
+    Some(card(body.spacing(18).padding(24), 380.0))
 }

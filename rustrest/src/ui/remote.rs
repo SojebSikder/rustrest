@@ -1,10 +1,10 @@
 use crate::app::Rustrest;
 use crate::message::Message;
-use crate::ui::modal::card;
+use crate::ui::modal::{card, danger_text_color, muted_text_color};
 use iced::widget::{
     Space, button, column, container, pick_list, row, scrollable, text, text_input,
 };
-use iced::{Alignment, Color, Element, Font, Length};
+use iced::{Alignment, Element, Font, Length, Theme};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RemoteAuthKind {
@@ -87,8 +87,8 @@ pub fn view_remote_config_window(app: &Rustrest) -> Element<'_, Message> {
          remote files.",
     )
     .size(12)
-    .style(|_theme: &iced::Theme| text::Style {
-        color: Some(Color::from_rgb(0.55, 0.55, 0.6)),
+    .style(|theme: &Theme| text::Style {
+        color: Some(muted_text_color(theme)),
     });
 
     let section_header = |label: &'static str| {
@@ -101,8 +101,8 @@ pub fn view_remote_config_window(app: &Rustrest) -> Element<'_, Message> {
     let mut saved_hosts = column![].spacing(6);
     if app.remote_profiles.is_empty() {
         saved_hosts = saved_hosts.push(text("No saved hosts yet.").size(12).style(
-            |_theme: &iced::Theme| text::Style {
-                color: Some(Color::from_rgb(0.55, 0.55, 0.6)),
+            |theme: &Theme| text::Style {
+                color: Some(muted_text_color(theme)),
             },
         ));
     }
@@ -225,8 +225,8 @@ pub fn view_remote_config_window(app: &Rustrest) -> Element<'_, Message> {
          isn't already installed on the host.",
     )
     .size(11)
-    .style(|_theme: &iced::Theme| text::Style {
-        color: Some(Color::from_rgb(0.55, 0.55, 0.6)),
+    .style(|theme: &Theme| text::Style {
+        color: Some(muted_text_color(theme)),
     });
 
     let body = column![
@@ -277,7 +277,9 @@ fn render_explorer<'a>(
         body = body.push(
             text(err.clone())
                 .size(11)
-                .color(Color::from_rgb(0.85, 0.35, 0.35)),
+                .style(|theme: &Theme| text::Style {
+                    color: Some(danger_text_color(theme)),
+                }),
         );
     }
 
