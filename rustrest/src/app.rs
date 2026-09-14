@@ -189,6 +189,10 @@ pub struct Rustrest {
     pub plugin_panel_state:
         std::collections::HashMap<(String, String), rustrest_plugin_host::UiNode>,
     pub plugin_manager_open: bool,
+    /// set while the user is choosing which installed export-format plugin
+    /// to export a collection through (only shown when more than one
+    /// plugin/format is available - a single option is used directly).
+    pub export_plugin_picker: Option<(usize, Vec<(String, rustrest_plugin_host::FormatDef)>)>,
 }
 
 impl Rustrest {
@@ -535,6 +539,7 @@ pub fn init() -> (Rustrest, Task<Message>) {
         }),
         plugin_panel_state: std::collections::HashMap::new(),
         plugin_manager_open: false,
+        export_plugin_picker: None,
     };
     app.plugin_manager.load_all();
     let plugin_load_errors: Vec<String> = app
@@ -1024,6 +1029,69 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             }
         }
 
+        Message::ImportCollectionViaPluginPressed(plugin_id, format_id, extensions) => {
+            let mut dialog = rfd::AsyncFileDialog::new();
+            if !extensions.is_empty() {
+                let ext_refs: Vec<&str> = extensions.iter().map(String::as_str).collect();
+                dialog = dialog.add_filter("Supported files", &ext_refs);
+            }
+            iced::Task::perform(
+                async move {
+                    let file_handle = dialog.pick_file().await?;
+                    let path = file_handle.path().to_path_buf();
+                    let bytes = tokio::fs::read(&path).await.ok()?;
+                    Some((path, bytes))
+                },
+                move |result| match result {
+                    Some((path, bytes)) => {
+                        Message::PluginImportFileLoaded(plugin_id, format_id, Some(path), bytes)
+                    }
+                    None => Message::None,
+                },
+            )
+        }
+
+        Message::PluginImportFileLoaded(plugin_id, format_id, path, bytes) => {
+            let result = app.plugin_manager.import(&plugin_id, &format_id, bytes);
+            drain_plugin_logs(app);
+            match result {
+                Ok(value) => match serde_json::from_value::<PostmanCollection>(value) {
+                    Ok(mut collection) => {
+                        let col_name = collection.info.name.clone();
+                        collection.id = app.next_tab_id;
+                        collection.file_path = path;
+                        app.next_tab_id += 1;
+                        collection.assign_request_ids(&mut app.next_request_id);
+
+                        let default_headers: Vec<KeyValuePair> = vec![
+                            KeyValuePair::new("Content-Type", "application/json"),
+                            KeyValuePair::new(
+                                "User-Agent",
+                                &format!("{}/{}", APP_NAME, APP_VERSION),
+                            ),
+                            KeyValuePair::new("Accept", "*/*"),
+                            KeyValuePair::new("Connection", "keep-alive"),
+                        ];
+                        collection.set_headers(default_headers);
+
+                        app.collections.push(collection);
+                        iced::Task::done(Message::ShowToast(
+                            format!("Collection '{}' imported successfully", col_name),
+                            ToastStatus::Success,
+                        ))
+                    }
+                    Err(e) => iced::Task::done(Message::ShowToast(
+                        format!("Plugin returned an invalid collection: {e}"),
+                        ToastStatus::Error,
+                    )),
+                },
+                Err(e) => iced::Task::done(Message::ShowToast(
+                    format!("Import failed: {e}"),
+                    ToastStatus::Error,
+                )),
+            }
+        }
+
         // simple inline disk overwrite action
         Message::SaveCollectionPressed(col_id) => {
             app.sync_collection_tabs(col_id);
@@ -1436,6 +1504,90 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 }
             }
             iced::Task::none()
+        }
+
+        Message::ExportViaPluginPressed(col_id) => {
+            let mut formats = app.plugin_manager.export_formats();
+            match formats.len() {
+                0 => iced::Task::done(Message::ShowToast(
+                    "No export plugins installed".to_string(),
+                    ToastStatus::Info,
+                )),
+                1 => {
+                    let (plugin_id, format) = formats.remove(0);
+                    iced::Task::done(Message::ExportCollectionViaPluginPressed(
+                        col_id,
+                        plugin_id,
+                        format.id,
+                        format.extensions,
+                    ))
+                }
+                _ => {
+                    app.export_plugin_picker = Some((col_id, formats));
+                    iced::Task::none()
+                }
+            }
+        }
+
+        Message::CloseExportPluginPicker => {
+            app.export_plugin_picker = None;
+            iced::Task::none()
+        }
+
+        Message::ExportCollectionViaPluginPressed(col_id, plugin_id, format_id, extensions) => {
+            app.export_plugin_picker = None;
+            app.sync_collection_tabs(col_id);
+            let Some(collection) = app.collections.iter().find(|c| c.id == col_id) else {
+                return iced::Task::none();
+            };
+            let value = match serde_json::to_value(collection) {
+                Ok(v) => v,
+                Err(e) => {
+                    return iced::Task::done(Message::ShowToast(
+                        format!("Export failed: {e}"),
+                        ToastStatus::Error,
+                    ));
+                }
+            };
+            let default_ext = extensions.first().cloned().unwrap_or_default();
+            let default_name = if default_ext.is_empty() {
+                collection.info.name.clone()
+            } else {
+                format!("{}.{}", collection.info.name, default_ext)
+            };
+
+            let result = app.plugin_manager.export(&plugin_id, &format_id, value);
+            drain_plugin_logs(app);
+            let bytes = match result {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    return iced::Task::done(Message::ShowToast(
+                        format!("Export failed: {e}"),
+                        ToastStatus::Error,
+                    ));
+                }
+            };
+
+            let mut dialog = rfd::AsyncFileDialog::new().set_file_name(&default_name);
+            if !extensions.is_empty() {
+                let ext_refs: Vec<&str> = extensions.iter().map(String::as_str).collect();
+                dialog = dialog.add_filter("Supported files", &ext_refs);
+            }
+            iced::Task::perform(
+                async move {
+                    let file_handle = dialog.save_file().await?;
+                    let path = file_handle.path().to_path_buf();
+                    tokio::fs::write(&path, bytes).await.ok()?;
+                    Some(path)
+                },
+                |result| match result {
+                    Some(path) => Message::ShowToast(
+                        format!("Collection exported to {:?}", path),
+                        ToastStatus::Success,
+                    ),
+                    None => Message::None,
+                },
+            )
         }
 
         Message::SidebarCollectionRootClicked(col_id) => {
@@ -3004,6 +3156,14 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     MenuMessage::Plugin(plugin_id, command_id) => {
                         return update(app, Message::PluginCommand(plugin_id, command_id));
                     }
+                    MenuMessage::ImportViaPlugin(plugin_id, format_id, extensions) => {
+                        return update(
+                            app,
+                            Message::ImportCollectionViaPluginPressed(
+                                plugin_id, format_id, extensions,
+                            ),
+                        );
+                    }
                 }
             }
             Task::none()
@@ -3245,7 +3405,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 &mut app.toast_manager,
                 "Downloading update…".to_string(),
                 ToastStatus::Info,
-                crate::ui::toast::toast::TOAST_DURATION,
+                crate::ui::toast::toast::TOAST_DURATION_LONG,
             );
             let update_task = iced::Task::perform(
                 async {
@@ -3262,7 +3422,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             &mut app.toast_manager,
             format!("Updated to v{version}. Please restart the app."),
             ToastStatus::Success,
-            crate::ui::toast::toast::TOAST_DURATION,
+            crate::ui::toast::toast::TOAST_DURATION_LONG,
         ),
 
         Message::UpdateInstallResult(Err(e)) => crate::ui::toast::toast::show_and_schedule(

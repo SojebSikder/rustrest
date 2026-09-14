@@ -10,4 +10,6 @@ pub enum MenuMessage {
     OpenPluginManager,
     /// plugin_id, command_id.
     Plugin(String, String),
+    /// plugin_id, format_id, file-picker extensions.
+    ImportViaPlugin(String, String, Vec<String>),
 }

@@ -5,6 +5,7 @@ pub mod confirm_dialog;
 pub mod console_panel;
 pub mod context_menu;
 pub mod env_editor;
+pub mod export_plugin_picker;
 pub mod git_panel;
 pub mod menu;
 pub mod modal;

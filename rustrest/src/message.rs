@@ -414,6 +414,19 @@ pub enum Message {
     ClosePluginManagerPressed,
     TogglePluginEnabled(String, bool),
 
+    /// plugin_id, format_id, file-picker extensions - opens a file dialog
+    /// and routes the picked file through `PluginManager::import`.
+    ImportCollectionViaPluginPressed(String, String, Vec<String>),
+    /// plugin_id, format_id, path, raw file bytes - the file picked by
+    /// `ImportCollectionViaPluginPressed` has been read from disk.
+    PluginImportFileLoaded(String, String, Option<std::path::PathBuf>, Vec<u8>),
+    /// collection_id, plugin_id, format_id, file-picker extensions.
+    ExportCollectionViaPluginPressed(usize, String, String, Vec<String>),
+    /// collection_id - either exports directly (a single installed
+    /// plugin/format) or opens `export_plugin_picker` (more than one).
+    ExportViaPluginPressed(usize),
+    CloseExportPluginPicker,
+
     AppExit,
     None,
 }

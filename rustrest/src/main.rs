@@ -19,6 +19,7 @@ use crate::ui::commit_modal::view_commit_modal;
 use crate::ui::confirm_dialog::view_confirm_dialog;
 use crate::ui::console_panel::{render_console_bar, render_console_panel};
 use crate::ui::env_editor::render_env_editor;
+use crate::ui::export_plugin_picker::view_export_plugin_picker;
 use crate::ui::menu::menu::{
     DropdownItem, DropdownMessage, MenuGroup, render_menu_bar, render_menu_overlay,
 };
@@ -242,15 +243,21 @@ fn view(app: &Rustrest, window_id: window::Id) -> Element<'_, Message> {
     }
 
     let menu_structure = vec![
-        MenuGroup::new(
-            "File",
-            vec![
+        {
+            let mut items = vec![
                 DropdownItem::new("New Collection", MenuMessage::FileNew),
                 DropdownItem::new("Import Collection", MenuMessage::FileOpen),
                 DropdownItem::new("Import Git Folder...", MenuMessage::FileOpenGitFolder),
-                DropdownItem::new("Exit", MenuMessage::FileExit),
-            ],
-        ),
+            ];
+            for (plugin_id, format) in app.plugin_manager.import_formats() {
+                items.push(DropdownItem::new(
+                    format!("Import via {}", format.title),
+                    MenuMessage::ImportViaPlugin(plugin_id, format.id, format.extensions),
+                ));
+            }
+            items.push(DropdownItem::new("Exit", MenuMessage::FileExit));
+            MenuGroup::new("File", items)
+        },
         MenuGroup::new(
             "Go",
             vec![
@@ -392,6 +399,16 @@ fn view(app: &Rustrest, window_id: window::Id) -> Element<'_, Message> {
             .align_x(Alignment::Center)
             .align_y(Alignment::Center);
         main_interface_stack = main_interface_stack.push(plugin_manager_overlay);
+    }
+
+    // export-via-plugin format picker modal overlay
+    if let Some(picker) = view_export_plugin_picker(app) {
+        let export_picker_overlay = container(picker)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(Alignment::Center)
+            .align_y(Alignment::Center);
+        main_interface_stack = main_interface_stack.push(export_picker_overlay);
     }
 
     // remote-connect (password/passphrase) modal overlay

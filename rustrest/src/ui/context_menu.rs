@@ -164,6 +164,9 @@ pub fn render_context_menu_overlay<'a>(app: &Rustrest) -> Option<Element<'a, Mes
                 opts.push(("Commit changes...", Message::CommitChangesPressed(col_id)));
             }
             opts.push(("Export As...", Message::ExportCollectionPressed(col_id)));
+            if !app.plugin_manager.export_formats().is_empty() {
+                opts.push(("Export via Plugin...", Message::ExportViaPluginPressed(col_id)));
+            }
             opts.push(("Delete", Message::DeleteCollectionPressed(col_id)));
             opts
         }
