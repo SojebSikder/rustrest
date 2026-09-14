@@ -40,8 +40,11 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::sync::mpsc::UnboundedReceiver;
 
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 const APP_NAME: &str = "Rustrest";
-const APP_VERSION: &str = "0.1.8";
+const APP_VERSION: &str = "0.1.9";
 
 const APP_ICON: &[u8] = include_bytes!("../../assets/images/logo-transparent.png");
 
