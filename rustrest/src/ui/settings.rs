@@ -1,7 +1,7 @@
 use crate::app::Rustrest;
 use crate::message::Message;
 use crate::ui::modal::{card, muted_text_color};
-use iced::widget::{button, column, container, row, text};
+use iced::widget::{button, checkbox, column, container, row, text};
 use iced::{Font, Length, Theme};
 use serde::{Deserialize, Serialize};
 
@@ -38,14 +38,16 @@ impl Default for AppTheme {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsTab {
     Theme,
+    General,
 }
 
 impl SettingsTab {
-    pub const ALL: [SettingsTab; 1] = [SettingsTab::Theme];
+    pub const ALL: [SettingsTab; 2] = [SettingsTab::Theme, SettingsTab::General];
 
     pub fn label(&self) -> &'static str {
         match self {
             SettingsTab::Theme => "Theme",
+            SettingsTab::General => "General",
         }
     }
 }
@@ -79,6 +81,7 @@ pub fn view_settings_modal(app: &Rustrest) -> iced::Element<'_, Message> {
 
     let tab_content = match app.settings_tab {
         SettingsTab::Theme => view_theme_tab(app),
+        SettingsTab::General => view_general_tab(app),
     };
 
     let close_btn = button(text("Close").size(14))
@@ -120,6 +123,19 @@ fn view_theme_tab(app: &Rustrest) -> iced::Element<'_, Message> {
             color: Some(muted_text_color(theme)),
         }),
         list,
+    ]
+    .spacing(10)
+    .into()
+}
+
+fn view_general_tab(app: &Rustrest) -> iced::Element<'_, Message> {
+    column![
+        text("General").size(12).style(|theme: &Theme| text::Style {
+            color: Some(muted_text_color(theme)),
+        }),
+        checkbox(app.close_on_outside_click)
+            .label("Close windows by clicking outside")
+            .on_toggle(Message::CloseOnOutsideClickToggled),
     ]
     .spacing(10)
     .into()

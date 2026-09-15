@@ -435,6 +435,7 @@ pub enum Message {
     CloseSettingsPressed,
     SettingsTabSelected(crate::ui::settings::SettingsTab),
     ThemeSelected(crate::ui::settings::AppTheme),
+    CloseOnOutsideClickToggled(bool),
 
     AppExit,
     None,

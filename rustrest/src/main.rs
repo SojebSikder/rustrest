@@ -76,6 +76,33 @@ fn title(app: &Rustrest, window_id: window::Id) -> String {
     }
 }
 
+/// which overlay (if any) is currently topmost, in the same order they are
+/// pushed onto `main_interface_stack` in `view()`.
+enum ActiveOverlay {
+    EnvEditor,
+    SaveRequest,
+    Commit,
+    ConfirmDialog,
+    PluginManager,
+    Settings,
+    ExportPicker,
+    RemoteConnect,
+    CommandPalette,
+}
+
+macro_rules! outside_click_sub {
+    ($message:expr) => {
+        event::listen_with(|event, status, _window| match event {
+            Event::Mouse(iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left))
+                if status == iced::event::Status::Ignored =>
+            {
+                Some($message)
+            }
+            _ => None,
+        })
+    };
+}
+
 pub fn subscription(app: &Rustrest) -> Subscription<Message> {
     let context_menu_sub = if app.active_context_menu.is_some() {
         event::listen_with(|event, status, _window| match event {
@@ -86,6 +113,64 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
             }
             _ => None,
         })
+    } else {
+        Subscription::none()
+    };
+
+    // clicking outside any open modal/command-palette (i.e. a left click
+    // that no widget inside the modal card handled) dismisses it. only the
+    // topmost overlay - matching the stacking order in `view()` - reacts, so
+    // a click meant for a modal opened on top of another doesn't also close
+    // the one beneath it
+    let active_overlay = if app.command_palette.is_some() {
+        Some(ActiveOverlay::CommandPalette)
+    } else if app.remote_connect_pending.is_some() {
+        Some(ActiveOverlay::RemoteConnect)
+    } else if app.export_plugin_picker.is_some() {
+        Some(ActiveOverlay::ExportPicker)
+    } else if app.settings_open {
+        Some(ActiveOverlay::Settings)
+    } else if app.plugin_manager_open {
+        Some(ActiveOverlay::PluginManager)
+    } else if app.confirm_dialog.is_some() {
+        Some(ActiveOverlay::ConfirmDialog)
+    } else if app.commit_modal.is_some() {
+        Some(ActiveOverlay::Commit)
+    } else if app.save_request_model.is_some() {
+        Some(ActiveOverlay::SaveRequest)
+    } else if app.editing_env_index.is_some() {
+        Some(ActiveOverlay::EnvEditor)
+    } else {
+        None
+    };
+
+    let click_outside_sub = if app.close_on_outside_click {
+        match active_overlay {
+            Some(ActiveOverlay::EnvEditor) => {
+                outside_click_sub!(Message::CloseEnvEditorPressed)
+            }
+            Some(ActiveOverlay::SaveRequest) => {
+                outside_click_sub!(Message::CloseSaveRequestModal)
+            }
+            Some(ActiveOverlay::Commit) => outside_click_sub!(Message::CommitCancelled),
+            Some(ActiveOverlay::ConfirmDialog) => {
+                outside_click_sub!(Message::ConfirmDialogCancelled)
+            }
+            Some(ActiveOverlay::PluginManager) => {
+                outside_click_sub!(Message::ClosePluginManagerPressed)
+            }
+            Some(ActiveOverlay::Settings) => outside_click_sub!(Message::CloseSettingsPressed),
+            Some(ActiveOverlay::ExportPicker) => {
+                outside_click_sub!(Message::CloseExportPluginPicker)
+            }
+            Some(ActiveOverlay::RemoteConnect) => {
+                outside_click_sub!(Message::RemoteConnectCancelled)
+            }
+            Some(ActiveOverlay::CommandPalette) => {
+                outside_click_sub!(Message::CommandPaletteClosed)
+            }
+            None => Subscription::none(),
+        }
     } else {
         Subscription::none()
     };
@@ -200,6 +285,7 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
     Subscription::batch([
         context_menu_sub,
         menu_bar_sub,
+        click_outside_sub,
         keyboard_shortcuts,
         autosave,
         close_requested,

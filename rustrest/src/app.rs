@@ -195,13 +195,22 @@ pub struct Rustrest {
     /// plugin/format is available - a single option is used directly).
     pub export_plugin_picker: Option<(usize, Vec<(String, rustrest_plugin_host::FormatDef)>)>,
 
-    // settings (reusable preferences modal - currently just theme)
+    // settings
     pub settings_open: bool,
     pub settings_tab: SettingsTab,
     pub theme: AppTheme,
+    /// whether clicking outside an open modal/command palette dismisses it
+    pub close_on_outside_click: bool,
 }
 
 impl Rustrest {
+    fn persist_settings(&self) {
+        crate::app_settings::save(&crate::app_settings::PersistedSettings {
+            theme: self.theme,
+            close_on_outside_click: self.close_on_outside_click,
+        });
+    }
+
     pub fn build_session_snapshot(&self) -> SavedSession {
         let tabs = self
             .tabs
@@ -475,6 +484,8 @@ pub fn init() -> (Rustrest, Task<Message>) {
         ..Default::default()
     });
 
+    let persisted_settings = crate::app_settings::load();
+
     let mut app = Rustrest {
         collections: Vec::new(),
         environments: Vec::new(),
@@ -548,7 +559,8 @@ pub fn init() -> (Rustrest, Task<Message>) {
         export_plugin_picker: None,
         settings_open: false,
         settings_tab: SettingsTab::default(),
-        theme: crate::app_settings::load().unwrap_or_default(),
+        theme: persisted_settings.theme,
+        close_on_outside_click: persisted_settings.close_on_outside_click,
     };
     app.plugin_manager.load_all();
     let plugin_load_errors: Vec<String> = app
@@ -4084,7 +4096,12 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         }
         Message::ThemeSelected(theme) => {
             app.theme = theme;
-            crate::app_settings::save(theme);
+            app.persist_settings();
+            Task::none()
+        }
+        Message::CloseOnOutsideClickToggled(enabled) => {
+            app.close_on_outside_click = enabled;
+            app.persist_settings();
             Task::none()
         }
         Message::TogglePluginEnabled(plugin_id, enabled) => {
