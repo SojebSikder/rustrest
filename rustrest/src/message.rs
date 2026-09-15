@@ -401,8 +401,9 @@ pub enum Message {
     CommandPaletteClosed,
     CommandPaletteItemClicked(AppCommand),
 
-    // remote development (SSH) - dedicated configuration window
-    OpenRemoteConfigWindow,
+    // remote development (SSH) - configuration modal
+    OpenRemoteConfig,
+    CloseRemoteConfigPressed,
     WindowCloseRequested(iced::window::Id),
 
     // native plugins (wasm)

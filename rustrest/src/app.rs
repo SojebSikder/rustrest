@@ -175,10 +175,10 @@ pub struct Rustrest {
     pub remote_connect_pending: Option<crate::ui::remote::PendingRemoteConnect>,
     pub remote_explorers: std::collections::HashMap<usize, crate::ui::remote::RemoteExplorerState>,
 
-    // multi-window: the id of the always-open main window, and the id of the
-    // "Remote development over SSH" configuration window when it's open
+    // the id of the always-open main window
     pub main_window_id: iced::window::Id,
-    pub remote_config_window_id: Option<iced::window::Id>,
+    // whether the "Remote development over SSH" configuration modal is open
+    pub remote_config_open: bool,
 
     // command palette (Ctrl+Shift+P)
     pub command_palette: Option<rustrest_command_palette::PaletteState>,
@@ -544,7 +544,7 @@ pub fn init() -> (Rustrest, Task<Message>) {
         remote_connect_pending: None,
         remote_explorers: std::collections::HashMap::new(),
         main_window_id,
-        remote_config_window_id: None,
+        remote_config_open: false,
         command_palette: None,
         plugin_manager: rustrest_plugin_host::PluginManager::new().unwrap_or_else(|e| {
             eprintln!("plugin manager unavailable: {e}");
@@ -4000,29 +4000,15 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             )),
         },
         // remote development (SSH)
-        Message::OpenRemoteConfigWindow => {
-            if app.remote_config_window_id.is_some() {
-                // already open
-                return Task::none();
-            }
-            let icon = iced::window::icon::from_file_data(crate::APP_ICON, None).ok();
-            let (id, open_task) = iced::window::open(iced::window::Settings {
-                size: iced::Size::new(560.0, 700.0),
-                icon,
-                exit_on_close_request: false,
-                ..Default::default()
-            });
-            app.remote_config_window_id = Some(id);
-            open_task.map(|_id| Message::None)
+        Message::OpenRemoteConfig => {
+            app.remote_config_open = true;
+            Task::none()
         }
-        Message::WindowCloseRequested(window_id) => {
-            if app.remote_config_window_id == Some(window_id) {
-                app.remote_config_window_id = None;
-                iced::window::close(window_id)
-            } else {
-                update(app, Message::AppExit)
-            }
+        Message::CloseRemoteConfigPressed => {
+            app.remote_config_open = false;
+            Task::none()
         }
+        Message::WindowCloseRequested(_window_id) => update(app, Message::AppExit),
         // end remote development (SSH)
 
         // command palette (Ctrl+Shift+P)

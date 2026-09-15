@@ -95,7 +95,7 @@ pub fn to_message(action: AppCommand) -> Message {
         AppCommand::CreateNewCollection => Message::CreateNewCollectionPressed,
         AppCommand::ToggleConsolePanel => Message::ToggleConsolePanel,
         AppCommand::CheckForUpdate => Message::CheckForUpdate,
-        AppCommand::RemoteDevelopmentOverSsh => Message::OpenRemoteConfigWindow,
+        AppCommand::RemoteDevelopmentOverSsh => Message::OpenRemoteConfig,
         AppCommand::OpenPluginManager => Message::OpenPluginManagerPressed,
         AppCommand::Plugin(plugin_id, command_id) => Message::PluginCommand(plugin_id, command_id),
     }

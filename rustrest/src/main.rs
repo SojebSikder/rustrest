@@ -26,7 +26,7 @@ use crate::ui::menu::menu::{
 };
 use crate::ui::menu::menu_message::MenuMessage;
 use crate::ui::plugin_manager::view_plugin_manager;
-use crate::ui::remote::{view_remote_config_window, view_remote_connect_modal};
+use crate::ui::remote::{view_remote_config_modal, view_remote_connect_modal};
 use crate::ui::resize_handle::{DividerOrientation, resize_handle};
 use crate::ui::save_request_model::save_request_model::view_save_request_modal;
 use crate::ui::settings::view_settings_modal;
@@ -53,10 +53,9 @@ const APP_VERSION: &str = "0.1.9";
 const APP_ICON: &[u8] = include_bytes!("../../assets/images/logo-transparent.png");
 
 pub fn main() -> iced::Result {
-    // a daemon (rather than a single-window `application`) so a second,
-    // independent OS window can be opened at runtime for the "Remote
-    // Development over SSH" configuration screen; `app::init` opens the
-    // main window itself since a daemon doesn't open one automatically.
+    // a daemon (rather than a single-window `application`) so `app::init` can
+    // open the main window itself and construct `Rustrest` with a real window
+    // id up front, since a daemon doesn't open one automatically.
     iced::daemon(app::init, app::update, view)
         .title(title)
         .theme(theme)
@@ -68,12 +67,8 @@ fn theme(app: &Rustrest, _window_id: window::Id) -> iced::Theme {
     app.theme.to_iced()
 }
 
-fn title(app: &Rustrest, window_id: window::Id) -> String {
-    if Some(window_id) == app.remote_config_window_id {
-        "Remote Development over SSH".to_string()
-    } else {
-        format!("{} - API Testing Platform", APP_NAME)
-    }
+fn title(_app: &Rustrest, _window_id: window::Id) -> String {
+    format!("{} - API Testing Platform", APP_NAME)
 }
 
 /// which overlay (if any) is currently topmost, in the same order they are
@@ -86,6 +81,7 @@ enum ActiveOverlay {
     PluginManager,
     Settings,
     ExportPicker,
+    RemoteConfig,
     RemoteConnect,
     CommandPalette,
 }
@@ -98,6 +94,18 @@ macro_rules! outside_click_sub {
             {
                 Some($message)
             }
+            _ => None,
+        })
+    };
+}
+
+macro_rules! escape_close_sub {
+    ($message:expr) => {
+        event::listen_with(|event, _status, _window| match event {
+            Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                key: Key::Named(Named::Escape),
+                ..
+            }) => Some($message),
             _ => None,
         })
     };
@@ -126,6 +134,8 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         Some(ActiveOverlay::CommandPalette)
     } else if app.remote_connect_pending.is_some() {
         Some(ActiveOverlay::RemoteConnect)
+    } else if app.remote_config_open {
+        Some(ActiveOverlay::RemoteConfig)
     } else if app.export_plugin_picker.is_some() {
         Some(ActiveOverlay::ExportPicker)
     } else if app.settings_open {
@@ -166,6 +176,9 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
             Some(ActiveOverlay::RemoteConnect) => {
                 outside_click_sub!(Message::RemoteConnectCancelled)
             }
+            Some(ActiveOverlay::RemoteConfig) => {
+                outside_click_sub!(Message::CloseRemoteConfigPressed)
+            }
             Some(ActiveOverlay::CommandPalette) => {
                 outside_click_sub!(Message::CommandPaletteClosed)
             }
@@ -173,6 +186,33 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         }
     } else {
         Subscription::none()
+    };
+
+    // Escape closes whichever overlay is topmost, using the same priority
+    // as `click_outside_sub` above - independent of `close_on_outside_click`,
+    // since that setting only governs the click-outside behavior.
+    let escape_close_sub = match active_overlay {
+        Some(ActiveOverlay::EnvEditor) => escape_close_sub!(Message::CloseEnvEditorPressed),
+        Some(ActiveOverlay::SaveRequest) => escape_close_sub!(Message::CloseSaveRequestModal),
+        Some(ActiveOverlay::Commit) => escape_close_sub!(Message::CommitCancelled),
+        Some(ActiveOverlay::ConfirmDialog) => {
+            escape_close_sub!(Message::ConfirmDialogCancelled)
+        }
+        Some(ActiveOverlay::PluginManager) => {
+            escape_close_sub!(Message::ClosePluginManagerPressed)
+        }
+        Some(ActiveOverlay::Settings) => escape_close_sub!(Message::CloseSettingsPressed),
+        Some(ActiveOverlay::ExportPicker) => {
+            escape_close_sub!(Message::CloseExportPluginPicker)
+        }
+        Some(ActiveOverlay::RemoteConnect) => {
+            escape_close_sub!(Message::RemoteConnectCancelled)
+        }
+        Some(ActiveOverlay::RemoteConfig) => {
+            escape_close_sub!(Message::CloseRemoteConfigPressed)
+        }
+        Some(ActiveOverlay::CommandPalette) => escape_close_sub!(Message::CommandPaletteClosed),
+        None => Subscription::none(),
     };
 
     let menu_bar_sub = if app.menu_state.open_index.is_some() {
@@ -209,8 +249,9 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         _ => None,
     });
 
-    // while the command palette is open, Up/Down move the selection and
-    // Escape closes it; typing and Enter are handled by its text input directly.
+    // while the command palette is open, Up/Down move the selection; Escape
+    // (handled by `escape_close_sub` above) closes it, and typing/Enter are
+    // handled by its text input directly.
     let command_palette_sub = if app.command_palette.is_some() {
         event::listen_with(|event, _status, _window| match event {
             Event::Keyboard(iced::keyboard::Event::KeyPressed {
@@ -221,10 +262,6 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
                 key: Key::Named(Named::ArrowDown),
                 ..
             }) => Some(Message::CommandPaletteMoveSelection(1)),
-            Event::Keyboard(iced::keyboard::Event::KeyPressed {
-                key: Key::Named(Named::Escape),
-                ..
-            }) => Some(Message::CommandPaletteClosed),
             _ => None,
         })
     } else {
@@ -286,6 +323,7 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         context_menu_sub,
         menu_bar_sub,
         click_outside_sub,
+        escape_close_sub,
         keyboard_shortcuts,
         autosave,
         close_requested,
@@ -330,11 +368,7 @@ fn terminal_events_stream(data: &TerminalEventsData) -> BoxStream<'static, Messa
     .boxed()
 }
 
-fn view(app: &Rustrest, window_id: window::Id) -> Element<'_, Message> {
-    if Some(window_id) == app.remote_config_window_id {
-        return view_remote_config_window(app);
-    }
-
+fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
     let menu_structure = vec![
         {
             let mut items = vec![
@@ -516,6 +550,16 @@ fn view(app: &Rustrest, window_id: window::Id) -> Element<'_, Message> {
             .align_x(Alignment::Center)
             .align_y(Alignment::Center);
         main_interface_stack = main_interface_stack.push(export_picker_overlay);
+    }
+
+    // remote development (SSH) configuration modal overlay
+    if app.remote_config_open {
+        let remote_config_overlay = container(view_remote_config_modal(app))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(Alignment::Center)
+            .align_y(Alignment::Center);
+        main_interface_stack = main_interface_stack.push(remote_config_overlay);
     }
 
     // remote-connect (password/passphrase) modal overlay

@@ -77,7 +77,7 @@ pub struct RemoteExplorerState {
     pub new_collection_name: String,
 }
 
-pub fn view_remote_config_window(app: &Rustrest) -> Element<'_, Message> {
+pub fn view_remote_config_modal(app: &Rustrest) -> Element<'_, Message> {
     let title = text("Remote Development over SSH").size(18).font(Font {
         weight: iced::font::Weight::Bold,
         ..Font::DEFAULT
@@ -229,6 +229,11 @@ pub fn view_remote_config_window(app: &Rustrest) -> Element<'_, Message> {
         color: Some(muted_text_color(theme)),
     });
 
+    let close_btn = button(text("Close").size(14))
+        .on_press(Message::CloseRemoteConfigPressed)
+        .padding([8, 16])
+        .style(button::secondary);
+
     let body = column![
         title,
         description,
@@ -238,15 +243,18 @@ pub fn view_remote_config_window(app: &Rustrest) -> Element<'_, Message> {
         add_form,
         section_header("Remote agent"),
         agent_note,
+        container(close_btn)
+            .width(Length::Fill)
+            .align_x(iced::alignment::Horizontal::Right),
     ]
     .spacing(14)
     .padding(20)
     .width(Length::Fill);
 
-    container(scrollable(body))
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
+    card(
+        container(scrollable(body)).height(Length::Fixed(560.0)),
+        560.0,
+    )
 }
 
 fn render_explorer<'a>(
