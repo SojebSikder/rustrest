@@ -54,6 +54,9 @@ pub enum SidebarDropTarget {
 
 #[derive(Debug, Clone)]
 pub enum Message {
+    /// wraps a context menu option's message so pressing it always closes
+    /// the menu, whether or not the action itself does so.
+    ContextMenuAction(Box<Message>),
     NewTabPressed,
     NewTerminalTabPressed,
     /// widget -> app: write encoded key bytes to a terminal's PTY.
@@ -398,9 +401,42 @@ pub enum Message {
     CommandPaletteClosed,
     CommandPaletteItemClicked(AppCommand),
 
-    // remote development (SSH) - dedicated configuration window
-    OpenRemoteConfigWindow,
+    // remote development (SSH) - configuration modal
+    OpenRemoteConfig,
+    CloseRemoteConfigPressed,
     WindowCloseRequested(iced::window::Id),
+
+    // native plugins (wasm)
+    /// plugin_id, command_id - dispatched from the command palette or menu.
+    PluginCommand(String, String),
+    /// plugin_id, panel_id, event - a widget interaction inside an open
+    /// plugin panel tab.
+    PluginPanelEvent(String, String, rustrest_plugin_host::UiEvent),
+    /// opens (or focuses) a tab for the given plugin's sidebar panel.
+    OpenPluginPanel(String, String),
+    OpenPluginManagerPressed,
+    ClosePluginManagerPressed,
+    TogglePluginEnabled(String, bool),
+
+    /// plugin_id, format_id, file-picker extensions - opens a file dialog
+    /// and routes the picked file through `PluginManager::import`.
+    ImportCollectionViaPluginPressed(String, String, Vec<String>),
+    /// plugin_id, format_id, path, raw file bytes - the file picked by
+    /// `ImportCollectionViaPluginPressed` has been read from disk.
+    PluginImportFileLoaded(String, String, Option<std::path::PathBuf>, Vec<u8>),
+    /// collection_id, plugin_id, format_id, file-picker extensions.
+    ExportCollectionViaPluginPressed(usize, String, String, Vec<String>),
+    /// collection_id - either exports directly (a single installed
+    /// plugin/format) or opens `export_plugin_picker` (more than one).
+    ExportViaPluginPressed(usize),
+    CloseExportPluginPicker,
+
+    // settings
+    OpenSettingsPressed,
+    CloseSettingsPressed,
+    SettingsTabSelected(crate::ui::settings::SettingsTab),
+    ThemeSelected(crate::ui::settings::AppTheme),
+    CloseOnOutsideClickToggled(bool),
 
     AppExit,
     None,

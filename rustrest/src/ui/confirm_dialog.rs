@@ -1,7 +1,7 @@
 use crate::message::Message;
-use crate::ui::modal::card;
+use crate::ui::modal::{card, muted_text_color};
 use iced::widget::{button, column, container, row, text};
-use iced::{Color, Font, Length};
+use iced::{Font, Length, Theme};
 
 /// generic yes/no confirmation dialog. `on_confirm` is dispatched (and the dialog closed)
 /// when the user accepts; cancelling just clears the dialog.
@@ -21,7 +21,9 @@ pub fn view_confirm_dialog(state: &ConfirmDialogState) -> iced::Element<'static,
 
     let body_text = text(state.message.clone())
         .size(14)
-        .color(Color::from_rgb(0.8, 0.8, 0.82));
+        .style(|theme: &Theme| text::Style {
+            color: Some(muted_text_color(theme)),
+        });
 
     let cancel_btn = button(text("Cancel").size(14))
         .on_press(Message::ConfirmDialogCancelled)

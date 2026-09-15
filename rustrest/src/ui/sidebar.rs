@@ -132,12 +132,53 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
         }
     }
 
+    sidebar_contents = sidebar_contents.push(render_plugins_section(app));
+
     container(scrollable(sidebar_contents))
         .width(Length::Fixed(app.sidebar_width))
         .height(Length::Fill)
         .padding(10)
         .style(container::bordered_box)
         .into()
+}
+
+fn render_plugins_section(app: &Rustrest) -> Element<'_, Message> {
+    let mut section = column![
+        row![
+            text("PLUGINS").size(10).style(text::secondary),
+            Space::new().width(Length::Fill),
+            button(text("⚙").size(11))
+                .on_press(Message::OpenPluginManagerPressed)
+                .style(button::text)
+                .padding(2),
+        ]
+        .align_y(Alignment::Center)
+    ]
+    .spacing(4);
+
+    for plugin in app.plugin_manager.installed() {
+        if !plugin.is_active() {
+            continue;
+        }
+        let Some(manifest) = &plugin.manifest else {
+            continue;
+        };
+        for cap in &manifest.capabilities {
+            if let rustrest_plugin_host::Capability::SidebarPanel(panel) = cap {
+                let plugin_id = plugin.id().to_string();
+                let panel_id = panel.id.clone();
+                section = section.push(
+                    button(text(panel.title.clone()).size(12))
+                        .on_press(Message::OpenPluginPanel(plugin_id, panel_id))
+                        .style(button::text)
+                        .padding(Padding::from([2, 4]))
+                        .width(Length::Fill),
+                );
+            }
+        }
+    }
+
+    section.into()
 }
 
 pub fn render_env_selector(app: &Rustrest) -> Element<'_, Message> {

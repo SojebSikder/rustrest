@@ -31,6 +31,7 @@ Modern API clients like Postman or Insomnia carry massive resource overhead. Rus
 - **Git-native**: Collaborate via Git or any other version control system
 - **Postman Compatible**: Import Postman collections, environments and scripts
 - **Remote Development over SSH**: Remote development using SSH for accessing collections on remote servers.
+- **Plugins**: Extend functionality with plugins
 - And many more...
 
 [Download Rustrest](https://github.com/SojebSikder/rustrest/releases)

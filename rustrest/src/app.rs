@@ -15,6 +15,7 @@ use crate::ui::menu::menu::DropdownMenuState;
 use crate::ui::menu::menu_message::MenuMessage;
 use crate::ui::remote::{PendingRemoteConnect, RemoteAuthKind, join_remote_path};
 use crate::ui::save_request_model::types::SaveRequestModalState;
+use crate::ui::settings::{AppTheme, SettingsTab};
 use crate::ui::tab::types::{KeyValuePair, ResponseSubTab, ResponseView};
 use crate::ui::tab::{Tab, TabMessage};
 use crate::ui::toast::toast::{ToastManager, ToastStatus};
@@ -57,6 +58,12 @@ pub enum WorkspaceContent {
         path: String,
         contents: iced::widget::text_editor::Content,
         dirty: bool,
+    },
+    /// a sidebar panel contributed by a plugin, identified by the plugin's
+    /// id and the panel id it declared via `Capability::SidebarPanel`.
+    Plugin {
+        plugin_id: String,
+        panel_id: String,
     },
 }
 
@@ -168,16 +175,42 @@ pub struct Rustrest {
     pub remote_connect_pending: Option<crate::ui::remote::PendingRemoteConnect>,
     pub remote_explorers: std::collections::HashMap<usize, crate::ui::remote::RemoteExplorerState>,
 
-    // multi-window: the id of the always-open main window, and the id of the
-    // "Remote development over SSH" configuration window when it's open
+    // the id of the always-open main window
     pub main_window_id: iced::window::Id,
-    pub remote_config_window_id: Option<iced::window::Id>,
+    // whether the "Remote development over SSH" configuration modal is open
+    pub remote_config_open: bool,
 
     // command palette (Ctrl+Shift+P)
     pub command_palette: Option<rustrest_command_palette::PaletteState>,
+
+    // native plugins (wasm, via rustrest-plugin-host)
+    pub plugin_manager: rustrest_plugin_host::PluginManager,
+    /// last-rendered declarative UI tree for each open plugin panel,
+    /// keyed by (plugin_id, panel_id); refreshed on open and after each event.
+    pub plugin_panel_state:
+        std::collections::HashMap<(String, String), rustrest_plugin_host::UiNode>,
+    pub plugin_manager_open: bool,
+    /// set while the user is choosing which installed export-format plugin
+    /// to export a collection through (only shown when more than one
+    /// plugin/format is available - a single option is used directly).
+    pub export_plugin_picker: Option<(usize, Vec<(String, rustrest_plugin_host::FormatDef)>)>,
+
+    // settings
+    pub settings_open: bool,
+    pub settings_tab: SettingsTab,
+    pub theme: AppTheme,
+    /// whether clicking outside an open modal/command palette dismisses it
+    pub close_on_outside_click: bool,
 }
 
 impl Rustrest {
+    fn persist_settings(&self) {
+        crate::app_settings::save(&crate::app_settings::PersistedSettings {
+            theme: self.theme,
+            close_on_outside_click: self.close_on_outside_click,
+        });
+    }
+
     pub fn build_session_snapshot(&self) -> SavedSession {
         let tabs = self
             .tabs
@@ -203,6 +236,9 @@ impl Rustrest {
                 // remote file tabs are tied to a live RemoteSession, which
                 // also doesn't survive a restart.
                 WorkspaceContent::RemoteFile { .. } => None,
+                // plugin panels are re-derived from the plugin on demand;
+                // nothing to persist.
+                WorkspaceContent::Plugin { .. } => None,
             })
             .collect();
 
@@ -332,6 +368,7 @@ impl Rustrest {
                 WorkspaceContent::CollectionRoot { collection_id, .. } => *collection_id == col_id,
                 WorkspaceContent::Terminal { .. } => false,
                 WorkspaceContent::RemoteFile { .. } => false,
+                WorkspaceContent::Plugin { .. } => false,
             };
             if belongs {
                 self.sync_tab_to_collection(idx);
@@ -380,6 +417,7 @@ impl Rustrest {
                 }
                 WorkspaceContent::Terminal { .. } => {}
                 WorkspaceContent::RemoteFile { .. } => {}
+                WorkspaceContent::Plugin { .. } => {}
             }
         }
     }
@@ -446,6 +484,8 @@ pub fn init() -> (Rustrest, Task<Message>) {
         ..Default::default()
     });
 
+    let persisted_settings = crate::app_settings::load();
+
     let mut app = Rustrest {
         collections: Vec::new(),
         environments: Vec::new(),
@@ -504,9 +544,35 @@ pub fn init() -> (Rustrest, Task<Message>) {
         remote_connect_pending: None,
         remote_explorers: std::collections::HashMap::new(),
         main_window_id,
-        remote_config_window_id: None,
+        remote_config_open: false,
         command_palette: None,
+        plugin_manager: rustrest_plugin_host::PluginManager::new().unwrap_or_else(|e| {
+            eprintln!("plugin manager unavailable: {e}");
+            rustrest_plugin_host::PluginManager::with_dirs(
+                std::env::temp_dir().join("rustrest-plugins-fallback"),
+                std::env::temp_dir().join("rustrest-plugins-fallback.json"),
+            )
+            .expect("PluginManager::with_dirs with a temp-dir fallback never fails")
+        }),
+        plugin_panel_state: std::collections::HashMap::new(),
+        plugin_manager_open: false,
+        export_plugin_picker: None,
+        settings_open: false,
+        settings_tab: SettingsTab::default(),
+        theme: persisted_settings.theme,
+        close_on_outside_click: persisted_settings.close_on_outside_click,
     };
+    app.plugin_manager.load_all();
+    let plugin_load_errors: Vec<String> = app
+        .plugin_manager
+        .installed()
+        .iter()
+        .filter_map(|p| {
+            p.load_error
+                .as_ref()
+                .map(|e| format!("Plugin '{}' failed to load: {e}", p.dir_name))
+        })
+        .collect();
 
     let load_errors = if let Some(manifest) = crate::workspace::load() {
         app.workspaces = manifest.workspaces;
@@ -570,10 +636,17 @@ pub fn init() -> (Rustrest, Task<Message>) {
     // silently check for updates on startup; surfaces a toast only if one is found
     let update_check_task = Task::done(Message::CheckForUpdateSilently);
 
+    let plugin_errors_task = Task::batch(
+        plugin_load_errors
+            .into_iter()
+            .map(|err| Task::done(Message::ShowToast(err, ToastStatus::Error))),
+    );
+
     let startup_task = Task::batch([
         open_main_window.map(|_id| Message::None),
         load_errors_task,
         update_check_task,
+        plugin_errors_task,
         auto_connect_remote_collections(&app),
     ]);
 
@@ -762,6 +835,13 @@ fn persist_collection_if_known_location(
     Task::done(Message::ShowToast(success_msg, ToastStatus::Success))
 }
 
+/// forwards any pending `host_log()` lines from plugins into the app's
+/// existing console panel, so plugin activity shows up alongside request
+/// logs without a separate UI surface.
+fn drain_plugin_logs(app: &mut Rustrest) {
+    app.console_logs.extend(app.plugin_manager.drain_logs());
+}
+
 fn finalize_tab_rename(app: &mut Rustrest, idx: usize) {
     if let Some(tab_state) = app.tabs.get_mut(idx) {
         tab_state.is_editing_name = false;
@@ -773,6 +853,7 @@ fn finalize_tab_rename(app: &mut Rustrest, idx: usize) {
                 } => collection_name.clone(),
                 WorkspaceContent::Terminal { .. } => "Terminal".to_string(),
                 WorkspaceContent::RemoteFile { path, .. } => path.clone(),
+                WorkspaceContent::Plugin { panel_id, .. } => panel_id.clone(),
             };
         }
     }
@@ -898,6 +979,10 @@ fn auto_connect_remote_collections(app: &Rustrest) -> Task<Message> {
 
 pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
     match message {
+        Message::ContextMenuAction(inner) => {
+            app.active_context_menu = None;
+            update(app, *inner)
+        }
         Message::None => Task::none(),
         Message::ImportCollectionPressed => {
             iced::Task::perform(
@@ -969,6 +1054,69 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             }
         }
 
+        Message::ImportCollectionViaPluginPressed(plugin_id, format_id, extensions) => {
+            let mut dialog = rfd::AsyncFileDialog::new();
+            if !extensions.is_empty() {
+                let ext_refs: Vec<&str> = extensions.iter().map(String::as_str).collect();
+                dialog = dialog.add_filter("Supported files", &ext_refs);
+            }
+            iced::Task::perform(
+                async move {
+                    let file_handle = dialog.pick_file().await?;
+                    let path = file_handle.path().to_path_buf();
+                    let bytes = tokio::fs::read(&path).await.ok()?;
+                    Some((path, bytes))
+                },
+                move |result| match result {
+                    Some((path, bytes)) => {
+                        Message::PluginImportFileLoaded(plugin_id, format_id, Some(path), bytes)
+                    }
+                    None => Message::None,
+                },
+            )
+        }
+
+        Message::PluginImportFileLoaded(plugin_id, format_id, path, bytes) => {
+            let result = app.plugin_manager.import(&plugin_id, &format_id, bytes);
+            drain_plugin_logs(app);
+            match result {
+                Ok(value) => match serde_json::from_value::<PostmanCollection>(value) {
+                    Ok(mut collection) => {
+                        let col_name = collection.info.name.clone();
+                        collection.id = app.next_tab_id;
+                        collection.file_path = path;
+                        app.next_tab_id += 1;
+                        collection.assign_request_ids(&mut app.next_request_id);
+
+                        let default_headers: Vec<KeyValuePair> = vec![
+                            KeyValuePair::new("Content-Type", "application/json"),
+                            KeyValuePair::new(
+                                "User-Agent",
+                                &format!("{}/{}", APP_NAME, APP_VERSION),
+                            ),
+                            KeyValuePair::new("Accept", "*/*"),
+                            KeyValuePair::new("Connection", "keep-alive"),
+                        ];
+                        collection.set_headers(default_headers);
+
+                        app.collections.push(collection);
+                        iced::Task::done(Message::ShowToast(
+                            format!("Collection '{}' imported successfully", col_name),
+                            ToastStatus::Success,
+                        ))
+                    }
+                    Err(e) => iced::Task::done(Message::ShowToast(
+                        format!("Plugin returned an invalid collection: {e}"),
+                        ToastStatus::Error,
+                    )),
+                },
+                Err(e) => iced::Task::done(Message::ShowToast(
+                    format!("Import failed: {e}"),
+                    ToastStatus::Error,
+                )),
+            }
+        }
+
         // simple inline disk overwrite action
         Message::SaveCollectionPressed(col_id) => {
             app.sync_collection_tabs(col_id);
@@ -996,6 +1144,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     }
                     WorkspaceContent::Terminal { .. } => false,
                     WorkspaceContent::RemoteFile { .. } => false,
+                    WorkspaceContent::Plugin { .. } => false,
                 };
                 if belongs {
                     tab_state.tab.dirty = false;
@@ -1040,6 +1189,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                                 }
                                 WorkspaceContent::Terminal { .. } => false,
                                 WorkspaceContent::RemoteFile { .. } => false,
+                                WorkspaceContent::Plugin { .. } => false,
                             };
                             if belongs {
                                 tab_state.tab.dirty = false;
@@ -1379,6 +1529,90 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 }
             }
             iced::Task::none()
+        }
+
+        Message::ExportViaPluginPressed(col_id) => {
+            let mut formats = app.plugin_manager.export_formats();
+            match formats.len() {
+                0 => iced::Task::done(Message::ShowToast(
+                    "No export plugins installed".to_string(),
+                    ToastStatus::Info,
+                )),
+                1 => {
+                    let (plugin_id, format) = formats.remove(0);
+                    iced::Task::done(Message::ExportCollectionViaPluginPressed(
+                        col_id,
+                        plugin_id,
+                        format.id,
+                        format.extensions,
+                    ))
+                }
+                _ => {
+                    app.export_plugin_picker = Some((col_id, formats));
+                    iced::Task::none()
+                }
+            }
+        }
+
+        Message::CloseExportPluginPicker => {
+            app.export_plugin_picker = None;
+            iced::Task::none()
+        }
+
+        Message::ExportCollectionViaPluginPressed(col_id, plugin_id, format_id, extensions) => {
+            app.export_plugin_picker = None;
+            app.sync_collection_tabs(col_id);
+            let Some(collection) = app.collections.iter().find(|c| c.id == col_id) else {
+                return iced::Task::none();
+            };
+            let value = match serde_json::to_value(collection) {
+                Ok(v) => v,
+                Err(e) => {
+                    return iced::Task::done(Message::ShowToast(
+                        format!("Export failed: {e}"),
+                        ToastStatus::Error,
+                    ));
+                }
+            };
+            let default_ext = extensions.first().cloned().unwrap_or_default();
+            let default_name = if default_ext.is_empty() {
+                collection.info.name.clone()
+            } else {
+                format!("{}.{}", collection.info.name, default_ext)
+            };
+
+            let result = app.plugin_manager.export(&plugin_id, &format_id, value);
+            drain_plugin_logs(app);
+            let bytes = match result {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    return iced::Task::done(Message::ShowToast(
+                        format!("Export failed: {e}"),
+                        ToastStatus::Error,
+                    ));
+                }
+            };
+
+            let mut dialog = rfd::AsyncFileDialog::new().set_file_name(&default_name);
+            if !extensions.is_empty() {
+                let ext_refs: Vec<&str> = extensions.iter().map(String::as_str).collect();
+                dialog = dialog.add_filter("Supported files", &ext_refs);
+            }
+            iced::Task::perform(
+                async move {
+                    let file_handle = dialog.save_file().await?;
+                    let path = file_handle.path().to_path_buf();
+                    tokio::fs::write(&path, bytes).await.ok()?;
+                    Some(path)
+                },
+                |result| match result {
+                    Some(path) => Message::ShowToast(
+                        format!("Collection exported to {:?}", path),
+                        ToastStatus::Success,
+                    ),
+                    None => Message::None,
+                },
+            )
         }
 
         Message::SidebarCollectionRootClicked(col_id) => {
@@ -1840,6 +2074,23 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     }
                 }
 
+                // native plugin request hooks run after the per-request JS
+                // script, as an app-wide policy layer (e.g. injecting an
+                // auth header for every request). method changes aren't
+                // applied back in v1 - only url/headers/body/variables are.
+                let plugin_ctx = rustrest_plugin_host::RequestContext {
+                    method: tab.method.to_string(),
+                    url: final_url,
+                    headers: filtered_headers,
+                    body: compiled_body,
+                    variables: script_vars.clone(),
+                };
+                let plugin_ctx = app.plugin_manager.run_pre_request_hooks(plugin_ctx);
+                app.console_logs.extend(app.plugin_manager.drain_logs());
+                let final_url = plugin_ctx.url;
+                let filtered_headers = plugin_ctx.headers;
+                let compiled_body = plugin_ctx.body;
+
                 let spec = crate::http_client::RequestSpec::new(final_url, tab.method.clone())
                     .body_type(tab.body_type)
                     .raw_body(compiled_body)
@@ -1969,6 +2220,63 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                             }
                         }
                     }
+                }
+
+                // native plugin response hooks run after the per-request JS
+                // test script, same app-wide-policy ordering as the
+                // pre-request side. response status/headers/body are
+                // read-only here (mirroring `pm.response` in JS scripts);
+                // only variables and additional test results are applied back.
+                if let Ok(resp) = &res {
+                    let plugin_vars: std::collections::HashMap<String, String> = app
+                        .active_env_index
+                        .and_then(|idx| app.environments.get(idx))
+                        .map(|e| {
+                            e.variables
+                                .iter()
+                                .filter(|v| v.is_active)
+                                .map(|v| (v.key.clone(), v.value.clone()))
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    let plugin_vars_snapshot = plugin_vars.clone();
+
+                    let plugin_ctx = rustrest_plugin_host::ResponseContext {
+                        status: resp.status,
+                        headers: resp.headers.clone(),
+                        body: resp.body.clone(),
+                        variables: plugin_vars,
+                        test_results: Vec::new(),
+                    };
+                    let plugin_ctx = app.plugin_manager.run_post_response_hooks(plugin_ctx);
+                    app.console_logs.extend(app.plugin_manager.drain_logs());
+
+                    if let Some(idx) = app.active_env_index {
+                        if let Some(env) = app.environments.get_mut(idx) {
+                            for (k, v) in plugin_ctx.variables {
+                                if plugin_vars_snapshot.get(&k) == Some(&v) {
+                                    continue;
+                                }
+                                if let Some(existing) =
+                                    env.variables.iter_mut().find(|kv| kv.key == k)
+                                {
+                                    existing.value = v;
+                                    existing.is_active = true;
+                                } else {
+                                    let mut kv = KeyValuePair::new(&k, &v);
+                                    kv.is_active = true;
+                                    env.variables.push(kv);
+                                }
+                            }
+                        }
+                    }
+
+                    test_results.extend(plugin_ctx.test_results.into_iter().map(|t| {
+                        crate::http_client::TestResult {
+                            name: t.name,
+                            passed: t.passed,
+                        }
+                    }));
                 }
 
                 let mut res = res;
@@ -2867,6 +3175,23 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                         let version_info = format!("{} v{}", APP_NAME, APP_VERSION);
                         return update(app, Message::ShowToast(version_info, ToastStatus::Info));
                     }
+                    MenuMessage::OpenPluginManager => {
+                        return update(app, Message::OpenPluginManagerPressed);
+                    }
+                    MenuMessage::OpenSettings => {
+                        return update(app, Message::OpenSettingsPressed);
+                    }
+                    MenuMessage::Plugin(plugin_id, command_id) => {
+                        return update(app, Message::PluginCommand(plugin_id, command_id));
+                    }
+                    MenuMessage::ImportViaPlugin(plugin_id, format_id, extensions) => {
+                        return update(
+                            app,
+                            Message::ImportCollectionViaPluginPressed(
+                                plugin_id, format_id, extensions,
+                            ),
+                        );
+                    }
                 }
             }
             Task::none()
@@ -3026,6 +3351,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                         let tab_id = tab_state.tab.id;
                         update(app, Message::RemoteFileSavePressed(tab_id))
                     }
+                    WorkspaceContent::Plugin { .. } => Task::none(),
                 }
             } else {
                 Task::none()
@@ -3107,7 +3433,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 &mut app.toast_manager,
                 "Downloading update…".to_string(),
                 ToastStatus::Info,
-                crate::ui::toast::toast::TOAST_DURATION,
+                crate::ui::toast::toast::TOAST_DURATION_LONG,
             );
             let update_task = iced::Task::perform(
                 async {
@@ -3124,7 +3450,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             &mut app.toast_manager,
             format!("Updated to v{version}. Please restart the app."),
             ToastStatus::Success,
-            crate::ui::toast::toast::TOAST_DURATION,
+            crate::ui::toast::toast::TOAST_DURATION_LONG,
         ),
 
         Message::UpdateInstallResult(Err(e)) => crate::ui::toast::toast::show_and_schedule(
@@ -3674,29 +4000,15 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             )),
         },
         // remote development (SSH)
-        Message::OpenRemoteConfigWindow => {
-            if app.remote_config_window_id.is_some() {
-                // already open
-                return Task::none();
-            }
-            let icon = iced::window::icon::from_file_data(crate::APP_ICON, None).ok();
-            let (id, open_task) = iced::window::open(iced::window::Settings {
-                size: iced::Size::new(560.0, 700.0),
-                icon,
-                exit_on_close_request: false,
-                ..Default::default()
-            });
-            app.remote_config_window_id = Some(id);
-            open_task.map(|_id| Message::None)
+        Message::OpenRemoteConfig => {
+            app.remote_config_open = true;
+            Task::none()
         }
-        Message::WindowCloseRequested(window_id) => {
-            if app.remote_config_window_id == Some(window_id) {
-                app.remote_config_window_id = None;
-                iced::window::close(window_id)
-            } else {
-                update(app, Message::AppExit)
-            }
+        Message::CloseRemoteConfigPressed => {
+            app.remote_config_open = false;
+            Task::none()
         }
+        Message::WindowCloseRequested(_window_id) => update(app, Message::AppExit),
         // end remote development (SSH)
 
         // command palette (Ctrl+Shift+P)
@@ -3716,9 +4028,10 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             Task::none()
         }
         Message::CommandPaletteMoveSelection(delta) => {
-            if let Some(state) = app.command_palette.as_mut() {
-                let len = crate::ui::command_palette::matches_for(state).len();
+            if let Some(mut state) = app.command_palette.take() {
+                let len = crate::ui::command_palette::matches_for(app, &state).len();
                 state.move_selection(delta, len);
+                app.command_palette = Some(state);
             }
             Task::none()
         }
@@ -3726,9 +4039,12 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             let Some(state) = app.command_palette.take() else {
                 return Task::none();
             };
-            let matches = crate::ui::command_palette::matches_for(&state);
+            let matches = crate::ui::command_palette::matches_for(app, &state);
             match matches.get(state.selected) {
-                Some(cmd) => update(app, crate::ui::command_palette::to_message(cmd.action)),
+                Some(cmd) => {
+                    let action = cmd.action.clone();
+                    update(app, crate::ui::command_palette::to_message(action))
+                }
                 None => Task::none(),
             }
         }
@@ -3739,6 +4055,117 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         Message::CommandPaletteItemClicked(action) => {
             app.command_palette = None;
             update(app, crate::ui::command_palette::to_message(action))
+        }
+
+        // native plugins (wasm)
+        Message::OpenPluginManagerPressed => {
+            app.plugin_manager_open = true;
+            Task::none()
+        }
+        Message::ClosePluginManagerPressed => {
+            app.plugin_manager_open = false;
+            Task::none()
+        }
+
+        // settings (reusable preferences modal)
+        Message::OpenSettingsPressed => {
+            app.settings_open = true;
+            Task::none()
+        }
+        Message::CloseSettingsPressed => {
+            app.settings_open = false;
+            Task::none()
+        }
+        Message::SettingsTabSelected(tab) => {
+            app.settings_tab = tab;
+            Task::none()
+        }
+        Message::ThemeSelected(theme) => {
+            app.theme = theme;
+            app.persist_settings();
+            Task::none()
+        }
+        Message::CloseOnOutsideClickToggled(enabled) => {
+            app.close_on_outside_click = enabled;
+            app.persist_settings();
+            Task::none()
+        }
+        Message::TogglePluginEnabled(plugin_id, enabled) => {
+            app.plugin_manager.set_enabled(&plugin_id, enabled);
+            Task::none()
+        }
+        Message::PluginCommand(plugin_id, command_id) => {
+            let task = match app.plugin_manager.run_command(&plugin_id, &command_id) {
+                Ok(Some(msg)) => Task::done(Message::ShowToast(msg, ToastStatus::Info)),
+                Ok(None) => Task::none(),
+                Err(e) => Task::done(Message::ShowToast(
+                    format!("Plugin command failed: {e}"),
+                    ToastStatus::Error,
+                )),
+            };
+            drain_plugin_logs(app);
+            task
+        }
+        Message::OpenPluginPanel(plugin_id, panel_id) => {
+            let existing = app.tabs.iter().position(|t| {
+                matches!(
+                    &t.content,
+                    WorkspaceContent::Plugin { plugin_id: p, panel_id: pa }
+                        if *p == plugin_id && *pa == panel_id
+                )
+            });
+            if let Some(idx) = existing {
+                app.active_tab_index = idx;
+                return Task::none();
+            }
+
+            match app.plugin_manager.render_panel(&plugin_id, &panel_id) {
+                Ok(tree) => {
+                    let title = app
+                        .plugin_manager
+                        .sidebar_panels()
+                        .into_iter()
+                        .find(|(pid, panel)| *pid == plugin_id && panel.id == panel_id)
+                        .map(|(_, panel)| panel.title)
+                        .unwrap_or_else(|| panel_id.clone());
+
+                    app.plugin_panel_state
+                        .insert((plugin_id.clone(), panel_id.clone()), tree);
+
+                    let mut tab = Tab::new(app.next_tab_id);
+                    tab.name = title;
+                    app.next_tab_id += 1;
+                    app.tabs.push(TabState {
+                        tab,
+                        content: WorkspaceContent::Plugin {
+                            plugin_id,
+                            panel_id,
+                        },
+                        is_editing_name: false,
+                    });
+                    app.active_tab_index = app.tabs.len() - 1;
+                    Task::none()
+                }
+                Err(e) => Task::done(Message::ShowToast(
+                    format!("Failed to open plugin panel: {e}"),
+                    ToastStatus::Error,
+                )),
+            }
+        }
+        Message::PluginPanelEvent(plugin_id, panel_id, event) => {
+            let task = match app.plugin_manager.panel_event(&plugin_id, &panel_id, event) {
+                Ok(Some(tree)) => {
+                    app.plugin_panel_state.insert((plugin_id, panel_id), tree);
+                    Task::none()
+                }
+                Ok(None) => Task::none(),
+                Err(e) => Task::done(Message::ShowToast(
+                    format!("Plugin panel action failed: {e}"),
+                    ToastStatus::Error,
+                )),
+            };
+            drain_plugin_logs(app);
+            task
         }
 
         Message::DismissToast(id) => {

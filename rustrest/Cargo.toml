@@ -9,6 +9,7 @@ rustrest-core = { path = "../crates/rustrest-core" }
 rustrest-terminal = { path = "../crates/rustrest-terminal" }
 rustrest-remote = { path = "../crates/rustrest-remote" }
 rustrest-command-palette = { path = "../crates/rustrest-command-palette" }
+rustrest-plugin-host = { path = "../crates/rustrest-plugin-host" }
 
 iced = { version = "0.14", features = ["tokio", "image", "advanced", "canvas"] }
 

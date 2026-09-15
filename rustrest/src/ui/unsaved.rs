@@ -23,6 +23,7 @@ pub fn tab_is_unsaved(app: &Rustrest, tab_state: &TabState) -> bool {
             .unwrap_or(false),
         WorkspaceContent::Terminal { .. } => false,
         WorkspaceContent::RemoteFile { dirty, .. } => *dirty,
+        WorkspaceContent::Plugin { .. } => false,
     }
 }
 

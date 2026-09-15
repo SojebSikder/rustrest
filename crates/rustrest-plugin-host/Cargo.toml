@@ -1,0 +1,16 @@
+[package]
+name = "rustrest-plugin-host"
+version = "0.1.0"
+edition = "2024"
+description = "Host-side runtime that loads and drives Rustrest wasm plugins"
+
+[lib]
+name = "rustrest_plugin_host"
+
+[dependencies]
+rustrest-plugin-api = { path = "../rustrest-plugin-api" }
+wasmtime = { version = "48", default-features = false, features = ["cranelift", "runtime"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+dirs = "7.0.0"
+thiserror = "2"

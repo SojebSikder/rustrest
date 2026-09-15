@@ -1,0 +1,12 @@
+[package]
+name = "rustrest-plugin-api"
+version = "0.1.0"
+edition = "2024"
+description = "SDK for writing native Rustrest plugins (compiled to wasm32-unknown-unknown)"
+
+[lib]
+name = "rustrest_plugin_api"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"

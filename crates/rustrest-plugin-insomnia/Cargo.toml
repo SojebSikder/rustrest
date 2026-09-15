@@ -1,0 +1,25 @@
+[workspace]
+# deliberately its own standalone workspace, kept out of the main
+# `rustrest` workspace (see root Cargo.toml) so a normal `cargo build`
+# doesn't require the wasm32-unknown-unknown target.
+
+[package]
+name = "rustrest-plugin-insomnia"
+version = "0.1.0"
+edition = "2024"
+description = "Native Rustrest plugin: import/export Insomnia v4 (JSON) and v5.1 (YAML) collections"
+publish = false
+
+[lib]
+name = "rustrest_plugin_insomnia"
+crate-type = ["cdylib"]
+
+[dependencies]
+rustrest-plugin-api = { path = "../rustrest-plugin-api" }
+serde_json = "1.0"
+serde_yaml = "0.9"
+
+[profile.release]
+panic = "abort"
+strip = true
+opt-level = "s"

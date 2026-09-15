@@ -8,6 +8,8 @@ members = [
     "crates/rustrest-remote-agent",
     "crates/rustrest-remote",
     "crates/rustrest-command-palette",
+    "crates/rustrest-plugin-api",
+    "crates/rustrest-plugin-host",
 ]
 resolver = "2"
 

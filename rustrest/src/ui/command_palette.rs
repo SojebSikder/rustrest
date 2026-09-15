@@ -1,3 +1,4 @@
+use crate::app::Rustrest;
 use crate::message::Message;
 use crate::ui::modal::card;
 use iced::widget::{Id, button, column, container, scrollable, text, text_input};
@@ -5,7 +6,7 @@ use iced::{Alignment, Color, Element, Font, Length};
 use rustrest_command_palette::{Command, PaletteState, filter};
 
 /// every action reachable from the command palette.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppCommand {
     NewRequestTab,
     NewTerminal,
@@ -15,10 +16,15 @@ pub enum AppCommand {
     ToggleConsolePanel,
     CheckForUpdate,
     RemoteDevelopmentOverSsh,
+    OpenPluginManager,
+    /// plugin_id, command_id.
+    Plugin(String, String),
 }
 
-pub fn commands() -> Vec<Command<AppCommand>> {
-    vec![
+/// the built-in commands, plus one entry per command a loaded, enabled
+/// plugin contributed via `Capability::Commands`.
+pub fn commands(app: &Rustrest) -> Vec<Command<AppCommand>> {
+    let mut list = vec![
         Command::new(
             "new-request-tab",
             "New Request Tab",
@@ -57,7 +63,26 @@ pub fn commands() -> Vec<Command<AppCommand>> {
             AppCommand::RemoteDevelopmentOverSsh,
         )
         .with_subtitle("Configure saved hosts in a new window"),
-    ]
+        Command::new(
+            "manage-plugins",
+            "Manage Plugins...",
+            AppCommand::OpenPluginManager,
+        ),
+    ];
+
+    for (plugin_id, cmd) in app.plugin_manager.commands() {
+        let mut entry = Command::new(
+            format!("plugin:{}:{}", plugin_id, cmd.id),
+            cmd.title,
+            AppCommand::Plugin(plugin_id, cmd.id),
+        );
+        if let Some(subtitle) = cmd.subtitle {
+            entry = entry.with_subtitle(subtitle);
+        }
+        list.push(entry);
+    }
+
+    list
 }
 
 /// maps a palette selection to the real application message that performs it.
@@ -70,7 +95,9 @@ pub fn to_message(action: AppCommand) -> Message {
         AppCommand::CreateNewCollection => Message::CreateNewCollectionPressed,
         AppCommand::ToggleConsolePanel => Message::ToggleConsolePanel,
         AppCommand::CheckForUpdate => Message::CheckForUpdate,
-        AppCommand::RemoteDevelopmentOverSsh => Message::OpenRemoteConfigWindow,
+        AppCommand::RemoteDevelopmentOverSsh => Message::OpenRemoteConfig,
+        AppCommand::OpenPluginManager => Message::OpenPluginManagerPressed,
+        AppCommand::Plugin(plugin_id, command_id) => Message::PluginCommand(plugin_id, command_id),
     }
 }
 
@@ -80,16 +107,16 @@ pub fn input_id() -> Id {
 }
 
 /// the currently-matching commands for `state.query`, in display order.
-pub fn matches_for(state: &PaletteState) -> Vec<Command<AppCommand>> {
-    let commands = commands();
+pub fn matches_for(app: &Rustrest, state: &PaletteState) -> Vec<Command<AppCommand>> {
+    let commands = commands(app);
     filter(&commands, &state.query)
         .into_iter()
-        .copied()
+        .cloned()
         .collect()
 }
 
-pub fn view(state: &PaletteState) -> Element<'_, Message> {
-    let matches = matches_for(state);
+pub fn view<'a>(app: &'a Rustrest, state: &'a PaletteState) -> Element<'a, Message> {
+    let matches = matches_for(app, state);
 
     let input = text_input("Type a command...", &state.query)
         .id(input_id())
@@ -114,8 +141,9 @@ pub fn view(state: &PaletteState) -> Element<'_, Message> {
     for (idx, cmd) in matches.iter().enumerate() {
         let is_selected = idx == state.selected;
 
-        let mut row_content = column![text(cmd.title).size(13)].spacing(2);
-        if let Some(subtitle) = cmd.subtitle {
+        let mut row_content = column![text(cmd.title.clone()).size(13)].spacing(2);
+        if let Some(subtitle) = &cmd.subtitle {
+            let subtitle = subtitle.clone();
             row_content =
                 row_content.push(text(subtitle).size(11).style(|_theme: &iced::Theme| {
                     text::Style {
@@ -124,7 +152,7 @@ pub fn view(state: &PaletteState) -> Element<'_, Message> {
                 }));
         }
 
-        let action = cmd.action;
+        let action = cmd.action.clone();
         list = list.push(
             button(row_content)
                 .on_press(Message::CommandPaletteItemClicked(action))

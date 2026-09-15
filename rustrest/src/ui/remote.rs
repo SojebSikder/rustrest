@@ -1,10 +1,10 @@
 use crate::app::Rustrest;
 use crate::message::Message;
-use crate::ui::modal::card;
+use crate::ui::modal::{card, danger_text_color, muted_text_color};
 use iced::widget::{
     Space, button, column, container, pick_list, row, scrollable, text, text_input,
 };
-use iced::{Alignment, Color, Element, Font, Length};
+use iced::{Alignment, Element, Font, Length, Theme};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RemoteAuthKind {
@@ -77,7 +77,7 @@ pub struct RemoteExplorerState {
     pub new_collection_name: String,
 }
 
-pub fn view_remote_config_window(app: &Rustrest) -> Element<'_, Message> {
+pub fn view_remote_config_modal(app: &Rustrest) -> Element<'_, Message> {
     let title = text("Remote Development over SSH").size(18).font(Font {
         weight: iced::font::Weight::Bold,
         ..Font::DEFAULT
@@ -87,8 +87,8 @@ pub fn view_remote_config_window(app: &Rustrest) -> Element<'_, Message> {
          remote files.",
     )
     .size(12)
-    .style(|_theme: &iced::Theme| text::Style {
-        color: Some(Color::from_rgb(0.55, 0.55, 0.6)),
+    .style(|theme: &Theme| text::Style {
+        color: Some(muted_text_color(theme)),
     });
 
     let section_header = |label: &'static str| {
@@ -101,8 +101,8 @@ pub fn view_remote_config_window(app: &Rustrest) -> Element<'_, Message> {
     let mut saved_hosts = column![].spacing(6);
     if app.remote_profiles.is_empty() {
         saved_hosts = saved_hosts.push(text("No saved hosts yet.").size(12).style(
-            |_theme: &iced::Theme| text::Style {
-                color: Some(Color::from_rgb(0.55, 0.55, 0.6)),
+            |theme: &Theme| text::Style {
+                color: Some(muted_text_color(theme)),
             },
         ));
     }
@@ -225,9 +225,14 @@ pub fn view_remote_config_window(app: &Rustrest) -> Element<'_, Message> {
          isn't already installed on the host.",
     )
     .size(11)
-    .style(|_theme: &iced::Theme| text::Style {
-        color: Some(Color::from_rgb(0.55, 0.55, 0.6)),
+    .style(|theme: &Theme| text::Style {
+        color: Some(muted_text_color(theme)),
     });
+
+    let close_btn = button(text("Close").size(14))
+        .on_press(Message::CloseRemoteConfigPressed)
+        .padding([8, 16])
+        .style(button::secondary);
 
     let body = column![
         title,
@@ -238,15 +243,18 @@ pub fn view_remote_config_window(app: &Rustrest) -> Element<'_, Message> {
         add_form,
         section_header("Remote agent"),
         agent_note,
+        container(close_btn)
+            .width(Length::Fill)
+            .align_x(iced::alignment::Horizontal::Right),
     ]
     .spacing(14)
     .padding(20)
     .width(Length::Fill);
 
-    container(scrollable(body))
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
+    card(
+        container(scrollable(body)).height(Length::Fixed(560.0)),
+        560.0,
+    )
 }
 
 fn render_explorer<'a>(
@@ -277,7 +285,9 @@ fn render_explorer<'a>(
         body = body.push(
             text(err.clone())
                 .size(11)
-                .color(Color::from_rgb(0.85, 0.35, 0.35)),
+                .style(|theme: &Theme| text::Style {
+                    color: Some(danger_text_color(theme)),
+                }),
         );
     }
 
