@@ -174,11 +174,18 @@ pub struct Rustrest {
     pub remote_profile_form: crate::ui::remote::RemoteProfileForm,
     pub remote_connect_pending: Option<crate::ui::remote::PendingRemoteConnect>,
     pub remote_explorers: std::collections::HashMap<usize, crate::ui::remote::RemoteExplorerState>,
+    // the id of the profile a connect attempt is currently in flight for, so
+    // the "Connect" button can show a spinner once the password prompt closes.
+    pub remote_connecting: Option<usize>,
 
     // the id of the always-open main window
     pub main_window_id: iced::window::Id,
     // whether the "Remote development over SSH" configuration modal is open
     pub remote_config_open: bool,
+
+    // advances every tick of `spinner_sub` (only running while
+    // `any_spinner_active()` is true) to animate loading spinners.
+    pub spinner_tick: u64,
 
     // command palette (Ctrl+Shift+P)
     pub command_palette: Option<rustrest_command_palette::PaletteState>,
@@ -209,6 +216,24 @@ impl Rustrest {
             theme: self.theme,
             close_on_outside_click: self.close_on_outside_click,
         });
+    }
+
+    /// whether any spinner-driven loading indicator is currently shown, so
+    /// the animation tick subscription only runs while it's actually needed.
+    pub fn any_spinner_active(&self) -> bool {
+        self.remote_connecting.is_some()
+            || self.remote_explorers.values().any(|e| e.loading)
+            || self.tabs.iter().any(|t| t.tab.is_loading)
+            || self.commit_modal.as_ref().is_some_and(|m| m.committing)
+            || self.toast_manager.has_pending()
+            || self.tabs.iter().any(|t| {
+                matches!(
+                    &t.content,
+                    WorkspaceContent::CollectionRoot { collection_id, active_sub_tab, .. }
+                        if *active_sub_tab == CollectionSubTab::Git
+                            && !self.git_status_cache.contains_key(collection_id)
+                )
+            })
     }
 
     pub fn build_session_snapshot(&self) -> SavedSession {
@@ -543,8 +568,10 @@ pub fn init() -> (Rustrest, Task<Message>) {
         remote_profile_form: crate::ui::remote::RemoteProfileForm::default(),
         remote_connect_pending: None,
         remote_explorers: std::collections::HashMap::new(),
+        remote_connecting: None,
         main_window_id,
         remote_config_open: false,
+        spinner_tick: 0,
         command_palette: None,
         plugin_manager: rustrest_plugin_host::PluginManager::new().unwrap_or_else(|e| {
             eprintln!("plugin manager unavailable: {e}");
@@ -1426,6 +1453,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 collection_name,
                 message: iced::widget::text_editor::Content::new(),
                 files: snapshot.files,
+                committing: false,
             });
             Task::none()
         }
@@ -1440,7 +1468,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             Task::none()
         }
         Message::CommitConfirmed => {
-            let Some(modal) = app.commit_modal.take() else {
+            let Some(modal) = app.commit_modal.as_ref() else {
                 return Task::none();
             };
             let Some(collection) = app.collections.iter().find(|c| c.id == modal.collection_id)
@@ -1452,6 +1480,9 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             };
             let col_id = modal.collection_id;
             let message = modal.message.text();
+            if let Some(modal) = app.commit_modal.as_mut() {
+                modal.committing = true;
+            }
 
             Task::perform(
                 async move { crate::collection::git_ops::git_commit_all(&dir, &message).await },
@@ -1459,17 +1490,25 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             )
         }
         Message::CommitResult(col_id, result) => match result {
-            Ok(()) => Task::batch([
+            Ok(()) => {
+                app.commit_modal = None;
+                Task::batch([
+                    Task::done(Message::ShowToast(
+                        "Changes committed".to_string(),
+                        ToastStatus::Success,
+                    )),
+                    Task::done(Message::GitStatusRequested(col_id)),
+                ])
+            }
+            Err(e) => {
+                if let Some(modal) = app.commit_modal.as_mut() {
+                    modal.committing = false;
+                }
                 Task::done(Message::ShowToast(
-                    "Changes committed".to_string(),
-                    ToastStatus::Success,
-                )),
-                Task::done(Message::GitStatusRequested(col_id)),
-            ]),
-            Err(e) => Task::done(Message::ShowToast(
-                format!("Commit failed: {e}"),
-                ToastStatus::Error,
-            )),
+                    format!("Commit failed: {e}"),
+                    ToastStatus::Error,
+                ))
+            }
         },
 
         // generic reusable confirm dialog
@@ -3364,16 +3403,28 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             crate::workspace::save(&app.build_workspace_manifest());
             Task::none()
         }
+        Message::SpinnerTick => {
+            app.spinner_tick = app.spinner_tick.wrapping_add(1);
+            Task::none()
+        }
 
         // self update
-        Message::CheckForUpdate => iced::Task::perform(
-            async {
-                tokio::task::spawn_blocking(check_for_update)
-                    .await
-                    .unwrap_or_else(|e| Err(e.to_string()))
-            },
-            Message::UpdateCheckResult,
-        ),
+        Message::CheckForUpdate => {
+            let toast_task = crate::ui::toast::toast::show_pending_and_schedule(
+                &mut app.toast_manager,
+                "Checking for updates…".to_string(),
+                crate::ui::toast::toast::TOAST_DURATION,
+            );
+            let check_task = iced::Task::perform(
+                async {
+                    tokio::task::spawn_blocking(check_for_update)
+                        .await
+                        .unwrap_or_else(|e| Err(e.to_string()))
+                },
+                Message::UpdateCheckResult,
+            );
+            iced::Task::batch([toast_task, check_task])
+        }
 
         // check on startup: same lookup, but stays quiet on "up to date" or errors instead of toasting on every launch
         Message::CheckForUpdateSilently => iced::Task::perform(
@@ -3429,10 +3480,9 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         ),
 
         Message::InstallUpdate => {
-            let toast_task = crate::ui::toast::toast::show_and_schedule(
+            let toast_task = crate::ui::toast::toast::show_pending_and_schedule(
                 &mut app.toast_manager,
                 "Downloading update…".to_string(),
-                ToastStatus::Info,
                 crate::ui::toast::toast::TOAST_DURATION_LONG,
             );
             let update_task = iced::Task::perform(
@@ -3569,9 +3619,13 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             else {
                 return Task::none();
             };
+            app.remote_connecting = Some(profile.id);
             spawn_remote_connect(&profile, pending.secret)
         }
         Message::RemoteConnected(profile_id, Ok(session)) => {
+            if app.remote_connecting == Some(profile_id) {
+                app.remote_connecting = None;
+            }
             app.remote_sessions.insert(profile_id, session.clone());
             let name = app
                 .remote_profiles
@@ -3608,10 +3662,15 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             }
             Task::batch(tasks)
         }
-        Message::RemoteConnected(_, Err(err)) => Task::done(Message::ShowToast(
-            format!("Connect failed: {err}"),
-            ToastStatus::Error,
-        )),
+        Message::RemoteConnected(profile_id, Err(err)) => {
+            if app.remote_connecting == Some(profile_id) {
+                app.remote_connecting = None;
+            }
+            Task::done(Message::ShowToast(
+                format!("Connect failed: {err}"),
+                ToastStatus::Error,
+            ))
+        }
         Message::RemoteDisconnectPressed(profile_id) => {
             app.remote_sessions.remove(&profile_id);
             app.remote_explorers.remove(&profile_id);
@@ -3747,6 +3806,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 let Some(session) = app.remote_sessions.get(&profile_id).cloned() else {
                     return Task::none();
                 };
+                app.remote_explorers.entry(profile_id).or_default().loading = true;
                 let path_for_result = path.clone();
                 Task::perform(
                     async move { session.read_file(&path).await.map_err(|e| e.to_string()) },
@@ -3756,36 +3816,42 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 )
             }
         }
-        Message::RemoteFileLoaded(profile_id, path, result) => match result {
-            Ok(bytes) => {
-                let text = String::from_utf8_lossy(&bytes).into_owned();
-                let mut file_tab = Tab::new(app.next_tab_id);
-                file_tab.name = path.clone();
-                app.tabs.push(TabState {
-                    tab: file_tab,
-                    content: WorkspaceContent::RemoteFile {
-                        profile_id,
-                        path,
-                        contents: iced::widget::text_editor::Content::with_text(&text),
-                        dirty: false,
-                    },
-                    is_editing_name: false,
-                });
-                app.next_tab_id += 1;
-                app.active_tab_index = app.tabs.len() - 1;
-                Task::none()
+        Message::RemoteFileLoaded(profile_id, path, result) => {
+            if let Some(explorer) = app.remote_explorers.get_mut(&profile_id) {
+                explorer.loading = false;
             }
-            Err(err) => Task::done(Message::ShowToast(
-                format!("Failed to open remote file: {err}"),
-                ToastStatus::Error,
-            )),
-        },
+            match result {
+                Ok(bytes) => {
+                    let text = String::from_utf8_lossy(&bytes).into_owned();
+                    let mut file_tab = Tab::new(app.next_tab_id);
+                    file_tab.name = path.clone();
+                    app.tabs.push(TabState {
+                        tab: file_tab,
+                        content: WorkspaceContent::RemoteFile {
+                            profile_id,
+                            path,
+                            contents: iced::widget::text_editor::Content::with_text(&text),
+                            dirty: false,
+                        },
+                        is_editing_name: false,
+                    });
+                    app.next_tab_id += 1;
+                    app.active_tab_index = app.tabs.len() - 1;
+                    Task::none()
+                }
+                Err(err) => Task::done(Message::ShowToast(
+                    format!("Failed to open remote file: {err}"),
+                    ToastStatus::Error,
+                )),
+            }
+        }
 
         // remote development (SSH) - remote collections
         Message::RemoteImportDirAsCollectionPressed(profile_id, path) => {
             let Some(session) = app.remote_sessions.get(&profile_id).cloned() else {
                 return Task::none();
             };
+            app.remote_explorers.entry(profile_id).or_default().loading = true;
             let path_for_result = path.clone();
             Task::perform(
                 async move {
@@ -3805,6 +3871,9 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             )
         }
         Message::RemoteCollectionImported(profile_id, root, Ok(mut collection)) => {
+            if let Some(explorer) = app.remote_explorers.get_mut(&profile_id) {
+                explorer.loading = false;
+            }
             collection.remote_dir = Some(RemoteDirRef {
                 profile_id,
                 root: root.clone(),
@@ -3849,10 +3918,15 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 ToastStatus::Success,
             ))
         }
-        Message::RemoteCollectionImported(_, _, Err(err)) => Task::done(Message::ShowToast(
-            format!("Failed to import remote collection: {err}"),
-            ToastStatus::Error,
-        )),
+        Message::RemoteCollectionImported(profile_id, _, Err(err)) => {
+            if let Some(explorer) = app.remote_explorers.get_mut(&profile_id) {
+                explorer.loading = false;
+            }
+            Task::done(Message::ShowToast(
+                format!("Failed to import remote collection: {err}"),
+                ToastStatus::Error,
+            ))
+        }
 
         Message::RemoteCollectionLoaded(collection_id, Ok(mut collection)) => {
             let remote_dir = app
@@ -3897,6 +3971,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 return Task::none();
             };
             let root = join_remote_path(&explorer.path, &name);
+            app.remote_explorers.entry(profile_id).or_default().loading = true;
             let collection = PostmanCollection {
                 id: 0,
                 file_path: None,

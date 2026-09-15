@@ -324,6 +324,9 @@ pub enum Message {
 
     // temporary data stores
     AutosaveTick,
+    // advances the loading-spinner animation frame; only subscribed to while
+    // `Rustrest::any_spinner_active()` is true.
+    SpinnerTick,
 
     ShowToast(String, ToastStatus),
     DismissToast(usize),

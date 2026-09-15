@@ -1,6 +1,7 @@
 use crate::app::Rustrest;
 use crate::message::Message;
 use crate::ui::modal::{card, danger_text_color, muted_text_color};
+use crate::ui::spinner::spinner_with_label;
 use iced::widget::{
     Space, button, column, container, pick_list, row, scrollable, text, text_input,
 };
@@ -141,6 +142,8 @@ pub fn view_remote_config_modal(app: &Rustrest) -> Element<'_, Message> {
                         .padding([3, 8])
                         .style(button::danger),
                 );
+        } else if app.remote_connecting == Some(profile.id) {
+            row_el = row_el.push(spinner_with_label(app.spinner_tick, "Connecting..."));
         } else {
             row_el = row_el.push(
                 button(text("Connect").size(11))
@@ -162,7 +165,7 @@ pub fn view_remote_config_modal(app: &Rustrest) -> Element<'_, Message> {
         if connected {
             if let Some(explorer) = app.remote_explorers.get(&profile.id) {
                 if explorer.visible {
-                    item = item.push(render_explorer(profile.id, explorer));
+                    item = item.push(render_explorer(profile.id, explorer, app.spinner_tick));
                 }
             }
         }
@@ -260,6 +263,7 @@ pub fn view_remote_config_modal(app: &Rustrest) -> Element<'_, Message> {
 fn render_explorer<'a>(
     profile_id: usize,
     explorer: &'a RemoteExplorerState,
+    spinner_tick: u64,
 ) -> Element<'a, Message> {
     let path_row = row![
         text_input("Remote path (e.g. /home/you)", &explorer.path)
@@ -279,7 +283,7 @@ fn render_explorer<'a>(
     let mut body = column![path_row].spacing(4);
 
     if explorer.loading {
-        body = body.push(text("Loading...").size(11));
+        body = body.push(spinner_with_label(spinner_tick, "Loading..."));
     }
     if let Some(err) = &explorer.error {
         body = body.push(

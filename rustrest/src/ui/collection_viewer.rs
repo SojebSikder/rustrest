@@ -160,6 +160,7 @@ pub fn render_collection_root(
                     snapshot,
                     app.git_selected_file.as_ref(),
                     app.git_diff_cache.as_ref(),
+                    app.spinner_tick,
                 ),
             ]
             .spacing(12)
