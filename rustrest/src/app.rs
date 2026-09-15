@@ -2630,7 +2630,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             let col_id = app.next_tab_id;
             app.next_tab_id += 1;
 
-            let col_name = format!("New Collection {}", col_id);
+            let col_name = format!("New Collection");
             let new_col = PostmanCollection {
                 id: col_id,
                 info: CollectionInfo {
@@ -2902,10 +2902,8 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         // context menu
         Message::ShowCollectionContextMenu(col_id) => {
             let key = SidebarItemKey::Collection(col_id);
-            app.active_context_menu = Some(app.context_menu_for_sidebar_item(
-                key,
-                ContextMenu::Collection(col_id),
-            ));
+            app.active_context_menu =
+                Some(app.context_menu_for_sidebar_item(key, ContextMenu::Collection(col_id)));
             app.context_menu_position = app.cursor_position;
             Task::none()
         }
@@ -3057,9 +3055,10 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     let folder_paths: Vec<(usize, Vec<String>)> = keys
                         .iter()
                         .filter_map(|k| match k {
-                            SidebarItemKey::Folder { collection_id, path } => {
-                                Some((*collection_id, path.clone()))
-                            }
+                            SidebarItemKey::Folder {
+                                collection_id,
+                                path,
+                            } => Some((*collection_id, path.clone())),
                             _ => None,
                         })
                         .collect();
@@ -3068,18 +3067,21 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     // moving that ancestor folder already relocates its descendants
                     keys.retain(|k| match k {
                         SidebarItemKey::Collection(_) => false,
-                        SidebarItemKey::Folder { collection_id, path } => !folder_paths
-                            .iter()
-                            .any(|(fc, fp)| {
-                                fc == collection_id && fp.len() < path.len() && path.starts_with(fp.as_slice())
-                            }),
+                        SidebarItemKey::Folder {
+                            collection_id,
+                            path,
+                        } => !folder_paths.iter().any(|(fc, fp)| {
+                            fc == collection_id
+                                && fp.len() < path.len()
+                                && path.starts_with(fp.as_slice())
+                        }),
                         SidebarItemKey::Request {
                             collection_id,
                             parent_path,
                             ..
-                        } => !folder_paths
-                            .iter()
-                            .any(|(fc, fp)| fc == collection_id && parent_path.starts_with(fp.as_slice())),
+                        } => !folder_paths.iter().any(|(fc, fp)| {
+                            fc == collection_id && parent_path.starts_with(fp.as_slice())
+                        }),
                     });
                     keys.into_iter().filter_map(|k| k.as_drag_item()).collect()
                 } else {
@@ -3098,8 +3100,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                         continue;
                     }
 
-                    let (dest_collection_id, dest_folder_path, before_request_id) = match &target
-                    {
+                    let (dest_collection_id, dest_folder_path, before_request_id) = match &target {
                         crate::message::SidebarDropTarget::Folder {
                             collection_id,
                             folder_path,
@@ -3147,7 +3148,11 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             let end = flat.iter().position(|k| *k == key);
             match (start, end) {
                 (Some(start), Some(end)) => {
-                    let (lo, hi) = if start <= end { (start, end) } else { (end, start) };
+                    let (lo, hi) = if start <= end {
+                        (start, end)
+                    } else {
+                        (end, start)
+                    };
                     app.selected_sidebar_items = flat[lo..=hi].iter().cloned().collect();
                 }
                 _ => {
@@ -3195,9 +3200,10 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             let mut folders_to_delete: Vec<(usize, Vec<String>)> = items
                 .iter()
                 .filter_map(|k| match k {
-                    SidebarItemKey::Folder { collection_id, path }
-                        if !collections_to_delete.contains(collection_id) =>
-                    {
+                    SidebarItemKey::Folder {
+                        collection_id,
+                        path,
+                    } if !collections_to_delete.contains(collection_id) => {
                         Some((*collection_id, path.clone()))
                     }
                     _ => None,
@@ -3223,9 +3229,9 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                         parent_path,
                         request_id,
                     } if !collections_to_delete.contains(collection_id)
-                        && !folders_to_delete
-                            .iter()
-                            .any(|(fc, fp)| fc == collection_id && parent_path.starts_with(fp.as_slice())) =>
+                        && !folders_to_delete.iter().any(|(fc, fp)| {
+                            fc == collection_id && parent_path.starts_with(fp.as_slice())
+                        }) =>
                     {
                         Some((*collection_id, parent_path.clone(), *request_id))
                     }
