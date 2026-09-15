@@ -188,6 +188,15 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         Subscription::none()
     };
 
+    // Escape clears the sidebar multi-selection, but only when no overlay is
+    // open (an open overlay's own Escape handling below takes priority).
+    let sidebar_selection_escape_sub = match active_overlay {
+        None if !app.selected_sidebar_items.is_empty() => {
+            escape_close_sub!(Message::ClearSidebarSelection)
+        }
+        _ => Subscription::none(),
+    };
+
     // Escape closes whichever overlay is topmost, using the same priority
     // as `click_outside_sub` above - independent of `close_on_outside_click`,
     // since that setting only governs the click-outside behavior.
@@ -286,6 +295,16 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         _ => None,
     });
 
+    // tracks live modifier-key state so the sidebar view can tell a plain
+    // click apart from a Ctrl/Cmd-click (toggle selection) or Shift-click
+    // (range-select) without threading modifiers through every message.
+    let modifiers_tracker = event::listen_with(|event, _status, _window| match event {
+        Event::Keyboard(iced::keyboard::Event::ModifiersChanged(modifiers)) => {
+            Some(Message::ModifiersChanged(modifiers))
+        }
+        _ => None,
+    });
+
     // if a tab name is mid-rename and the user clicks anywhere else, commit
     // and close the rename UI instead of leaving it open until Enter is hit
     let tab_rename_sub = if app.tabs.iter().any(|t| t.is_editing_name) {
@@ -338,6 +357,8 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         spinner_sub,
         close_requested,
         cursor_tracker,
+        modifiers_tracker,
+        sidebar_selection_escape_sub,
         tab_rename_sub,
         resize_drag_sub,
         tab_drag_sub,

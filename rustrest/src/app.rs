@@ -7,7 +7,7 @@ use crate::collection_adapter::{
     create_tab_from_request, examples_to_saved_responses, saved_responses_to_examples,
 };
 use crate::http_client::send_request;
-use crate::message::{Message, ResizeKind, SidebarDragItem};
+use crate::message::{Message, ResizeKind, SidebarDragItem, SidebarItemKey};
 use crate::session::{SavedSession, SavedTabEntry};
 use crate::ui::confirm_dialog::ConfirmDialogState;
 use crate::ui::context_menu::{ContextMenu, FieldTarget, apply_field_paste};
@@ -16,6 +16,7 @@ use crate::ui::menu::menu_message::MenuMessage;
 use crate::ui::remote::{PendingRemoteConnect, RemoteAuthKind, join_remote_path};
 use crate::ui::save_request_model::types::SaveRequestModalState;
 use crate::ui::settings::{AppTheme, SettingsTab};
+use crate::ui::sidebar::flatten_visible_sidebar_items;
 use crate::ui::tab::types::{KeyValuePair, ResponseSubTab, ResponseView};
 use crate::ui::tab::{Tab, TabMessage};
 use crate::ui::toast::toast::{ToastManager, ToastStatus};
@@ -153,6 +154,13 @@ pub struct Rustrest {
     pub collapsed_folders: std::collections::HashSet<(usize, Vec<String>)>,
     /// request ids whose saved-responses list is collapsed in the sidebar.
     pub collapsed_saved_responses: std::collections::HashSet<usize>,
+
+    // sidebar multi-select (Ctrl/Cmd-click toggle, Shift-click range)
+    pub selected_sidebar_items: std::collections::HashSet<SidebarItemKey>,
+    pub sidebar_selection_anchor: Option<SidebarItemKey>,
+    /// live keyboard modifier state, updated by a `ModifiersChanged` subscription;
+    /// the sidebar view reads this to decide what a row click means.
+    pub current_modifiers: iced::keyboard::Modifiers,
 
     // tab bar drag-to-reorder
     pub dragging_tab_index: Option<usize>,
@@ -360,6 +368,8 @@ impl Rustrest {
         self.remote_sessions.clear();
         self.remote_explorers.clear();
         self.remote_connect_pending = None;
+        self.selected_sidebar_items.clear();
+        self.sidebar_selection_anchor = None;
 
         let mut errors = Vec::new();
         for source in &ws.collection_sources {
@@ -470,6 +480,20 @@ impl Rustrest {
         }
     }
 
+    /// if `key` is one of 2+ currently multi-selected sidebar rows, returns the
+    /// batch `MultiSelection` context menu instead of the single-item one.
+    pub fn context_menu_for_sidebar_item(
+        &self,
+        key: SidebarItemKey,
+        default: ContextMenu,
+    ) -> ContextMenu {
+        if self.selected_sidebar_items.len() > 1 && self.selected_sidebar_items.contains(&key) {
+            ContextMenu::MultiSelection(self.selected_sidebar_items.iter().cloned().collect())
+        } else {
+            default
+        }
+    }
+
     /// re-reads a request's saved responses from the collection tree into any
     /// currently open tab for that request
     pub fn refresh_open_tab_saved_responses(&mut self, collection_id: usize, request_id: usize) {
@@ -564,6 +588,9 @@ pub fn init() -> (Rustrest, Task<Message>) {
         collapsed_collections: std::collections::HashSet::new(),
         collapsed_folders: std::collections::HashSet::new(),
         collapsed_saved_responses: std::collections::HashSet::new(),
+        selected_sidebar_items: std::collections::HashSet::new(),
+        sidebar_selection_anchor: None,
+        current_modifiers: iced::keyboard::Modifiers::default(),
         dragging_tab_index: None,
         terminal_manager: TerminalManager::new(),
         terminal_event_tx,
@@ -1722,6 +1749,12 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         }
 
         Message::SidebarCollectionRootClicked(col_id) => {
+            let key = SidebarItemKey::Collection(col_id);
+            if !app.selected_sidebar_items.contains(&key) {
+                app.selected_sidebar_items.clear();
+                app.sidebar_selection_anchor = None;
+            }
+
             let existing_tab_idx = app.tabs.iter().position(|t| {
                 if let WorkspaceContent::CollectionRoot { collection_id, .. } = t.content {
                     collection_id == col_id
@@ -1759,6 +1792,16 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             collection_id,
             parent_path,
         } => {
+            let key = SidebarItemKey::Request {
+                collection_id,
+                parent_path: parent_path.clone(),
+                request_id: req_node.id,
+            };
+            if !app.selected_sidebar_items.contains(&key) {
+                app.selected_sidebar_items.clear();
+                app.sidebar_selection_anchor = None;
+            }
+
             app.sidebar_drag = Some(SidebarDragItem::Request {
                 collection_id,
                 parent_path,
@@ -2858,7 +2901,11 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
 
         // context menu
         Message::ShowCollectionContextMenu(col_id) => {
-            app.active_context_menu = Some(ContextMenu::Collection(col_id));
+            let key = SidebarItemKey::Collection(col_id);
+            app.active_context_menu = Some(app.context_menu_for_sidebar_item(
+                key,
+                ContextMenu::Collection(col_id),
+            ));
             app.context_menu_position = app.cursor_position;
             Task::none()
         }
@@ -2873,10 +2920,17 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             collection_id,
             folder_path,
         } => {
-            app.active_context_menu = Some(ContextMenu::Folder {
-                col_id: collection_id,
-                path: folder_path,
-            });
+            let key = SidebarItemKey::Folder {
+                collection_id,
+                path: folder_path.clone(),
+            };
+            app.active_context_menu = Some(app.context_menu_for_sidebar_item(
+                key,
+                ContextMenu::Folder {
+                    col_id: collection_id,
+                    path: folder_path,
+                },
+            ));
             app.context_menu_position = app.cursor_position;
             Task::none()
         }
@@ -2886,11 +2940,19 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             folder_path,
             request_id,
         } => {
-            app.active_context_menu = Some(ContextMenu::Request {
-                col_id: collection_id,
-                folder_path,
-                req_id: request_id,
-            });
+            let key = SidebarItemKey::Request {
+                collection_id,
+                parent_path: folder_path.clone(),
+                request_id,
+            };
+            app.active_context_menu = Some(app.context_menu_for_sidebar_item(
+                key,
+                ContextMenu::Request {
+                    col_id: collection_id,
+                    folder_path,
+                    req_id: request_id,
+                },
+            ));
             app.context_menu_position = app.cursor_position;
             Task::none()
         }
@@ -2972,44 +3034,251 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         }
 
         Message::SidebarDragStarted(item) => {
+            let key = SidebarItemKey::from_drag_item(&item);
+            if !app.selected_sidebar_items.contains(&key) {
+                app.selected_sidebar_items.clear();
+                app.sidebar_selection_anchor = None;
+            }
             app.sidebar_drag = Some(item);
             Task::none()
         }
 
         Message::SidebarDropped(target) => {
             if let Some(drag) = app.sidebar_drag.take() {
-                let dropped_on_self = matches!(
-                    (&drag, &target),
-                    (
-                        SidebarDragItem::Request { request_id: a, .. },
-                        crate::message::SidebarDropTarget::Request { request_id: b, .. }
-                    ) if a == b
-                );
+                let dragged_key = SidebarItemKey::from_drag_item(&drag);
+                let is_batch = app.selected_sidebar_items.len() > 1
+                    && app.selected_sidebar_items.contains(&dragged_key);
 
-                if !dropped_on_self {
-                    let (dest_collection_id, dest_folder_path, before_request_id) = match target {
+                // when the dragged row is part of a larger selection, move the
+                // whole selection together; otherwise just the one dragged item.
+                let items_to_move: Vec<SidebarDragItem> = if is_batch {
+                    let mut keys: Vec<SidebarItemKey> =
+                        app.selected_sidebar_items.iter().cloned().collect();
+                    let folder_paths: Vec<(usize, Vec<String>)> = keys
+                        .iter()
+                        .filter_map(|k| match k {
+                            SidebarItemKey::Folder { collection_id, path } => {
+                                Some((*collection_id, path.clone()))
+                            }
+                            _ => None,
+                        })
+                        .collect();
+                    // drop whole-collection selections (collections don't move) and
+                    // any folder/request nested under another selected folder, since
+                    // moving that ancestor folder already relocates its descendants
+                    keys.retain(|k| match k {
+                        SidebarItemKey::Collection(_) => false,
+                        SidebarItemKey::Folder { collection_id, path } => !folder_paths
+                            .iter()
+                            .any(|(fc, fp)| {
+                                fc == collection_id && fp.len() < path.len() && path.starts_with(fp.as_slice())
+                            }),
+                        SidebarItemKey::Request {
+                            collection_id,
+                            parent_path,
+                            ..
+                        } => !folder_paths
+                            .iter()
+                            .any(|(fc, fp)| fc == collection_id && parent_path.starts_with(fp.as_slice())),
+                    });
+                    keys.into_iter().filter_map(|k| k.as_drag_item()).collect()
+                } else {
+                    vec![drag]
+                };
+
+                for item in items_to_move {
+                    let dropped_on_self = matches!(
+                        (&item, &target),
+                        (
+                            SidebarDragItem::Request { request_id: a, .. },
+                            crate::message::SidebarDropTarget::Request { request_id: b, .. }
+                        ) if a == b
+                    );
+                    if dropped_on_self {
+                        continue;
+                    }
+
+                    let (dest_collection_id, dest_folder_path, before_request_id) = match &target
+                    {
                         crate::message::SidebarDropTarget::Folder {
                             collection_id,
                             folder_path,
-                        } => (collection_id, folder_path, None),
+                        } => (*collection_id, folder_path.clone(), None),
                         crate::message::SidebarDropTarget::CollectionRoot(collection_id) => {
-                            (collection_id, Vec::new(), None)
+                            (*collection_id, Vec::new(), None)
                         }
                         crate::message::SidebarDropTarget::Request {
                             collection_id,
                             parent_path,
                             request_id,
-                        } => (collection_id, parent_path, Some(request_id)),
+                        } => (*collection_id, parent_path.clone(), Some(*request_id)),
                     };
                     move_sidebar_item(
                         &mut app.collections,
-                        drag,
+                        item,
                         dest_collection_id,
                         dest_folder_path,
                         before_request_id,
                     );
                 }
+
+                app.selected_sidebar_items.clear();
+                app.sidebar_selection_anchor = None;
             }
+            Task::none()
+        }
+
+        Message::SidebarItemToggleSelect(key) => {
+            if !app.selected_sidebar_items.remove(&key) {
+                app.selected_sidebar_items.insert(key.clone());
+            }
+            app.sidebar_selection_anchor = Some(key);
+            Task::none()
+        }
+
+        Message::SidebarItemRangeSelect(key) => {
+            let flat = flatten_visible_sidebar_items(app);
+            let anchor = app
+                .sidebar_selection_anchor
+                .clone()
+                .unwrap_or_else(|| key.clone());
+
+            let start = flat.iter().position(|k| *k == anchor);
+            let end = flat.iter().position(|k| *k == key);
+            match (start, end) {
+                (Some(start), Some(end)) => {
+                    let (lo, hi) = if start <= end { (start, end) } else { (end, start) };
+                    app.selected_sidebar_items = flat[lo..=hi].iter().cloned().collect();
+                }
+                _ => {
+                    app.selected_sidebar_items.insert(key);
+                }
+            }
+            Task::none()
+        }
+
+        Message::ClearSidebarSelection => {
+            app.selected_sidebar_items.clear();
+            app.sidebar_selection_anchor = None;
+            Task::none()
+        }
+
+        Message::BatchDeleteSelectedPressed => {
+            let count = app.selected_sidebar_items.len();
+            if count == 0 {
+                return Task::none();
+            }
+            app.confirm_dialog = Some(ConfirmDialogState {
+                title: "Delete Items".to_string(),
+                message: format!(
+                    "Delete {count} selected item{}? This can't be undone.",
+                    if count == 1 { "" } else { "s" }
+                ),
+                confirm_label: "Delete".to_string(),
+                on_confirm: Box::new(Message::BatchDeleteConfirmed),
+            });
+            Task::none()
+        }
+
+        Message::BatchDeleteConfirmed => {
+            let items: Vec<SidebarItemKey> = app.selected_sidebar_items.drain().collect();
+            app.sidebar_selection_anchor = None;
+
+            let collections_to_delete: std::collections::HashSet<usize> = items
+                .iter()
+                .filter_map(|k| match k {
+                    SidebarItemKey::Collection(id) => Some(*id),
+                    _ => None,
+                })
+                .collect();
+
+            let mut folders_to_delete: Vec<(usize, Vec<String>)> = items
+                .iter()
+                .filter_map(|k| match k {
+                    SidebarItemKey::Folder { collection_id, path }
+                        if !collections_to_delete.contains(collection_id) =>
+                    {
+                        Some((*collection_id, path.clone()))
+                    }
+                    _ => None,
+                })
+                .collect();
+            // drop folders nested inside another selected folder - deleting the
+            // ancestor already removes it, so deleting it again would be a no-op
+            // at best (and reorders the list at worst)
+            let folders_snapshot = folders_to_delete.clone();
+            folders_to_delete.retain(|(col_id, path)| {
+                !folders_snapshot.iter().any(|(other_col, other_path)| {
+                    other_col == col_id
+                        && other_path.len() < path.len()
+                        && path.starts_with(other_path.as_slice())
+                })
+            });
+
+            let requests_to_delete: Vec<(usize, Vec<String>, usize)> = items
+                .iter()
+                .filter_map(|k| match k {
+                    SidebarItemKey::Request {
+                        collection_id,
+                        parent_path,
+                        request_id,
+                    } if !collections_to_delete.contains(collection_id)
+                        && !folders_to_delete
+                            .iter()
+                            .any(|(fc, fp)| fc == collection_id && parent_path.starts_with(fp.as_slice())) =>
+                    {
+                        Some((*collection_id, parent_path.clone(), *request_id))
+                    }
+                    _ => None,
+                })
+                .collect();
+
+            for col_id in &collections_to_delete {
+                app.collections.retain(|c| c.id != *col_id);
+            }
+            app.tabs.retain(|t| {
+                if let WorkspaceContent::CollectionRoot { collection_id, .. } = t.content {
+                    !collections_to_delete.contains(&collection_id)
+                } else {
+                    true
+                }
+            });
+
+            for (col_id, path) in &folders_to_delete {
+                if let Some(col) = app.collections.iter_mut().find(|c| c.id == *col_id) {
+                    remove_nested(&mut col.item, path);
+                }
+            }
+
+            for (col_id, parent_path, request_id) in &requests_to_delete {
+                if let Some(col) = app.collections.iter_mut().find(|c| c.id == *col_id) {
+                    remove_nested_request(&mut col.item, parent_path, *request_id);
+                }
+            }
+
+            // close any request tab whose backing request no longer exists
+            // anywhere (covers requests removed directly, or nested under a
+            // deleted folder/collection)
+            app.tabs.retain(|t| match t.content {
+                WorkspaceContent::HttpRequest => match t.tab.request_id {
+                    Some(req_id) => app
+                        .collections
+                        .iter()
+                        .any(|c| contains_request_node_by_id(&c.item, req_id)),
+                    None => true,
+                },
+                _ => true,
+            });
+
+            if app.active_tab_index >= app.tabs.len() && !app.tabs.is_empty() {
+                app.active_tab_index = app.tabs.len() - 1;
+            }
+
+            Task::none()
+        }
+
+        Message::ModifiersChanged(modifiers) => {
+            app.current_modifiers = modifiers;
             Task::none()
         }
 

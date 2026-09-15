@@ -34,6 +34,62 @@ pub enum SidebarDragItem {
     },
 }
 
+/// identifies a single collection/folder/request row in the sidebar, used to
+/// track the current multi-selection (Ctrl/Cmd-click toggle, Shift-click range).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum SidebarItemKey {
+    Collection(usize),
+    Folder {
+        collection_id: usize,
+        path: Vec<String>,
+    },
+    Request {
+        collection_id: usize,
+        parent_path: Vec<String>,
+        request_id: usize,
+    },
+}
+
+impl SidebarItemKey {
+    pub fn from_drag_item(item: &SidebarDragItem) -> Self {
+        match item {
+            SidebarDragItem::Request {
+                collection_id,
+                parent_path,
+                request_id,
+            } => SidebarItemKey::Request {
+                collection_id: *collection_id,
+                parent_path: parent_path.clone(),
+                request_id: *request_id,
+            },
+            SidebarDragItem::Folder { collection_id, path } => SidebarItemKey::Folder {
+                collection_id: *collection_id,
+                path: path.clone(),
+            },
+        }
+    }
+
+    /// folders and requests can be dragged/moved; a whole collection can't.
+    pub fn as_drag_item(&self) -> Option<SidebarDragItem> {
+        match self {
+            SidebarItemKey::Folder { collection_id, path } => Some(SidebarDragItem::Folder {
+                collection_id: *collection_id,
+                path: path.clone(),
+            }),
+            SidebarItemKey::Request {
+                collection_id,
+                parent_path,
+                request_id,
+            } => Some(SidebarDragItem::Request {
+                collection_id: *collection_id,
+                parent_path: parent_path.clone(),
+                request_id: *request_id,
+            }),
+            SidebarItemKey::Collection(_) => None,
+        }
+    }
+}
+
 /// identifies where a dragged sidebar item was dropped.
 #[derive(Debug, Clone)]
 pub enum SidebarDropTarget {
@@ -119,6 +175,14 @@ pub enum Message {
     // sidebar drag-and-drop (reorder / move requests & folders)
     SidebarDragStarted(SidebarDragItem),
     SidebarDropped(SidebarDropTarget),
+
+    // sidebar multi-select (Ctrl/Cmd-click toggle, Shift-click range) + batch ops
+    SidebarItemToggleSelect(SidebarItemKey),
+    SidebarItemRangeSelect(SidebarItemKey),
+    ClearSidebarSelection,
+    BatchDeleteSelectedPressed,
+    BatchDeleteConfirmed,
+    ModifiersChanged(iced::keyboard::Modifiers),
 
     // sidebar collapse/expand
     ToggleCollectionCollapsed(usize),

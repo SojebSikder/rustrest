@@ -1,6 +1,6 @@
 use crate::app::Rustrest;
 use crate::http_client::HttpMethod;
-use crate::message::Message;
+use crate::message::{Message, SidebarItemKey};
 use crate::ui::tab::messages::{TabMessage, ValueField};
 use crate::ui::tab::types::{FormDataRow, KeyValuePair};
 use iced::widget::text_editor::{Action, Edit};
@@ -87,6 +87,9 @@ pub enum ContextMenu {
         target: FieldTarget,
         current_value: String,
     },
+    /// right-clicked one of 2+ currently multi-selected sidebar rows; offers
+    /// batch actions (e.g. delete) across the whole selection.
+    MultiSelection(Vec<SidebarItemKey>),
 }
 
 /// wraps any widget with a right-click handler that opens the shared context menu.
@@ -126,9 +129,32 @@ pub fn render_context_menu_overlay<'a>(app: &Rustrest) -> Option<Element<'a, Mes
         } => app.editing_saved_response == Some((*col_id, *req_id, *index)),
         ContextMenu::GitActions(_) => false,
         ContextMenu::TextField { .. } => false,
+        ContextMenu::MultiSelection(_) => false,
     };
     if is_editing {
         return None;
+    }
+
+    if let ContextMenu::MultiSelection(items) = context_menu {
+        let count = items.len();
+        let options = vec![(
+            format!("Delete {count} Items"),
+            Message::ContextMenuAction(Box::new(Message::BatchDeleteSelectedPressed)),
+        )];
+        let dropdown = render_dropdown(options);
+        let pos = app.context_menu_position;
+        return Some(
+            column![
+                container(text("")).height(Length::Fixed(pos.y)),
+                row![
+                    container(text("")).width(Length::Fixed(pos.x)),
+                    opaque(dropdown)
+                ]
+            ]
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into(),
+        );
     }
 
     let options: Vec<(&'a str, Message)> = match context_menu {
@@ -281,6 +307,7 @@ pub fn render_context_menu_overlay<'a>(app: &Rustrest) -> Option<Element<'a, Mes
             }
             opts
         }
+        ContextMenu::MultiSelection(_) => unreachable!("handled by the early return above"),
     };
 
     // wrap every option so clicking it always closes the menu
@@ -308,13 +335,13 @@ pub fn render_context_menu_overlay<'a>(app: &Rustrest) -> Option<Element<'a, Mes
     )
 }
 
-fn render_dropdown<'a>(options: Vec<(&'a str, Message)>) -> Element<'a, Message> {
+fn render_dropdown<'a, S: Into<String>>(options: Vec<(S, Message)>) -> Element<'a, Message> {
     let mut menu = column![].spacing(2);
 
     for (label, message) in options {
         menu = menu.push(
             button(
-                text(label)
+                text(label.into())
                     .size(12)
                     .width(Length::Fill)
                     .style(text::primary),

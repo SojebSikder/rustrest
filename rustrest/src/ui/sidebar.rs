@@ -1,6 +1,6 @@
 use crate::app::Rustrest;
 use crate::collection::collection::{CollectionItem, PostmanRequestNode, PostmanResponseExample};
-use crate::message::{Message, SidebarDragItem, SidebarDropTarget};
+use crate::message::{Message, SidebarDragItem, SidebarDropTarget, SidebarItemKey};
 use crate::ui::context_menu::{FieldTarget, with_context_menu};
 use crate::ui::unsaved::{
     collection_is_unsaved, folder_is_unsaved, request_is_unsaved, unsaved_dot,
@@ -11,6 +11,91 @@ use iced::widget::{
     text_input,
 };
 use iced::{Alignment, Element, Font, Length};
+
+fn sidebar_click_message(app: &Rustrest, key: SidebarItemKey, default: Message) -> Message {
+    let modifiers = app.current_modifiers;
+    if modifiers.shift() {
+        Message::SidebarItemRangeSelect(key)
+    } else if modifiers.command() {
+        Message::SidebarItemToggleSelect(key)
+    } else {
+        default
+    }
+}
+
+/// container style that highlights a row when it's part of the current
+/// sidebar multi-selection, mirroring the selected-item look used by the
+/// command palette.
+fn sidebar_row_style(is_selected: bool) -> impl Fn(&iced::Theme) -> container::Style {
+    move |theme: &iced::Theme| {
+        if is_selected {
+            let palette = theme.extended_palette();
+            container::Style {
+                background: Some(palette.primary.weak.color.into()),
+                text_color: Some(palette.primary.weak.text),
+                border: iced::Border {
+                    radius: 4.0.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }
+        } else {
+            container::Style::default()
+        }
+    }
+}
+
+/// walks the sidebar tree in the same order it's rendered (respecting
+/// collapsed collections/folders) so Shift-click range-selection can slice
+/// between an anchor row and the clicked row.
+pub fn flatten_visible_sidebar_items(app: &Rustrest) -> Vec<SidebarItemKey> {
+    let mut out = Vec::new();
+    for col in &app.collections {
+        out.push(SidebarItemKey::Collection(col.id));
+        if app.collapsed_collections.contains(&col.id) {
+            continue;
+        }
+        let mut path = Vec::new();
+        for item in &col.item {
+            flatten_sidebar_item(app, item, col.id, &mut path, &mut out);
+        }
+    }
+    out
+}
+
+fn flatten_sidebar_item(
+    app: &Rustrest,
+    item: &CollectionItem,
+    collection_id: usize,
+    current_path: &mut Vec<String>,
+    out: &mut Vec<SidebarItemKey>,
+) {
+    match item {
+        CollectionItem::Folder(folder) => {
+            current_path.push(folder.name.clone());
+            out.push(SidebarItemKey::Folder {
+                collection_id,
+                path: current_path.clone(),
+            });
+            let is_collapsed = app
+                .collapsed_folders
+                .contains(&(collection_id, current_path.clone()));
+            if !is_collapsed {
+                for sub in &folder.item {
+                    flatten_sidebar_item(app, sub, collection_id, current_path, out);
+                }
+            }
+            current_path.pop();
+        }
+        CollectionItem::Request(req) => {
+            out.push(SidebarItemKey::Request {
+                collection_id,
+                parent_path: current_path.clone(),
+                request_id: req.id,
+            });
+        }
+    }
+}
 
 pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
     let mut sidebar_contents = column![].spacing(10);
@@ -112,13 +197,24 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
                     }
                 }
 
-                mouse_area(container(header_row).padding([4, 2]))
-                    .on_press(Message::SidebarCollectionRootClicked(col_id))
-                    .on_right_press(Message::ShowCollectionContextMenu(col_id))
-                    .on_release(Message::SidebarDropped(SidebarDropTarget::CollectionRoot(
-                        col_id,
-                    )))
-                    .into()
+                let collection_key = SidebarItemKey::Collection(col_id);
+                let is_row_selected = app.selected_sidebar_items.contains(&collection_key);
+
+                mouse_area(
+                    container(header_row)
+                        .padding([4, 2])
+                        .style(sidebar_row_style(is_row_selected)),
+                )
+                .on_press(sidebar_click_message(
+                    app,
+                    collection_key,
+                    Message::SidebarCollectionRootClicked(col_id),
+                ))
+                .on_right_press(Message::ShowCollectionContextMenu(col_id))
+                .on_release(Message::SidebarDropped(SidebarDropTarget::CollectionRoot(
+                    col_id,
+                )))
+                .into()
             };
 
             let mut col_tree = column![collection_header_title].spacing(4);
@@ -381,20 +477,34 @@ fn render_sidebar_item<'a>(
                     title_row = title_row.push(unsaved_dot());
                 }
 
-                mouse_area(container(title_row).padding([2, 0]))
-                    .on_press(Message::SidebarDragStarted(SidebarDragItem::Folder {
+                let folder_key = SidebarItemKey::Folder {
+                    collection_id,
+                    path: current_path.clone(),
+                };
+                let is_row_selected = app.selected_sidebar_items.contains(&folder_key);
+
+                mouse_area(
+                    container(title_row)
+                        .padding([2, 0])
+                        .style(sidebar_row_style(is_row_selected)),
+                )
+                .on_press(sidebar_click_message(
+                    app,
+                    folder_key,
+                    Message::SidebarDragStarted(SidebarDragItem::Folder {
                         collection_id,
                         path: path_for_drag,
-                    }))
-                    .on_right_press(Message::ShowFolderContextMenu {
-                        collection_id,
-                        folder_path: path_for_right_click,
-                    })
-                    .on_release(Message::SidebarDropped(SidebarDropTarget::Folder {
-                        collection_id,
-                        folder_path: path_for_drop,
-                    }))
-                    .into()
+                    }),
+                ))
+                .on_right_press(Message::ShowFolderContextMenu {
+                    collection_id,
+                    folder_path: path_for_right_click,
+                })
+                .on_release(Message::SidebarDropped(SidebarDropTarget::Folder {
+                    collection_id,
+                    folder_path: path_for_drop,
+                }))
+                .into()
             };
 
             let mut folder_layout = column![folder_title].spacing(3).padding(Padding {
@@ -481,17 +591,32 @@ fn render_sidebar_item<'a>(
                     label_row = label_row.push(unsaved_dot());
                 }
 
-                mouse_area(container(label_row).padding(Padding {
-                    top: 2.0,
-                    right: 0.0,
-                    bottom: 2.0,
-                    left: if has_saved_responses { 8.0 } else { 15.0 },
-                }))
-                .on_press(Message::SidebarRequestClicked {
-                    req_node: req_clone,
+                let request_key = SidebarItemKey::Request {
                     collection_id,
-                    parent_path: path_for_drag,
-                })
+                    parent_path: current_path.clone(),
+                    request_id: req_id,
+                };
+                let is_row_selected = app.selected_sidebar_items.contains(&request_key);
+
+                mouse_area(
+                    container(label_row)
+                        .padding(Padding {
+                            top: 2.0,
+                            right: 0.0,
+                            bottom: 2.0,
+                            left: if has_saved_responses { 8.0 } else { 15.0 },
+                        })
+                        .style(sidebar_row_style(is_row_selected)),
+                )
+                .on_press(sidebar_click_message(
+                    app,
+                    request_key,
+                    Message::SidebarRequestClicked {
+                        req_node: req_clone,
+                        collection_id,
+                        parent_path: path_for_drag,
+                    },
+                ))
                 .on_right_press(Message::ShowRequestContextMenu {
                     collection_id,
                     folder_path: path_for_right_click,
