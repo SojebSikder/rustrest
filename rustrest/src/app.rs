@@ -2402,7 +2402,12 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             });
 
             // auto-select the newly created environment
-            app.active_env_index = Some(app.environments.len() - 1);
+            let new_idx = app.environments.len() - 1;
+            app.active_env_index = Some(new_idx);
+
+            // open the environment editor on the newly created environment
+            app.editing_env_index = Some(new_idx);
+            app.editing_env_name = false;
 
             Task::none()
         }
@@ -2515,10 +2520,11 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             let col_id = app.next_tab_id;
             app.next_tab_id += 1;
 
+            let col_name = format!("New Collection {}", col_id);
             let new_col = PostmanCollection {
                 id: col_id,
                 info: CollectionInfo {
-                    name: format!("New Collection {}", col_id),
+                    name: col_name.clone(),
                     postman_id: None,
                     schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
                         .to_string(),
@@ -2531,7 +2537,23 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 unsaved: false,
             };
             app.collections.push(new_col);
-            Task::none()
+
+            // open the newly created collection's root tab
+            let mut root_tab = Tab::new(app.next_tab_id);
+            root_tab.name = col_name.clone();
+
+            app.tabs.push(TabState {
+                tab: root_tab,
+                content: WorkspaceContent::CollectionRoot {
+                    collection_id: col_id,
+                    collection_name: col_name,
+                    active_sub_tab: CollectionSubTab::Variables,
+                },
+                is_editing_name: false,
+            });
+            app.next_tab_id += 1;
+            app.active_tab_index = app.tabs.len() - 1;
+            iced::widget::operation::snap_to_end(crate::ui::workspace::tab_bar_scroll_id())
         }
 
         Message::DeleteCollectionPressed(col_id) => {
@@ -2619,6 +2641,19 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         } => {
             if let Some(col) = app.collections.iter_mut().find(|c| c.id == collection_id) {
                 insert_nested(&mut col.item, &parent_folder_path);
+
+                // make sure the new folder is visible in the sidebar
+                app.collapsed_collections.remove(&collection_id);
+                for i in 0..=parent_folder_path.len() {
+                    app.collapsed_folders
+                        .remove(&(collection_id, parent_folder_path[..i].to_vec()));
+                }
+
+                // open the newly created folder for renaming
+                let mut new_folder_path = parent_folder_path.clone();
+                new_folder_path.push("New Folder".to_string());
+                app.editing_folder_collection_id = Some(collection_id);
+                app.editing_folder_path = new_folder_path;
             }
             Task::none()
         }
@@ -2657,10 +2692,36 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     response: None,
                 };
 
+                let tab_request_node = new_request_node.clone();
+
                 insert_nested_request(
                     &mut col.item,
                     &parent_folder_path,
                     CollectionItem::Request(new_request_node),
+                );
+
+                // make sure the new request is visible in the sidebar
+                app.collapsed_collections.remove(&collection_id);
+                for i in 0..=parent_folder_path.len() {
+                    app.collapsed_folders
+                        .remove(&(collection_id, parent_folder_path[..i].to_vec()));
+                }
+
+                // open the newly created request in a new tab
+                let new_tab = create_tab_from_request(
+                    app.next_tab_id,
+                    &tab_request_node,
+                    Some(collection_id),
+                );
+                app.tabs.push(TabState {
+                    tab: new_tab,
+                    content: WorkspaceContent::HttpRequest,
+                    is_editing_name: false,
+                });
+                app.next_tab_id += 1;
+                app.active_tab_index = app.tabs.len() - 1;
+                return iced::widget::operation::snap_to_end(
+                    crate::ui::workspace::tab_bar_scroll_id(),
                 );
             }
             Task::none()
