@@ -1,4 +1,4 @@
-use crate::collection::git_ops::{GitChangeKind, GitFileEntry, GitStatusSnapshot};
+use crate::collection::git_ops::{GitChangeKind, GitFileEntry, GitRemoteOp, GitStatusSnapshot};
 use crate::message::Message;
 use crate::ui::spinner::spinner_with_label;
 use iced::widget::{Space, button, column, container, mouse_area, row, scrollable, text};
@@ -69,10 +69,11 @@ fn file_row(
     .into()
 }
 
-/// header strip for the git sub-tab: branch name + refresh + commit buttons.
+/// header strip for the git sub-tab: branch name + refresh/fetch/pull/push/commit buttons.
 pub fn render_git_bar(
     collection_id: usize,
     snapshot: Option<&Result<GitStatusSnapshot, String>>,
+    remote_op_running: Option<GitRemoteOp>,
 ) -> Element<'static, Message> {
     let branch_label = match snapshot {
         Some(Ok(s)) => s
@@ -85,10 +86,19 @@ pub fn render_git_bar(
         Some(Ok(s)) => s.files.len(),
         _ => 0,
     };
+    let busy = remote_op_running.is_some();
+    let git_actions_label = match remote_op_running {
+        Some(op) => format!("{}...", op.label()),
+        None => "Git Actions \u{25BE}".to_string(),
+    };
 
     row![
         text(format!("Branch: {branch_label}")).size(13),
         Space::new().width(Length::Fill),
+        button(text(git_actions_label).size(12))
+            .style(button::text)
+            .padding([4, 8])
+            .on_press(Message::ShowGitActionsMenu(collection_id)),
         button(text("Refresh").size(12))
             .style(button::text)
             .padding([4, 8])
@@ -97,7 +107,7 @@ pub fn render_git_bar(
             .style(button::primary)
             .padding([4, 8])
             .on_press_maybe(
-                (change_count > 0).then_some(Message::CommitChangesPressed(collection_id))
+                (change_count > 0 && !busy).then_some(Message::CommitChangesPressed(collection_id))
             ),
     ]
     .align_y(Alignment::Center)

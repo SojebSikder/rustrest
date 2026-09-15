@@ -79,6 +79,8 @@ pub enum ContextMenu {
         req_id: usize,
         index: usize,
     },
+    /// the git panel's button: fetch/pull/push for a collection.
+    GitActions(usize),
     /// a plain text field/editor; `current_value` is captured at the moment
     /// the menu was opened so "Copy" doesn't need to re-look up the field.
     TextField {
@@ -122,6 +124,7 @@ pub fn render_context_menu_overlay<'a>(app: &Rustrest) -> Option<Element<'a, Mes
             req_id,
             index,
         } => app.editing_saved_response == Some((*col_id, *req_id, *index)),
+        ContextMenu::GitActions(_) => false,
         ContextMenu::TextField { .. } => false,
     };
     if is_editing {
@@ -165,7 +168,10 @@ pub fn render_context_menu_overlay<'a>(app: &Rustrest) -> Option<Element<'a, Mes
             }
             opts.push(("Export As...", Message::ExportCollectionPressed(col_id)));
             if !app.plugin_manager.export_formats().is_empty() {
-                opts.push(("Export via Plugin...", Message::ExportViaPluginPressed(col_id)));
+                opts.push((
+                    "Export via Plugin...",
+                    Message::ExportViaPluginPressed(col_id),
+                ));
             }
             opts.push(("Delete", Message::DeleteCollectionPressed(col_id)));
             opts
@@ -246,6 +252,25 @@ pub fn render_context_menu_overlay<'a>(app: &Rustrest) -> Option<Element<'a, Mes
                 },
             ),
         ],
+        ContextMenu::GitActions(id) => {
+            let col_id = *id;
+            match app.git_remote_op_running.get(&col_id).copied() {
+                Some(crate::collection::git_ops::GitRemoteOp::Fetch) => {
+                    vec![("Fetching...", Message::GitStatusRequested(col_id))]
+                }
+                Some(crate::collection::git_ops::GitRemoteOp::Pull) => {
+                    vec![("Pulling...", Message::GitStatusRequested(col_id))]
+                }
+                Some(crate::collection::git_ops::GitRemoteOp::Push) => {
+                    vec![("Pushing...", Message::GitStatusRequested(col_id))]
+                }
+                None => vec![
+                    ("Fetch", Message::GitFetchPressed(col_id)),
+                    ("Pull", Message::GitPullPressed(col_id)),
+                    ("Push", Message::GitPushPressed(col_id)),
+                ],
+            }
+        }
         ContextMenu::TextField {
             target,
             current_value,

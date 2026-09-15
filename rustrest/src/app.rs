@@ -142,6 +142,8 @@ pub struct Rustrest {
     >,
     pub git_selected_file: Option<std::path::PathBuf>,
     pub git_diff_cache: Option<(std::path::PathBuf, String)>,
+    pub git_remote_op_running:
+        std::collections::HashMap<usize, crate::collection::git_ops::GitRemoteOp>,
     pub commit_modal: Option<crate::ui::commit_modal::CommitModalState>,
     pub confirm_dialog: Option<crate::ui::confirm_dialog::ConfirmDialogState>,
 
@@ -225,6 +227,7 @@ impl Rustrest {
             || self.remote_explorers.values().any(|e| e.loading)
             || self.tabs.iter().any(|t| t.tab.is_loading)
             || self.commit_modal.as_ref().is_some_and(|m| m.committing)
+            || !self.git_remote_op_running.is_empty()
             || self.toast_manager.has_pending()
             || self.tabs.iter().any(|t| {
                 matches!(
@@ -554,6 +557,7 @@ pub fn init() -> (Rustrest, Task<Message>) {
         git_status_cache: std::collections::HashMap::new(),
         git_selected_file: None,
         git_diff_cache: None,
+        git_remote_op_running: std::collections::HashMap::new(),
         commit_modal: None,
         confirm_dialog: None,
         sidebar_drag: None,
@@ -1004,6 +1008,37 @@ fn auto_connect_remote_collections(app: &Rustrest) -> Task<Message> {
     Task::batch(tasks)
 }
 
+fn start_git_remote_op(
+    app: &mut Rustrest,
+    col_id: usize,
+    op: crate::collection::git_ops::GitRemoteOp,
+) -> Task<Message> {
+    use crate::collection::git_ops::GitRemoteOp;
+
+    let dir = app
+        .collections
+        .iter()
+        .find(|c| c.id == col_id)
+        .and_then(|c| c.storage_dir.clone());
+
+    let Some(dir) = dir else {
+        return Task::none();
+    };
+
+    app.git_remote_op_running.insert(col_id, op);
+
+    Task::perform(
+        async move {
+            match op {
+                GitRemoteOp::Push => crate::collection::git_ops::git_push(&dir).await,
+                GitRemoteOp::Pull => crate::collection::git_ops::git_pull(&dir).await,
+                GitRemoteOp::Fetch => crate::collection::git_ops::git_fetch(&dir).await,
+            }
+        },
+        move |result| Message::GitRemoteOpResult(col_id, op, result),
+    )
+}
+
 pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
     match message {
         Message::ContextMenuAction(inner) => {
@@ -1413,6 +1448,38 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 app.git_diff_cache = Some((file, content));
             }
             Task::none()
+        }
+
+        // git remote sync (push/pull/fetch)
+        Message::GitPushPressed(col_id) => {
+            start_git_remote_op(app, col_id, crate::collection::git_ops::GitRemoteOp::Push)
+        }
+        Message::GitPullPressed(col_id) => {
+            start_git_remote_op(app, col_id, crate::collection::git_ops::GitRemoteOp::Pull)
+        }
+        Message::GitFetchPressed(col_id) => {
+            start_git_remote_op(app, col_id, crate::collection::git_ops::GitRemoteOp::Fetch)
+        }
+        Message::GitRemoteOpResult(col_id, op, result) => {
+            app.git_remote_op_running.remove(&col_id);
+            let label = op.label();
+            match result {
+                Ok(output) => {
+                    let toast_msg = if output.is_empty() {
+                        format!("{label} completed")
+                    } else {
+                        output
+                    };
+                    Task::batch([
+                        Task::done(Message::ShowToast(toast_msg, ToastStatus::Success)),
+                        Task::done(Message::GitStatusRequested(col_id)),
+                    ])
+                }
+                Err(e) => Task::done(Message::ShowToast(
+                    format!("{label} failed: {e}"),
+                    ToastStatus::Error,
+                )),
+            }
         }
 
         // commit modal
@@ -2792,6 +2859,12 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         // context menu
         Message::ShowCollectionContextMenu(col_id) => {
             app.active_context_menu = Some(ContextMenu::Collection(col_id));
+            app.context_menu_position = app.cursor_position;
+            Task::none()
+        }
+
+        Message::ShowGitActionsMenu(col_id) => {
+            app.active_context_menu = Some(ContextMenu::GitActions(col_id));
             app.context_menu_position = app.cursor_position;
             Task::none()
         }

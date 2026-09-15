@@ -1,6 +1,6 @@
 use crate::app::CollectionSubTab;
 use crate::collection::collection::{PostmanCollection, PostmanRequestNode};
-use crate::collection::git_ops::GitStatusSnapshot;
+use crate::collection::git_ops::{GitRemoteOp, GitStatusSnapshot};
 use crate::http_client::HttpResponse;
 use crate::ui::command_palette::AppCommand;
 use crate::ui::confirm_dialog::ConfirmDialogState;
@@ -260,6 +260,7 @@ pub enum Message {
 
     //
     ShowCollectionContextMenu(usize),
+    ShowGitActionsMenu(usize),
     ShowFolderContextMenu {
         collection_id: usize,
         folder_path: Vec<String>,
@@ -307,6 +308,12 @@ pub enum Message {
     GitStatusLoaded(usize, Result<GitStatusSnapshot, String>),
     GitDiffRequested(usize, std::path::PathBuf),
     GitDiffLoaded(usize, std::path::PathBuf, Result<String, String>),
+
+    // git remote sync (push/pull/fetch)
+    GitPushPressed(usize),
+    GitPullPressed(usize),
+    GitFetchPressed(usize),
+    GitRemoteOpResult(usize, GitRemoteOp, Result<String, String>),
 
     // commit modal
     CommitChangesPressed(usize),

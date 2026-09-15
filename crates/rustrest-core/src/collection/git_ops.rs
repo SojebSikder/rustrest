@@ -31,6 +31,25 @@ pub struct GitStatusSnapshot {
     pub files: Vec<GitFileEntry>,
 }
 
+/// a remote-sync operation kind, used to label in-progress UI state and
+/// route the result of a background push/pull/fetch task.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GitRemoteOp {
+    Push,
+    Pull,
+    Fetch,
+}
+
+impl GitRemoteOp {
+    pub fn label(self) -> &'static str {
+        match self {
+            GitRemoteOp::Push => "Push",
+            GitRemoteOp::Pull => "Pull",
+            GitRemoteOp::Fetch => "Fetch",
+        }
+    }
+}
+
 /// true if `path` looks like a git working tree (has a `.git` entry).
 pub fn is_git_repo(path: &Path) -> bool {
     path.join(".git").exists()
@@ -59,6 +78,40 @@ async fn run_git(root: &Path, args: &[&str]) -> Result<String, String> {
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+/// like `run_git`, but for commands with output (progress, "Already up to date.", etc.)
+async fn run_git_report(root: &Path, args: &[&str]) -> Result<String, String> {
+    let mut command = Command::new("git");
+    command.current_dir(root).args(args);
+
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let output = command.output().await.map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            "git not found on PATH - install Git to use this feature (git-scm.com)".to_string()
+        } else {
+            format!("Failed to run git: {e}")
+        }
+    })?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let combined = match (stdout.is_empty(), stderr.is_empty()) {
+        (true, true) => String::new(),
+        (false, true) => stdout,
+        (true, false) => stderr,
+        (false, false) => format!("{stdout}\n{stderr}"),
+    };
+
+    if !output.status.success() {
+        return Err(combined);
+    }
+    Ok(combined)
 }
 
 /// runs `git init` in `path`, no-op if it's already a repo.
@@ -167,7 +220,11 @@ fn unquote_path(s: &str) -> String {
 
 /// runs `git status --porcelain=v1 -b` and parses the result.
 pub async fn git_status(path: &Path) -> Result<GitStatusSnapshot, String> {
-    let raw = run_git(path, &["status", "--porcelain=v1", "-b"]).await?;
+    let raw = run_git(
+        path,
+        &["status", "--porcelain=v1", "-b", "--untracked-files=all"],
+    )
+    .await?;
     let mut lines = raw.lines();
 
     let branch = lines.next().and_then(|header| {
@@ -214,6 +271,12 @@ pub async fn git_diff_file(root: &Path, file: &Path) -> Result<String, String> {
 
     if is_untracked {
         let full_path = root.join(file);
+        if full_path.is_dir() {
+            return Err(format!(
+                "{} is a directory, not a file - refresh the git status to see its contents individually",
+                file.display()
+            ));
+        }
         let content = tokio::fs::read_to_string(&full_path)
             .await
             .map_err(|e| format!("Failed to read {full_path:?}: {e}"))?;
@@ -229,4 +292,20 @@ pub async fn git_diff_file(root: &Path, file: &Path) -> Result<String, String> {
 pub async fn git_commit_all(root: &Path, message: &str) -> Result<(), String> {
     run_git(root, &["add", "-A"]).await?;
     run_git(root, &["commit", "-m", message]).await.map(|_| ())
+}
+
+/// pushes the current branch to its remote, returning a human-readable
+/// status line for a toast/notification.
+pub async fn git_push(root: &Path) -> Result<String, String> {
+    run_git_report(root, &["push"]).await
+}
+
+/// pulls (fetch + merge) from the current branch's remote.
+pub async fn git_pull(root: &Path) -> Result<String, String> {
+    run_git_report(root, &["pull"]).await
+}
+
+/// fetches from the remote without touching the working tree.
+pub async fn git_fetch(root: &Path) -> Result<String, String> {
+    run_git_report(root, &["fetch", "--prune"]).await
 }
