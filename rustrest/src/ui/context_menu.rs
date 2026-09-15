@@ -258,6 +258,12 @@ pub fn render_context_menu_overlay<'a>(app: &Rustrest) -> Option<Element<'a, Mes
         }
     };
 
+    // wrap every option so clicking it always closes the menu
+    let options: Vec<(&'a str, Message)> = options
+        .into_iter()
+        .map(|(label, message)| (label, Message::ContextMenuAction(Box::new(message))))
+        .collect();
+
     let dropdown = render_dropdown(options);
     let pos = app.context_menu_position;
 

@@ -54,6 +54,9 @@ pub enum SidebarDropTarget {
 
 #[derive(Debug, Clone)]
 pub enum Message {
+    /// wraps a context menu option's message so pressing it always closes
+    /// the menu, whether or not the action itself does so.
+    ContextMenuAction(Box<Message>),
     NewTabPressed,
     NewTerminalTabPressed,
     /// widget -> app: write encoded key bytes to a terminal's PTY.

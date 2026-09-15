@@ -967,6 +967,10 @@ fn auto_connect_remote_collections(app: &Rustrest) -> Task<Message> {
 
 pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
     match message {
+        Message::ContextMenuAction(inner) => {
+            app.active_context_menu = None;
+            update(app, *inner)
+        }
         Message::None => Task::none(),
         Message::ImportCollectionPressed => {
             iced::Task::perform(
