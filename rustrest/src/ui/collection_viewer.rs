@@ -153,8 +153,9 @@ pub fn render_collection_root(
         .into(),
         CollectionSubTab::Git => {
             let snapshot = app.git_status_cache.get(&collection_id);
+            let remote_op_running = app.git_remote_op_running.get(&collection_id).copied();
             column![
-                render_git_bar(collection_id, snapshot),
+                render_git_bar(collection_id, snapshot, remote_op_running),
                 render_git_panel(
                     collection_id,
                     snapshot,
