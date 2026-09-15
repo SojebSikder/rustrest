@@ -447,9 +447,11 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
     );
     let workbench = ui::workspace::render_workbench(app);
 
-    let toast_layer = app
-        .toast_manager
-        .view(Message::DismissToast, Message::ToastActionPressed);
+    let toast_layer = app.toast_manager.view(
+        app.spinner_tick,
+        Message::DismissToast,
+        Message::ToastActionPressed,
+    );
 
     let console_bar = render_console_bar(&app.console_logs, app.console_collapsed);
 
@@ -514,7 +516,7 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
 
     // commit-changes modal overlay
     if let Some(commit_modal) = app.commit_modal.as_ref() {
-        let commit_overlay = container(view_commit_modal(commit_modal))
+        let commit_overlay = container(view_commit_modal(commit_modal, app.spinner_tick))
             .width(Length::Fill)
             .height(Length::Fill)
             .align_x(Alignment::Center)

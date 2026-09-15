@@ -224,6 +224,16 @@ impl Rustrest {
         self.remote_connecting.is_some()
             || self.remote_explorers.values().any(|e| e.loading)
             || self.tabs.iter().any(|t| t.tab.is_loading)
+            || self.commit_modal.as_ref().is_some_and(|m| m.committing)
+            || self.toast_manager.has_pending()
+            || self.tabs.iter().any(|t| {
+                matches!(
+                    &t.content,
+                    WorkspaceContent::CollectionRoot { collection_id, active_sub_tab, .. }
+                        if *active_sub_tab == CollectionSubTab::Git
+                            && !self.git_status_cache.contains_key(collection_id)
+                )
+            })
     }
 
     pub fn build_session_snapshot(&self) -> SavedSession {
@@ -1443,6 +1453,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 collection_name,
                 message: iced::widget::text_editor::Content::new(),
                 files: snapshot.files,
+                committing: false,
             });
             Task::none()
         }
@@ -1457,7 +1468,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             Task::none()
         }
         Message::CommitConfirmed => {
-            let Some(modal) = app.commit_modal.take() else {
+            let Some(modal) = app.commit_modal.as_ref() else {
                 return Task::none();
             };
             let Some(collection) = app.collections.iter().find(|c| c.id == modal.collection_id)
@@ -1469,6 +1480,9 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             };
             let col_id = modal.collection_id;
             let message = modal.message.text();
+            if let Some(modal) = app.commit_modal.as_mut() {
+                modal.committing = true;
+            }
 
             Task::perform(
                 async move { crate::collection::git_ops::git_commit_all(&dir, &message).await },
@@ -1476,17 +1490,25 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             )
         }
         Message::CommitResult(col_id, result) => match result {
-            Ok(()) => Task::batch([
+            Ok(()) => {
+                app.commit_modal = None;
+                Task::batch([
+                    Task::done(Message::ShowToast(
+                        "Changes committed".to_string(),
+                        ToastStatus::Success,
+                    )),
+                    Task::done(Message::GitStatusRequested(col_id)),
+                ])
+            }
+            Err(e) => {
+                if let Some(modal) = app.commit_modal.as_mut() {
+                    modal.committing = false;
+                }
                 Task::done(Message::ShowToast(
-                    "Changes committed".to_string(),
-                    ToastStatus::Success,
-                )),
-                Task::done(Message::GitStatusRequested(col_id)),
-            ]),
-            Err(e) => Task::done(Message::ShowToast(
-                format!("Commit failed: {e}"),
-                ToastStatus::Error,
-            )),
+                    format!("Commit failed: {e}"),
+                    ToastStatus::Error,
+                ))
+            }
         },
 
         // generic reusable confirm dialog
@@ -3387,14 +3409,22 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         }
 
         // self update
-        Message::CheckForUpdate => iced::Task::perform(
-            async {
-                tokio::task::spawn_blocking(check_for_update)
-                    .await
-                    .unwrap_or_else(|e| Err(e.to_string()))
-            },
-            Message::UpdateCheckResult,
-        ),
+        Message::CheckForUpdate => {
+            let toast_task = crate::ui::toast::toast::show_pending_and_schedule(
+                &mut app.toast_manager,
+                "Checking for updates…".to_string(),
+                crate::ui::toast::toast::TOAST_DURATION,
+            );
+            let check_task = iced::Task::perform(
+                async {
+                    tokio::task::spawn_blocking(check_for_update)
+                        .await
+                        .unwrap_or_else(|e| Err(e.to_string()))
+                },
+                Message::UpdateCheckResult,
+            );
+            iced::Task::batch([toast_task, check_task])
+        }
 
         // check on startup: same lookup, but stays quiet on "up to date" or errors instead of toasting on every launch
         Message::CheckForUpdateSilently => iced::Task::perform(
@@ -3450,10 +3480,9 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         ),
 
         Message::InstallUpdate => {
-            let toast_task = crate::ui::toast::toast::show_and_schedule(
+            let toast_task = crate::ui::toast::toast::show_pending_and_schedule(
                 &mut app.toast_manager,
                 "Downloading update…".to_string(),
-                ToastStatus::Info,
                 crate::ui::toast::toast::TOAST_DURATION_LONG,
             );
             let update_task = iced::Task::perform(

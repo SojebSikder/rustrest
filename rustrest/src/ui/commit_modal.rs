@@ -4,6 +4,7 @@ use crate::ui::context_menu::FieldTarget;
 use crate::ui::git_panel::status_badge;
 use crate::ui::modal::{card, muted_text_color};
 use crate::ui::multiline_input::multiline_input;
+use crate::ui::spinner::spinner_with_label;
 use iced::widget::{button, column, container, row, scrollable, text, text_editor};
 use iced::{Alignment, Element, Font, Length, Theme};
 
@@ -13,9 +14,12 @@ pub struct CommitModalState {
     pub collection_name: String,
     pub message: text_editor::Content,
     pub files: Vec<GitFileEntry>,
+    /// true while `git commit` is running, so the footer shows a spinner
+    /// instead of the Cancel/Commit buttons.
+    pub committing: bool,
 }
 
-pub fn view_commit_modal(state: &CommitModalState) -> Element<'_, Message> {
+pub fn view_commit_modal(state: &CommitModalState, spinner_tick: u64) -> Element<'_, Message> {
     let title = text(format!("Commit changes - {}", state.collection_name))
         .size(18)
         .font(Font {
@@ -58,19 +62,23 @@ pub fn view_commit_modal(state: &CommitModalState) -> Element<'_, Message> {
         Message::ShowTextFieldContextMenu(FieldTarget::CommitMessage, state.message.text()),
     );
 
-    let cancel_btn = button(text("Cancel").size(14))
-        .on_press(Message::CommitCancelled)
-        .padding([8, 16])
-        .style(button::secondary);
+    let footer = if state.committing {
+        row![spinner_with_label(spinner_tick, "Committing...")].width(Length::Fill)
+    } else {
+        let cancel_btn = button(text("Cancel").size(14))
+            .on_press(Message::CommitCancelled)
+            .padding([8, 16])
+            .style(button::secondary);
 
-    let commit_btn = button(text("Commit").size(14))
-        .on_press_maybe(
-            (!state.message.text().trim().is_empty()).then_some(Message::CommitConfirmed),
-        )
-        .padding([8, 16])
-        .style(button::primary);
+        let commit_btn = button(text("Commit").size(14))
+            .on_press_maybe(
+                (!state.message.text().trim().is_empty()).then_some(Message::CommitConfirmed),
+            )
+            .padding([8, 16])
+            .style(button::primary);
 
-    let footer = row![cancel_btn, commit_btn].spacing(10).width(Length::Fill);
+        row![cancel_btn, commit_btn].spacing(10).width(Length::Fill)
+    };
 
     let body = column![
         title,

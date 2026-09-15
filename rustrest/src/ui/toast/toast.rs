@@ -1,4 +1,5 @@
 use crate::message::Message;
+use crate::ui::spinner::spinner;
 use iced::widget::{button, column, container, row, text};
 use iced::{Alignment, Border, Color, Length};
 use std::time::{Duration, Instant};
@@ -14,6 +15,24 @@ pub fn show_and_schedule(
     duration: Duration,
 ) -> iced::Task<Message> {
     let (id, duration) = manager.show(message, status, duration);
+    iced::Task::perform(
+        async move {
+            tokio::time::sleep(duration).await;
+            id
+        },
+        Message::DismissToast,
+    )
+}
+
+/// Same as `show_and_schedule`, but the toast shows an animated spinner
+/// glyph next to the message - for toasts announcing a still-running
+/// operation (e.g. "Downloading update...") rather than a finished one.
+pub fn show_pending_and_schedule(
+    manager: &mut ToastManager,
+    message: impl Into<String>,
+    duration: Duration,
+) -> iced::Task<Message> {
+    let (id, duration) = manager.show_pending(message, duration);
     iced::Task::perform(
         async move {
             tokio::time::sleep(duration).await;
@@ -56,6 +75,7 @@ pub struct Toast {
     pub status: ToastStatus,
     pub expires_at: Instant,
     pub action_label: Option<String>,
+    pub pending: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -74,13 +94,19 @@ impl ToastManager {
         self.toasts.retain(|toast| toast.expires_at > now);
     }
 
+    /// whether any currently-shown toast is animating a spinner, so the
+    /// spinner-tick subscription knows to keep running.
+    pub fn has_pending(&self) -> bool {
+        self.toasts.iter().any(|t| t.pending)
+    }
+
     pub fn show(
         &mut self,
         message: impl Into<String>,
         status: ToastStatus,
         duration: Duration,
     ) -> (usize, Duration) {
-        self.show_internal(message, status, duration, None)
+        self.show_internal(message, status, duration, None, false)
     }
 
     pub fn show_with_action(
@@ -90,7 +116,17 @@ impl ToastManager {
         duration: Duration,
         action_label: impl Into<String>,
     ) -> (usize, Duration) {
-        self.show_internal(message, status, duration, Some(action_label.into()))
+        self.show_internal(message, status, duration, Some(action_label.into()), false)
+    }
+
+    /// shows a toast with an animated spinner glyph, for an operation
+    /// that's still running rather than one that's already finished.
+    pub fn show_pending(
+        &mut self,
+        message: impl Into<String>,
+        duration: Duration,
+    ) -> (usize, Duration) {
+        self.show_internal(message, ToastStatus::Info, duration, None, true)
     }
 
     fn show_internal(
@@ -99,6 +135,7 @@ impl ToastManager {
         status: ToastStatus,
         mut duration: Duration,
         action_label: Option<String>,
+        pending: bool,
     ) -> (usize, Duration) {
         let id = self.next_toast_id;
         self.next_toast_id += 1;
@@ -112,6 +149,7 @@ impl ToastManager {
             status,
             expires_at,
             action_label,
+            pending,
         });
         (id, duration)
     }
@@ -122,6 +160,7 @@ impl ToastManager {
 
     pub fn view<'a, Message>(
         &'a self,
+        spinner_tick: u64,
         on_dismiss: impl Fn(usize) -> Message + 'a,
         on_action: impl Fn(usize) -> Message + 'a,
     ) -> iced::Element<'a, Message>
@@ -138,9 +177,11 @@ impl ToastManager {
             let dismiss_id = toast.id;
             let action_id = toast.id;
 
-            let mut content = row![text(&toast.message).width(Length::Fill)]
-                .spacing(10)
-                .align_y(Alignment::Center);
+            let mut content = row![].spacing(10).align_y(Alignment::Center);
+            if toast.pending {
+                content = content.push(spinner(spinner_tick));
+            }
+            content = content.push(text(&toast.message).width(Length::Fill));
 
             if let Some(label) = &toast.action_label {
                 content = content.push(

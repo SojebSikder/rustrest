@@ -1,5 +1,6 @@
 use crate::collection::git_ops::{GitChangeKind, GitFileEntry, GitStatusSnapshot};
 use crate::message::Message;
+use crate::ui::spinner::spinner_with_label;
 use iced::widget::{Space, button, column, container, mouse_area, row, scrollable, text};
 use iced::{Alignment, Color, Element, Font, Length};
 use std::path::PathBuf;
@@ -110,13 +111,11 @@ pub fn render_git_panel(
     snapshot: Option<&Result<GitStatusSnapshot, String>>,
     selected_file: Option<&PathBuf>,
     diff: Option<&(PathBuf, String)>,
+    spinner_tick: u64,
 ) -> Element<'static, Message> {
     let snapshot = match snapshot {
         None => {
-            return text("Loading git status...")
-                .size(13)
-                .color(Color::from_rgb(0.5, 0.5, 0.5))
-                .into();
+            return spinner_with_label(spinner_tick, "Loading git status...");
         }
         Some(Err(e)) => {
             return column![
