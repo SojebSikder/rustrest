@@ -238,6 +238,15 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
     let autosave =
         iced::time::every(std::time::Duration::from_secs(5)).map(|_| Message::AutosaveTick);
 
+    // drives the loading-spinner animation; only runs while something is
+    // actually showing a spinner, so it's not ticking (and waking the event
+    // loop) all the time.
+    let spinner_sub = if app.any_spinner_active() {
+        iced::time::every(std::time::Duration::from_millis(80)).map(|_| Message::SpinnerTick)
+    } else {
+        Subscription::none()
+    };
+
     // catch the native window close button so we can flush the session
     // before the process actually exits (for the main window), or just
     // close that one window (for the secondary remote-config window),
@@ -326,6 +335,7 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         escape_close_sub,
         keyboard_shortcuts,
         autosave,
+        spinner_sub,
         close_requested,
         cursor_tracker,
         tab_rename_sub,

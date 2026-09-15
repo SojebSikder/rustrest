@@ -17,6 +17,7 @@ pub mod resize_handle;
 pub mod save_request_model;
 pub mod settings;
 pub mod sidebar;
+pub mod spinner;
 pub mod tab;
 pub mod terminal_view;
 pub mod toast;
