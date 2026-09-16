@@ -61,6 +61,9 @@ pub fn examples_to_saved_responses(examples: &[PostmanResponseExample]) -> Vec<S
                 })
                 .unwrap_or_default(),
             elapsed_ms: example.response_time.unwrap_or(0) as u128,
+            timings: Default::default(),
+            request_size: 0,
+            response_size: 0,
         })
         .collect()
 }

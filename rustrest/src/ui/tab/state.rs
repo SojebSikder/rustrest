@@ -428,6 +428,9 @@ impl Tab {
                         body: resp.body.clone(),
                         headers: resp.headers.clone(),
                         elapsed_ms: resp.elapsed.as_millis(),
+                        timings: resp.timings,
+                        request_size: resp.request_size,
+                        response_size: resp.response_size,
                     });
                 }
             }
@@ -448,6 +451,7 @@ impl Tab {
             // handled at the app level (needs the global cursor position), before
             // this message ever reaches `Tab::update`
             TabMessage::ShowFieldContextMenu(..) => {}
+            TabMessage::ShowResponseTimingModal(_) => {}
         }
     }
 

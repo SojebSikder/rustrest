@@ -328,6 +328,9 @@ pub enum Message {
     SaveRequestConfirmed,
     CloseSaveRequestModal,
 
+    // response timing modal
+    CloseResponseTimingModal,
+
     //
     ShowCollectionContextMenu(usize),
     ShowGitActionsMenu(usize),

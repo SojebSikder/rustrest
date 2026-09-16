@@ -77,6 +77,11 @@ pub enum TabMessage {
     /// opens the shared Copy/Paste context menu for a field in this tab;
     /// intercepted at the app level before reaching `Tab::update`.
     ShowFieldContextMenu(TabFieldTarget, String),
+
+    /// opens the Postman-style response timing/size modal for the live
+    /// response (`None`) or a saved snapshot at the given index; intercepted
+    /// at the app level before reaching `Tab::update`.
+    ShowResponseTimingModal(Option<usize>),
 }
 
 impl TabMessage {
@@ -127,7 +132,8 @@ impl TabMessage {
             | TabMessage::ScriptTabChanged(_)
             | TabMessage::CancelRequest
             | TabMessage::ViewSavedResponse(_)
-            | TabMessage::ShowFieldContextMenu(_, _) => false,
+            | TabMessage::ShowFieldContextMenu(_, _)
+            | TabMessage::ShowResponseTimingModal(_) => false,
         }
     }
 }

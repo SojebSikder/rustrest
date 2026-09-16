@@ -150,6 +150,7 @@ pub struct Rustrest {
         std::collections::HashMap<usize, crate::collection::git_ops::GitRemoteOp>,
     pub commit_modal: Option<crate::ui::commit_modal::CommitModalState>,
     pub confirm_dialog: Option<crate::ui::confirm_dialog::ConfirmDialogState>,
+    pub response_timing_modal: Option<crate::ui::response_timing_modal::ResponseTimingModalState>,
 
     // sidebar drag-and-drop + collapse state
     pub sidebar_drag: Option<SidebarDragItem>,
@@ -594,6 +595,7 @@ pub fn init() -> (Rustrest, Task<Message>) {
         git_remote_op_running: std::collections::HashMap::new(),
         commit_modal: None,
         confirm_dialog: None,
+        response_timing_modal: None,
         sidebar_drag: None,
         collapsed_collections: std::collections::HashSet::new(),
         collapsed_folders: std::collections::HashSet::new(),
@@ -2056,6 +2058,31 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     current_value: value,
                 });
                 app.context_menu_position = app.cursor_position;
+                return Task::none();
+            }
+            if let TabMessage::ShowResponseTimingModal(saved_idx) = tab_msg {
+                if let Some(tab_state) = app.tabs.get(app.active_tab_index) {
+                    let tab = &tab_state.tab;
+                    app.response_timing_modal =
+                        match saved_idx {
+                            None => tab.response.as_ref().and_then(|res| res.as_ref().ok()).map(
+                                |resp| crate::ui::response_timing_modal::ResponseTimingModalState {
+                                    status: resp.status,
+                                    timings: resp.timings,
+                                    request_size: resp.request_size,
+                                    response_size: resp.response_size,
+                                },
+                            ),
+                            Some(idx) => tab.saved_responses.get(idx).map(|saved| {
+                                crate::ui::response_timing_modal::ResponseTimingModalState {
+                                    status: saved.status,
+                                    timings: saved.timings,
+                                    request_size: saved.request_size,
+                                    response_size: saved.response_size,
+                                }
+                            }),
+                        };
+                }
                 return Task::none();
             }
             let active_idx = app.active_tab_index;
@@ -3760,6 +3787,11 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
 
         Message::CloseSaveRequestModal => {
             app.save_request_model = None;
+            Task::none()
+        }
+
+        Message::CloseResponseTimingModal => {
+            app.response_timing_modal = None;
             Task::none()
         }
 
