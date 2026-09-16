@@ -494,8 +494,8 @@ pub enum Message {
     PluginPanelEvent(String, String, rustrest_plugin_host::UiEvent),
     /// opens (or focuses) a tab for the given plugin's sidebar panel.
     OpenPluginPanel(String, String),
+    /// opens (or focuses) the "Manage Plugins" tab.
     OpenPluginManagerPressed,
-    ClosePluginManagerPressed,
     TogglePluginEnabled(String, bool),
     /// opens a file dialog to pick a local `.wasm` file to install.
     InstallPluginPressed,

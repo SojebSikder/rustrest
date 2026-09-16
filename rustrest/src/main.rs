@@ -25,7 +25,6 @@ use crate::ui::menu::menu::{
     DropdownItem, DropdownMessage, MenuGroup, render_menu_bar, render_menu_overlay,
 };
 use crate::ui::menu::menu_message::MenuMessage;
-use crate::ui::plugin_manager::view_plugin_manager;
 use crate::ui::remote::{view_remote_config_modal, view_remote_connect_modal};
 use crate::ui::resize_handle::{DividerOrientation, resize_handle};
 use crate::ui::save_request_model::save_request_model::view_save_request_modal;
@@ -78,7 +77,6 @@ enum ActiveOverlay {
     SaveRequest,
     Commit,
     ConfirmDialog,
-    PluginManager,
     Settings,
     ExportPicker,
     RemoteConfig,
@@ -137,8 +135,6 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         Some(ActiveOverlay::ExportPicker)
     } else if app.settings_open {
         Some(ActiveOverlay::Settings)
-    } else if app.plugin_manager_open {
-        Some(ActiveOverlay::PluginManager)
     } else if app.commit_modal.is_some() {
         Some(ActiveOverlay::Commit)
     } else if app.save_request_model.is_some() {
@@ -160,12 +156,6 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
             Some(ActiveOverlay::Commit) => outside_click_sub!(Message::CommitCancelled),
             Some(ActiveOverlay::ConfirmDialog) => {
                 outside_click_sub!(Message::ConfirmDialogCancelled)
-            }
-            Some(ActiveOverlay::PluginManager) if app.plugin_manager_busy.is_some() => {
-                Subscription::none()
-            }
-            Some(ActiveOverlay::PluginManager) => {
-                outside_click_sub!(Message::ClosePluginManagerPressed)
             }
             Some(ActiveOverlay::Settings) => outside_click_sub!(Message::CloseSettingsPressed),
             Some(ActiveOverlay::ExportPicker) => {
@@ -204,12 +194,6 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         Some(ActiveOverlay::Commit) => escape_close_sub!(Message::CommitCancelled),
         Some(ActiveOverlay::ConfirmDialog) => {
             escape_close_sub!(Message::ConfirmDialogCancelled)
-        }
-        Some(ActiveOverlay::PluginManager) if app.plugin_manager_busy.is_some() => {
-            Subscription::none()
-        }
-        Some(ActiveOverlay::PluginManager) => {
-            escape_close_sub!(Message::ClosePluginManagerPressed)
         }
         Some(ActiveOverlay::Settings) => escape_close_sub!(Message::CloseSettingsPressed),
         Some(ActiveOverlay::ExportPicker) => {
@@ -547,16 +531,6 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
             .align_x(Alignment::Center)
             .align_y(Alignment::Center);
         main_interface_stack = main_interface_stack.push(commit_overlay);
-    }
-
-    // manage-plugins modal overlay
-    if app.plugin_manager_open {
-        let plugin_manager_overlay = container(view_plugin_manager(app))
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_x(Alignment::Center)
-            .align_y(Alignment::Center);
-        main_interface_stack = main_interface_stack.push(plugin_manager_overlay);
     }
 
     // settings modal overlay

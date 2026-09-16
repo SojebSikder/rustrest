@@ -67,6 +67,7 @@ pub enum WorkspaceContent {
         plugin_id: String,
         panel_id: String,
     },
+    PluginManager,
 }
 
 pub struct TabState {
@@ -207,7 +208,6 @@ pub struct Rustrest {
     /// keyed by (plugin_id, panel_id); refreshed on open and after each event.
     pub plugin_panel_state:
         std::collections::HashMap<(String, String), rustrest_plugin_host::UiNode>,
-    pub plugin_manager_open: bool,
     /// set while an install or uninstall is running on a background thread,
     /// so the plugin manager can show a spinner and disable other actions.
     pub plugin_manager_busy: Option<crate::ui::plugin_manager::PluginManagerAction>,
@@ -280,6 +280,7 @@ impl Rustrest {
                 // plugin panels are re-derived from the plugin on demand;
                 // nothing to persist.
                 WorkspaceContent::Plugin { .. } => None,
+                WorkspaceContent::PluginManager => None,
             })
             .collect();
 
@@ -412,6 +413,7 @@ impl Rustrest {
                 WorkspaceContent::Terminal { .. } => false,
                 WorkspaceContent::RemoteFile { .. } => false,
                 WorkspaceContent::Plugin { .. } => false,
+                WorkspaceContent::PluginManager => false,
             };
             if belongs {
                 self.sync_tab_to_collection(idx);
@@ -461,6 +463,7 @@ impl Rustrest {
                 WorkspaceContent::Terminal { .. } => {}
                 WorkspaceContent::RemoteFile { .. } => {}
                 WorkspaceContent::Plugin { .. } => {}
+                WorkspaceContent::PluginManager => {}
             }
         }
     }
@@ -618,7 +621,6 @@ pub fn init() -> (Rustrest, Task<Message>) {
             .expect("PluginManager::with_dirs with a temp-dir fallback never fails")
         }),
         plugin_panel_state: std::collections::HashMap::new(),
-        plugin_manager_open: false,
         plugin_manager_busy: None,
         export_plugin_picker: None,
         settings_open: false,
@@ -918,6 +920,7 @@ fn finalize_tab_rename(app: &mut Rustrest, idx: usize) {
                 WorkspaceContent::Terminal { .. } => "Terminal".to_string(),
                 WorkspaceContent::RemoteFile { path, .. } => path.clone(),
                 WorkspaceContent::Plugin { panel_id, .. } => panel_id.clone(),
+                WorkspaceContent::PluginManager => "Manage Plugins".to_string(),
             };
         }
     }
@@ -1240,6 +1243,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                     WorkspaceContent::Terminal { .. } => false,
                     WorkspaceContent::RemoteFile { .. } => false,
                     WorkspaceContent::Plugin { .. } => false,
+                    WorkspaceContent::PluginManager => false,
                 };
                 if belongs {
                     tab_state.tab.dirty = false;
@@ -1285,6 +1289,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                                 WorkspaceContent::Terminal { .. } => false,
                                 WorkspaceContent::RemoteFile { .. } => false,
                                 WorkspaceContent::Plugin { .. } => false,
+                                WorkspaceContent::PluginManager => false,
                             };
                             if belongs {
                                 tab_state.tab.dirty = false;
@@ -3806,6 +3811,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                         update(app, Message::RemoteFileSavePressed(tab_id))
                     }
                     WorkspaceContent::Plugin { .. } => Task::none(),
+                    WorkspaceContent::PluginManager => Task::none(),
                 }
             } else {
                 Task::none()
@@ -4549,12 +4555,25 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
 
         // native plugins (wasm)
         Message::OpenPluginManagerPressed => {
-            app.plugin_manager_open = true;
-            Task::none()
-        }
-        Message::ClosePluginManagerPressed => {
-            app.plugin_manager_open = false;
-            Task::none()
+            let existing = app
+                .tabs
+                .iter()
+                .position(|t| matches!(t.content, WorkspaceContent::PluginManager));
+            if let Some(idx) = existing {
+                app.active_tab_index = idx;
+                return Task::none();
+            }
+
+            let mut tab = Tab::new(app.next_tab_id);
+            tab.name = "Manage Plugins".to_string();
+            app.next_tab_id += 1;
+            app.tabs.push(TabState {
+                tab,
+                content: WorkspaceContent::PluginManager,
+                is_editing_name: false,
+            });
+            app.active_tab_index = app.tabs.len() - 1;
+            iced::widget::operation::snap_to_end(crate::ui::workspace::tab_bar_scroll_id())
         }
 
         // settings (reusable preferences modal)

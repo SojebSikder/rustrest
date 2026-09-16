@@ -1,13 +1,13 @@
-//! "Manage Plugins" modal: lists every discovered plugin, lets the user
+//! "Manage Plugins" tab: lists every discovered plugin, lets the user
 //! enable/disable it, and surfaces load errors so a broken plugin doesn't
 //! just silently vanish.
 
 use crate::app::Rustrest;
 use crate::message::Message;
-use crate::ui::modal::{card, danger_text_color, muted_text_color};
+use crate::ui::modal::{danger_text_color, muted_text_color};
 use crate::ui::spinner::spinner_with_label;
 use iced::widget::{button, checkbox, column, container, row, scrollable, text};
-use iced::{Alignment, Element, Font, Length, Theme};
+use iced::{Alignment, Element, Length, Theme};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PluginManagerAction {
@@ -15,11 +15,8 @@ pub enum PluginManagerAction {
     Uninstalling(String),
 }
 
-pub fn view_plugin_manager(app: &Rustrest) -> Element<'_, Message> {
-    let title = text("Manage Plugins").size(18).font(Font {
-        weight: iced::font::Weight::Bold,
-        ..Font::DEFAULT
-    });
+pub fn render_plugin_manager_tab(app: &Rustrest) -> Element<'_, Message> {
+    let title = text("Manage Plugins").size(28);
 
     let is_busy = app.plugin_manager_busy.is_some();
     let install_control: Element<'_, Message> =
@@ -132,20 +129,10 @@ pub fn view_plugin_manager(app: &Rustrest) -> Element<'_, Message> {
         );
     }
 
-    let close_btn = button(text("Close").size(14))
-        .on_press(Message::ClosePluginManagerPressed)
-        .padding([8, 16])
-        .style(button::secondary);
-
-    let body = column![
-        header,
-        scrollable(list).height(Length::Fixed(320.0)),
-        container(close_btn)
-            .width(Length::Fill)
-            .align_x(iced::alignment::Horizontal::Right),
-    ]
-    .spacing(18)
-    .padding(24);
-
-    card(body, 460.0)
+    column![header, scrollable(list).height(Length::Fill)]
+        .spacing(20)
+        .padding(20)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
 }

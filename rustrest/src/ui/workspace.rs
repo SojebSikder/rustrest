@@ -70,6 +70,7 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
             WorkspaceContent::Terminal { .. } => text(">_").size(11).into(),
             WorkspaceContent::RemoteFile { .. } => text("☁").size(11).into(),
             WorkspaceContent::Plugin { .. } => text("⚙").size(11).into(),
+            WorkspaceContent::PluginManager => text("🧩").size(11).into(),
         };
 
         let tab_content: Element<Message> = if tab_state.is_editing_name {
@@ -238,6 +239,8 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
                 .get(&(plugin_id.clone(), panel_id.clone()));
             super::plugin_panel::render_plugin_panel(plugin_id, panel_id, tree)
         }
+
+        WorkspaceContent::PluginManager => super::plugin_manager::render_plugin_manager_tab(app),
     };
 
     column![tab_bar_row, tab_view].spacing(15).into()
