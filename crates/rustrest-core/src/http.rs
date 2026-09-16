@@ -1,10 +1,15 @@
-use crate::common::{BodyType, FormDataRow, FormDataType};
+mod multipart;
+mod timed_client;
+mod tls;
+
+use crate::common::{BodyType, FormDataRow};
+use bytes::Bytes;
 use std::collections::HashMap;
 use std::fmt;
-use std::future::Future;
 use std::path::Path;
 use std::time::{Duration, Instant};
 use tokio_util::sync::CancellationToken;
+use url::Url;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum HttpMethod {
@@ -24,6 +29,31 @@ pub struct TestResult {
     pub passed: bool,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct PhaseTimings {
+    pub prepare: Duration,
+    pub socket_initialization: Duration,
+    pub dns_lookup: Duration,
+    pub tcp_handshake: Duration,
+    pub ssl_handshake: Duration,
+    pub waiting: Duration,
+    pub download: Duration,
+    pub process: Duration,
+}
+
+impl PhaseTimings {
+    pub fn total(&self) -> Duration {
+        self.prepare
+            + self.socket_initialization
+            + self.dns_lookup
+            + self.tcp_handshake
+            + self.ssl_handshake
+            + self.waiting
+            + self.download
+            + self.process
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct HttpResponse {
     pub status: u16,
@@ -31,6 +61,9 @@ pub struct HttpResponse {
     pub headers: HashMap<String, String>,
     pub elapsed: Duration,
     pub test_results: Vec<TestResult>,
+    pub timings: PhaseTimings,
+    pub request_size: u64,
+    pub response_size: u64,
 }
 
 impl fmt::Display for HttpMethod {
@@ -114,34 +147,46 @@ impl RequestSpec {
     }
 }
 
-fn map_method(method: &HttpMethod) -> Result<reqwest::Method, String> {
+fn map_method(method: &HttpMethod) -> Result<http::Method, String> {
     Ok(match method {
-        HttpMethod::GET => reqwest::Method::GET,
-        HttpMethod::POST => reqwest::Method::POST,
-        HttpMethod::PUT => reqwest::Method::PUT,
-        HttpMethod::DELETE => reqwest::Method::DELETE,
-        HttpMethod::PATCH => reqwest::Method::PATCH,
-        HttpMethod::HEAD => reqwest::Method::HEAD,
-        HttpMethod::OPTIONS => reqwest::Method::OPTIONS,
+        HttpMethod::GET => http::Method::GET,
+        HttpMethod::POST => http::Method::POST,
+        HttpMethod::PUT => http::Method::PUT,
+        HttpMethod::DELETE => http::Method::DELETE,
+        HttpMethod::PATCH => http::Method::PATCH,
+        HttpMethod::HEAD => http::Method::HEAD,
+        HttpMethod::OPTIONS => http::Method::OPTIONS,
         HttpMethod::Custom(custom_str) => {
             let upper = custom_str.trim().to_uppercase();
-            reqwest::Method::from_bytes(upper.as_bytes())
+            http::Method::from_bytes(upper.as_bytes())
                 .map_err(|_| format!("Invalid custom HTTP method: '{}'", custom_str))?
         }
     })
 }
 
-fn apply_headers(
-    mut builder: reqwest::RequestBuilder,
+/// Merges request headers, the assembled Cookie header, and the raw
+/// Authorization value into one ordered header list, dropping blank keys.
+fn collect_headers(
     headers: Vec<(String, String)>,
-) -> reqwest::RequestBuilder {
-    // filter out completely blank header keys
-    for (key, val) in headers {
-        if !key.trim().is_empty() {
-            builder = builder.header(key.trim(), val);
-        }
+    cookie_header: Option<String>,
+    auth_raw: &str,
+) -> Vec<(String, String)> {
+    let mut result: Vec<(String, String)> = headers
+        .into_iter()
+        .filter(|(key, _)| !key.trim().is_empty())
+        .map(|(key, val)| (key.trim().to_string(), val))
+        .collect();
+
+    if let Some(cookie) = cookie_header {
+        result.push(("Cookie".to_string(), cookie));
     }
-    builder
+
+    let trimmed_auth = auth_raw.trim();
+    if !trimmed_auth.is_empty() {
+        result.push(("Authorization".to_string(), trimmed_auth.to_string()));
+    }
+
+    result
 }
 
 fn build_cookie_header(cookies: Vec<(String, String)>) -> Option<String> {
@@ -159,58 +204,6 @@ fn build_cookie_header(cookies: Vec<(String, String)>) -> Option<String> {
     }
 }
 
-fn apply_auth(builder: reqwest::RequestBuilder, auth_raw: &str) -> reqwest::RequestBuilder {
-    let trimmed = auth_raw.trim();
-    if trimmed.is_empty() {
-        builder
-    } else {
-        builder.header("Authorization", trimmed)
-    }
-}
-
-/// Builds a multipart form from active rows, reading any file-typed rows from disk
-async fn build_form_data(
-    form_data_list: Vec<FormDataRow>,
-) -> Result<Option<reqwest::multipart::Form>, String> {
-    let mut form = reqwest::multipart::Form::new();
-    let mut has_fields = false;
-
-    for row in form_data_list {
-        if !row.is_active || row.key.trim().is_empty() {
-            continue;
-        }
-        has_fields = true;
-
-        match row.field_type {
-            FormDataType::Text => {
-                form = form.text(row.key, row.value);
-            }
-            FormDataType::File => {
-                if !row.value.trim().is_empty() {
-                    let path = Path::new(&row.value);
-                    if path.exists() {
-                        let file_bytes = tokio::fs::read(path)
-                            .await
-                            .map_err(|e| format!("Form File Read Failure: {}", e))?;
-
-                        let file_name = path
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or("file")
-                            .to_string();
-
-                        let part = reqwest::multipart::Part::bytes(file_bytes).file_name(file_name);
-
-                        form = form.part(row.key, part);
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(if has_fields { Some(form) } else { None })
-}
-
 /// Reads the binary body file from disk, if a path was given and it exists.
 async fn build_binary_body(binary_file_path: &Option<String>) -> Result<Option<Vec<u8>>, String> {
     if let Some(path_str) = binary_file_path {
@@ -225,62 +218,80 @@ async fn build_binary_body(binary_file_path: &Option<String>) -> Result<Option<V
     Ok(None)
 }
 
-/// Attaches the request body appropriate to `body_type`
-fn apply_body(
-    builder: reqwest::RequestBuilder,
+/// Resolves the request body appropriate to `body_type`, plus any header the
+/// body encoding itself requires (namely the multipart boundary).
+async fn build_body(
     method: &HttpMethod,
     body_type: BodyType,
     raw_body: String,
-    form: Option<reqwest::multipart::Form>,
-    binary: Option<Vec<u8>>,
-) -> reqwest::RequestBuilder {
+    form_data: Vec<FormDataRow>,
+    binary_file_path: Option<String>,
+) -> Result<(Vec<u8>, Option<(String, String)>), String> {
     // no-op for GET/HEAD requests
     if *method == HttpMethod::GET || *method == HttpMethod::HEAD {
-        return builder;
+        return Ok((Vec::new(), None));
     }
+
     match body_type {
-        BodyType::FormData => match form {
-            Some(form) => builder.multipart(form),
-            None => builder,
+        BodyType::FormData => match multipart::encode(form_data).await? {
+            Some((boundary, bytes)) => Ok((
+                bytes,
+                Some((
+                    "Content-Type".to_string(),
+                    format!("multipart/form-data; boundary={}", boundary),
+                )),
+            )),
+            None => Ok((Vec::new(), None)),
         },
-        BodyType::Binary => match binary {
-            Some(bytes) => builder.body(bytes),
-            None => builder,
-        },
+        BodyType::Binary => {
+            let bytes = build_binary_body(&binary_file_path)
+                .await?
+                .unwrap_or_default();
+            Ok((bytes, None))
+        }
         // fallback text states (raw JSON, URLencoded forms, etc.)
         _ => {
             if raw_body.trim().is_empty() {
-                builder
+                Ok((Vec::new(), None))
             } else {
-                builder.body(raw_body)
+                Ok((raw_body.into_bytes(), None))
             }
         }
     }
 }
 
-async fn cancellable<T>(
-    fut: impl Future<Output = Result<T, reqwest::Error>>,
-    cancel_token: &CancellationToken,
-    err_prefix: &str,
-) -> Result<T, String> {
-    tokio::select! {
-        res = fut => res.map_err(|e| format!("{}: {}", err_prefix, e)),
-        _ = cancel_token.cancelled() => Err(String::from("Request cancelled by user.")),
-    }
+/// Reconstructs an approximate wire size for the response (status line +
+/// headers + body), since the low-level HTTP/1.1 parser doesn't retain the
+/// original bytes off the socket.
+fn estimate_response_size(status: u16, headers: &http::HeaderMap, body_len: usize) -> u64 {
+    let reason = http::StatusCode::from_u16(status)
+        .ok()
+        .and_then(|s| s.canonical_reason())
+        .unwrap_or("");
+    let status_line_len = format!("HTTP/1.1 {} {}\r\n", status, reason).len();
+    let headers_len: usize = headers
+        .iter()
+        .map(|(k, v)| k.as_str().len() + 2 + v.to_str().map(str::len).unwrap_or(0) + 2)
+        .sum();
+
+    (status_line_len + headers_len + 2 + body_len) as u64
 }
 
 fn shape_response(
-    status: u16,
-    header_map: reqwest::header::HeaderMap,
-    body_text: String,
-    elapsed: Duration,
+    outcome: timed_client::ExecOutcome,
+    prepare: Duration,
+    process_start: Instant,
 ) -> HttpResponse {
     let mut headers = HashMap::new();
-    for (key, value) in header_map.iter() {
+    for (key, value) in outcome.headers.iter() {
         if let Ok(val_str) = value.to_str() {
             headers.insert(key.to_string(), val_str.to_string());
         }
     }
+
+    let response_size =
+        estimate_response_size(outcome.status, &outcome.headers, outcome.body.len());
+    let body_text = String::from_utf8_lossy(&outcome.body).into_owned();
 
     let finalized_body = if let Ok(json_val) = serde_json::from_str::<serde_json::Value>(&body_text)
     {
@@ -289,12 +300,20 @@ fn shape_response(
         body_text
     };
 
+    let mut timings = outcome.timings;
+    timings.prepare = prepare;
+    // measured last, since "process" must cover all header/body shaping above
+    timings.process = process_start.elapsed();
+
     HttpResponse {
-        status,
+        status: outcome.status,
         body: finalized_body,
         headers,
-        elapsed,
+        elapsed: timings.total(),
         test_results: Vec::new(),
+        timings,
+        request_size: outcome.request_size,
+        response_size,
     }
 }
 
@@ -302,53 +321,50 @@ pub async fn send_request(
     spec: RequestSpec,
     cancel_token: CancellationToken,
 ) -> Result<HttpResponse, String> {
-    let reqwest_url =
-        reqwest::Url::parse(&spec.url).map_err(|e| format!("Invalid URL pattern: {}", e))?;
+    let prepare_start = Instant::now();
 
-    let client = reqwest::Client::builder()
-        .timeout(spec.timeout)
-        .build()
-        .map_err(|e| format!("Failed to initialize client: {}", e))?;
+    let url = Url::parse(&spec.url).map_err(|e| format!("Invalid URL pattern: {}", e))?;
+    let method = map_method(&spec.method)?;
 
-    let req_method = map_method(&spec.method)?;
-    let mut req_builder = client.request(req_method, reqwest_url);
+    let cookie_header = build_cookie_header(spec.cookies);
+    let mut header_list = collect_headers(spec.headers, cookie_header, &spec.auth_raw);
 
-    req_builder = apply_headers(req_builder, spec.headers);
-    if let Some(cookie_header) = build_cookie_header(spec.cookies) {
-        req_builder = req_builder.header("Cookie", cookie_header);
-    }
-    req_builder = apply_auth(req_builder, &spec.auth_raw);
+    let (body_bytes, extra_header) = build_body(
+        &spec.method,
+        spec.body_type,
+        spec.raw_body,
+        spec.form_data,
+        spec.binary_file_path,
+    )
+    .await?;
 
-    if spec.method != HttpMethod::GET && spec.method != HttpMethod::HEAD {
-        let form = if spec.body_type == BodyType::FormData {
-            build_form_data(spec.form_data).await?
-        } else {
-            None
-        };
-        let binary = if spec.body_type == BodyType::Binary {
-            build_binary_body(&spec.binary_file_path).await?
-        } else {
-            None
-        };
-        req_builder = apply_body(
-            req_builder,
-            &spec.method,
-            spec.body_type,
-            spec.raw_body,
-            form,
-            binary,
-        );
+    if let Some((key, val)) = extra_header {
+        if !header_list
+            .iter()
+            .any(|(k, _)| k.eq_ignore_ascii_case(&key))
+        {
+            header_list.push((key, val));
+        }
     }
 
-    let start_time = Instant::now();
+    let prepare = prepare_start.elapsed();
 
-    let response = cancellable(req_builder.send(), &cancel_token, "Network Dispatch Error").await?;
+    let outcome = match tokio::time::timeout(
+        spec.timeout,
+        timed_client::execute_request(
+            method,
+            url,
+            header_list,
+            Bytes::from(body_bytes),
+            &cancel_token,
+        ),
+    )
+    .await
+    {
+        Ok(result) => result?,
+        Err(_) => return Err("Request timed out".to_string()),
+    };
 
-    let elapsed = start_time.elapsed();
-    let status = response.status().as_u16();
-    let headers = response.headers().clone();
-
-    let body_text = cancellable(response.text(), &cancel_token, "Payload Parsing Error").await?;
-
-    Ok(shape_response(status, headers, body_text, elapsed))
+    let process_start = Instant::now();
+    Ok(shape_response(outcome, prepare, process_start))
 }

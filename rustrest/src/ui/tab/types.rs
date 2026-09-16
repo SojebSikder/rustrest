@@ -49,6 +49,7 @@ impl ScriptTab {
     }
 }
 
+pub use rustrest_core::http::PhaseTimings;
 pub use rustrest_core::{BodyType, FormDataRow, FormDataType, KeyValuePair};
 
 /// a saved snapshot of a response
@@ -59,6 +60,9 @@ pub struct SavedResponse {
     pub body: String,
     pub headers: std::collections::HashMap<String, String>,
     pub elapsed_ms: u128,
+    pub timings: PhaseTimings,
+    pub request_size: u64,
+    pub response_size: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

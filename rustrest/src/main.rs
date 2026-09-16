@@ -27,6 +27,7 @@ use crate::ui::menu::menu::{
 use crate::ui::menu::menu_message::MenuMessage;
 use crate::ui::remote::{view_remote_config_modal, view_remote_connect_modal};
 use crate::ui::resize_handle::{DividerOrientation, resize_handle};
+use crate::ui::response_timing_modal::view_response_timing_modal;
 use crate::ui::save_request_model::save_request_model::view_save_request_modal;
 use crate::ui::settings::view_settings_modal;
 use app::Rustrest;
@@ -82,6 +83,7 @@ enum ActiveOverlay {
     RemoteConfig,
     RemoteConnect,
     CommandPalette,
+    ResponseTiming,
 }
 
 macro_rules! outside_click_sub {
@@ -135,6 +137,8 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         Some(ActiveOverlay::Settings)
     } else if app.commit_modal.is_some() {
         Some(ActiveOverlay::Commit)
+    } else if app.response_timing_modal.is_some() {
+        Some(ActiveOverlay::ResponseTiming)
     } else if app.save_request_model.is_some() {
         Some(ActiveOverlay::SaveRequest)
     } else if app.editing_env_index.is_some() {
@@ -152,6 +156,9 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
                 outside_click_sub!(Message::CloseSaveRequestModal)
             }
             Some(ActiveOverlay::Commit) => outside_click_sub!(Message::CommitCancelled),
+            Some(ActiveOverlay::ResponseTiming) => {
+                outside_click_sub!(Message::CloseResponseTimingModal)
+            }
             Some(ActiveOverlay::ConfirmDialog) => {
                 outside_click_sub!(Message::ConfirmDialogCancelled)
             }
@@ -190,6 +197,9 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         Some(ActiveOverlay::EnvEditor) => escape_close_sub!(Message::CloseEnvEditorPressed),
         Some(ActiveOverlay::SaveRequest) => escape_close_sub!(Message::CloseSaveRequestModal),
         Some(ActiveOverlay::Commit) => escape_close_sub!(Message::CommitCancelled),
+        Some(ActiveOverlay::ResponseTiming) => {
+            escape_close_sub!(Message::CloseResponseTimingModal)
+        }
         Some(ActiveOverlay::ConfirmDialog) => {
             escape_close_sub!(Message::ConfirmDialogCancelled)
         }
@@ -547,6 +557,16 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
             .align_x(Alignment::Center)
             .align_y(Alignment::Center);
         main_interface_stack = main_interface_stack.push(commit_overlay);
+    }
+
+    // response timing modal overlay
+    if let Some(timing_modal) = app.response_timing_modal.as_ref() {
+        let timing_overlay = container(view_response_timing_modal(timing_modal))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(Alignment::Center)
+            .align_y(Alignment::Center);
+        main_interface_stack = main_interface_stack.push(timing_overlay);
     }
 
     // settings modal overlay

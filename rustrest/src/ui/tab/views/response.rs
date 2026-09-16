@@ -278,9 +278,10 @@ where
                 text(format!("Status: {}", resp.status))
                     .color(status_color(resp.status))
                     .size(13),
-                text(format!("Time: {} ms", resp.elapsed.as_millis()))
-                    .color(iced::Color::from_rgb(0.5, 0.5, 0.5))
-                    .size(13),
+                button(text(format!("Time: {} ms", resp.elapsed.as_millis())).size(13))
+                    .padding(0)
+                    .style(button::text)
+                    .on_press(wrap_msg(TabMessage::ShowResponseTimingModal(None))),
                 button(text("Save Response").size(12))
                     .padding([3, 8])
                     .style(button::secondary)
@@ -411,7 +412,7 @@ where
 /// renders a previously-saved response snapshot, read-only
 fn render_saved_response<'a, Message>(
     tab: &'a Tab,
-    _index: usize,
+    index: usize,
     saved: &'a SavedResponse,
     wrap_msg: impl Fn(TabMessage) -> Message + Copy + 'static,
 ) -> Element<'a, Message>
@@ -422,9 +423,10 @@ where
         text(format!("Status: {}", saved.status))
             .color(status_color(saved.status))
             .size(13),
-        text(format!("Time: {} ms", saved.elapsed_ms))
-            .color(iced::Color::from_rgb(0.5, 0.5, 0.5))
-            .size(13),
+        button(text(format!("Time: {} ms", saved.elapsed_ms)).size(13))
+            .padding(0)
+            .style(button::text)
+            .on_press(wrap_msg(TabMessage::ShowResponseTimingModal(Some(index)))),
         text(format!("Saved: {}", saved.name))
             .color(iced::Color::from_rgb(0.5, 0.5, 0.5))
             .size(12),

@@ -5738,12 +5738,22 @@ name = "rustrest-core"
 version = "0.1.1"
 dependencies = [
  "boa_engine",
+ "bytes",
  "dirs",
+ "http",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
  "reqwest 0.12.28",
+ "rustls",
+ "rustls-pki-types",
  "serde",
  "serde_json",
  "tokio",
+ "tokio-rustls",
  "tokio-util",
+ "url",
+ "webpki-roots",
 ]
 
 [[package]]

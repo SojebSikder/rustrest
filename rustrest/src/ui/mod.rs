@@ -14,6 +14,7 @@ pub mod plugin_manager;
 pub mod plugin_panel;
 pub mod remote;
 pub mod resize_handle;
+pub mod response_timing_modal;
 pub mod save_request_model;
 pub mod settings;
 pub mod sidebar;
