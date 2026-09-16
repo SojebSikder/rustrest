@@ -1,7 +1,8 @@
 use crate::app::Rustrest;
 use crate::message::Message;
 use crate::ui::context_menu::{FieldTarget, with_context_menu};
-use iced::widget::{button, checkbox, column, container, row, scrollable, text, text_input};
+use crate::ui::modal::card;
+use iced::widget::{button, checkbox, column, row, scrollable, text, text_input};
 use iced::{Alignment, Element, Length};
 
 pub fn render_env_editor(app: &Rustrest) -> Option<Element<'_, Message>> {
@@ -122,14 +123,9 @@ pub fn render_env_editor(app: &Rustrest) -> Option<Element<'_, Message>> {
         scrollable(var_rows).height(Length::Fixed(250.0)),
         add_var_btn
     ]
-    .spacing(15);
+    .spacing(15)
+    .padding(20);
 
-    // wrap in a card container modal overlay
-    Some(
-        container(content)
-            .padding(20)
-            .width(Length::Fixed(550.0))
-            .style(container::bordered_box)
-            .into(),
-    )
+    // wrap in a card that swallows clicks so they don't close the modal
+    Some(card(content, 550.0))
 }
