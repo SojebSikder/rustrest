@@ -151,7 +151,11 @@ fn imports_v4_json_export() {
 
         assert_eq!(value["info"]["name"], "Demo Workspace");
         let items = value["item"].as_array().expect("item array");
-        assert_eq!(items.len(), 2, "expected the Users folder + top-level request");
+        assert_eq!(
+            items.len(),
+            2,
+            "expected the Users folder + top-level request"
+        );
 
         let folder = &items[0];
         assert_eq!(folder["name"], "Users");
@@ -184,7 +188,10 @@ fn imports_v5_yaml_export() {
         let items = value["item"].as_array().expect("item array");
         assert_eq!(items.len(), 2);
         assert_eq!(items[0]["name"], "Users");
-        assert_eq!(items[0]["item"][0]["request"]["url"], "{{base_url}}/users/1");
+        assert_eq!(
+            items[0]["item"][0]["request"]["url"],
+            "{{base_url}}/users/1"
+        );
         assert_eq!(items[1]["request"]["method"], "POST");
 
         let vars = value["variable"].as_array().expect("variables");

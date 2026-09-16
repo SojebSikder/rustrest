@@ -109,3 +109,51 @@ fn loads_and_drives_the_example_plugin() {
 
     std::fs::remove_dir_all(&tmp).ok();
 }
+
+#[test]
+fn installs_and_uninstalls_a_plugin_from_a_local_file() {
+    let wasm_path = example_wasm_path();
+    if !wasm_path.is_file() {
+        eprintln!(
+            "skipping: example plugin not built at {}; see file header for build instructions",
+            wasm_path.display()
+        );
+        return;
+    }
+
+    let tmp = std::env::temp_dir().join(format!(
+        "rustrest-plugin-host-install-test-{}",
+        std::process::id()
+    ));
+    let plugins_dir = tmp.join("plugins");
+
+    let mut manager = PluginManager::with_dirs(plugins_dir, tmp.join("plugins.json")).unwrap();
+    manager.load_all();
+    assert!(manager.installed().is_empty());
+
+    let id = manager.install_from_file(&wasm_path).unwrap();
+    assert_eq!(id, "example");
+    assert!(
+        manager
+            .plugins_dir()
+            .join("example")
+            .join("plugin.wasm")
+            .is_file()
+    );
+
+    let installed = manager.installed();
+    assert_eq!(installed.len(), 1);
+    assert!(installed[0].is_active());
+
+    // installing the same plugin again is rejected rather than overwritten.
+    assert!(manager.install_from_file(&wasm_path).is_err());
+
+    manager.uninstall("example").unwrap();
+    assert!(manager.installed().is_empty());
+    assert!(!manager.plugins_dir().join("example").exists());
+
+    // uninstalling a plugin that isn't installed reports an error.
+    assert!(manager.uninstall("example").is_err());
+
+    std::fs::remove_dir_all(&tmp).ok();
+}

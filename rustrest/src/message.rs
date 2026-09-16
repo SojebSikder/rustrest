@@ -62,7 +62,10 @@ impl SidebarItemKey {
                 parent_path: parent_path.clone(),
                 request_id: *request_id,
             },
-            SidebarDragItem::Folder { collection_id, path } => SidebarItemKey::Folder {
+            SidebarDragItem::Folder {
+                collection_id,
+                path,
+            } => SidebarItemKey::Folder {
                 collection_id: *collection_id,
                 path: path.clone(),
             },
@@ -72,7 +75,10 @@ impl SidebarItemKey {
     /// folders and requests can be dragged/moved; a whole collection can't.
     pub fn as_drag_item(&self) -> Option<SidebarDragItem> {
         match self {
-            SidebarItemKey::Folder { collection_id, path } => Some(SidebarDragItem::Folder {
+            SidebarItemKey::Folder {
+                collection_id,
+                path,
+            } => Some(SidebarDragItem::Folder {
                 collection_id: *collection_id,
                 path: path.clone(),
             }),
@@ -491,6 +497,20 @@ pub enum Message {
     OpenPluginManagerPressed,
     ClosePluginManagerPressed,
     TogglePluginEnabled(String, bool),
+    /// opens a file dialog to pick a local `.wasm` file to install.
+    InstallPluginPressed,
+    /// the file picked by `InstallPluginPressed` (or `None` if cancelled).
+    PluginInstallFilePicked(Option<std::path::PathBuf>),
+    /// a background thread finished compiling the picked file and copying it
+    /// into the plugins directory (or failed) - see `PluginManager::prepare_install`.
+    PluginInstallPrepared(Result<(String, rustrest_plugin_host::Module), String>),
+    /// plugin_id - shows a confirmation dialog before uninstalling.
+    UninstallPluginPressed(String),
+    /// plugin_id - the uninstall confirmation was accepted.
+    UninstallPluginConfirmed(String),
+    /// plugin_id, result - a background thread finished deleting the
+    /// plugin's directory from disk (or failed).
+    PluginUninstallFinished(String, Result<(), String>),
 
     /// plugin_id, format_id, file-picker extensions - opens a file dialog
     /// and routes the picked file through `PluginManager::import`.

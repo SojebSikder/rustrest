@@ -62,19 +62,17 @@ pub fn load_plugin(
     }
 }
 
-fn try_load(
+fn instantiate_module(
     engine: &Engine,
-    dir_name: &str,
-    wasm_path: &Path,
+    label: &str,
+    module: &Module,
 ) -> Result<(PluginManifest, PluginRuntime), PluginError> {
-    let module = Module::from_file(engine, wasm_path)?;
-
     let mut linker: Linker<PluginState> = Linker::new(engine);
     link_host_functions(&mut linker)?;
 
     let logs = Arc::new(Mutex::new(Vec::new()));
     let state = PluginState {
-        plugin_id: dir_name.to_string(),
+        plugin_id: label.to_string(),
         logs: logs.clone(),
     };
     let mut store = Store::new(engine, state);
@@ -82,17 +80,11 @@ fn try_load(
     // calls each set their own smaller budget in `CallHandles::call_json`.
     store.set_fuel(u64::MAX / 2)?;
 
-    let instance = linker.instantiate(&mut store, &module)?;
-    let handles = CallHandles::resolve(&mut store, &instance, dir_name)?;
+    let instance = linker.instantiate(&mut store, module)?;
+    let handles = CallHandles::resolve(&mut store, &instance, label)?;
 
     let manifest: PluginManifest =
         handles.call_json(&mut store, "manifest", serde_json::Value::Null)?;
-    if manifest.id != dir_name {
-        return Err(PluginError::Manifest(format!(
-            "manifest id '{}' does not match plugin directory name '{}'",
-            manifest.id, dir_name
-        )));
-    }
 
     Ok((
         manifest,
@@ -102,4 +94,73 @@ fn try_load(
             logs,
         },
     ))
+}
+
+fn instantiate(
+    engine: &Engine,
+    label: &str,
+    wasm_path: &Path,
+) -> Result<(PluginManifest, PluginRuntime), PluginError> {
+    let module = Module::from_file(engine, wasm_path)?;
+    instantiate_module(engine, label, &module)
+}
+
+fn try_load(
+    engine: &Engine,
+    dir_name: &str,
+    wasm_path: &Path,
+) -> Result<(PluginManifest, PluginRuntime), PluginError> {
+    let (manifest, runtime) = instantiate(engine, dir_name, wasm_path)?;
+    if manifest.id != dir_name {
+        return Err(PluginError::Manifest(format!(
+            "manifest id '{}' does not match plugin directory name '{}'",
+            manifest.id, dir_name
+        )));
+    }
+    Ok((manifest, runtime))
+}
+
+/// Compiles a wasm plugin and reads its manifest
+pub fn compile_and_read_manifest(
+    engine: &Engine,
+    wasm_path: &Path,
+) -> Result<(Module, PluginManifest), PluginError> {
+    let module = Module::from_file(engine, wasm_path)?;
+    let (manifest, _runtime) = instantiate_module(engine, "installer", &module)?;
+    Ok((module, manifest))
+}
+
+/// Instantiates an already-compiled module as an active plugin
+pub fn load_from_module(
+    dir_name: &str,
+    engine: &Engine,
+    module: &Module,
+    enabled: bool,
+) -> LoadedPlugin {
+    let result = instantiate_module(engine, dir_name, module).and_then(|(manifest, runtime)| {
+        if manifest.id != dir_name {
+            Err(PluginError::Manifest(format!(
+                "manifest id '{}' does not match plugin directory name '{}'",
+                manifest.id, dir_name
+            )))
+        } else {
+            Ok((manifest, runtime))
+        }
+    });
+    match result {
+        Ok((manifest, runtime)) => LoadedPlugin {
+            dir_name: dir_name.to_string(),
+            manifest: Some(manifest),
+            enabled,
+            load_error: None,
+            runtime: Some(runtime),
+        },
+        Err(e) => LoadedPlugin {
+            dir_name: dir_name.to_string(),
+            manifest: None,
+            enabled: false,
+            load_error: Some(e.to_string()),
+            runtime: None,
+        },
+    }
 }

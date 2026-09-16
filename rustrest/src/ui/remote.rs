@@ -101,11 +101,12 @@ pub fn view_remote_config_modal(app: &Rustrest) -> Element<'_, Message> {
 
     let mut saved_hosts = column![].spacing(6);
     if app.remote_profiles.is_empty() {
-        saved_hosts = saved_hosts.push(text("No saved hosts yet.").size(12).style(
-            |theme: &Theme| text::Style {
-                color: Some(muted_text_color(theme)),
-            },
-        ));
+        saved_hosts =
+            saved_hosts.push(text("No saved hosts yet.").size(12).style(|theme: &Theme| {
+                text::Style {
+                    color: Some(muted_text_color(theme)),
+                }
+            }));
     }
     for profile in &app.remote_profiles {
         let connected = app.remote_sessions.contains_key(&profile.id);

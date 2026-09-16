@@ -13,6 +13,7 @@ use crate::ui::confirm_dialog::ConfirmDialogState;
 use crate::ui::context_menu::{ContextMenu, FieldTarget, apply_field_paste};
 use crate::ui::menu::menu::DropdownMenuState;
 use crate::ui::menu::menu_message::MenuMessage;
+use crate::ui::plugin_manager::PluginManagerAction;
 use crate::ui::remote::{PendingRemoteConnect, RemoteAuthKind, join_remote_path};
 use crate::ui::save_request_model::types::SaveRequestModalState;
 use crate::ui::settings::{AppTheme, SettingsTab};
@@ -207,6 +208,9 @@ pub struct Rustrest {
     pub plugin_panel_state:
         std::collections::HashMap<(String, String), rustrest_plugin_host::UiNode>,
     pub plugin_manager_open: bool,
+    /// set while an install or uninstall is running on a background thread,
+    /// so the plugin manager can show a spinner and disable other actions.
+    pub plugin_manager_busy: Option<crate::ui::plugin_manager::PluginManagerAction>,
     /// set while the user is choosing which installed export-format plugin
     /// to export a collection through (only shown when more than one
     /// plugin/format is available - a single option is used directly).
@@ -235,6 +239,7 @@ impl Rustrest {
             || self.remote_explorers.values().any(|e| e.loading)
             || self.tabs.iter().any(|t| t.tab.is_loading)
             || self.commit_modal.as_ref().is_some_and(|m| m.committing)
+            || self.plugin_manager_busy.is_some()
             || !self.git_remote_op_running.is_empty()
             || self.toast_manager.has_pending()
             || self.tabs.iter().any(|t| {
@@ -614,6 +619,7 @@ pub fn init() -> (Rustrest, Task<Message>) {
         }),
         plugin_panel_state: std::collections::HashMap::new(),
         plugin_manager_open: false,
+        plugin_manager_busy: None,
         export_plugin_picker: None,
         settings_open: false,
         settings_tab: SettingsTab::default(),
@@ -4577,6 +4583,127 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         Message::TogglePluginEnabled(plugin_id, enabled) => {
             app.plugin_manager.set_enabled(&plugin_id, enabled);
             Task::none()
+        }
+        Message::InstallPluginPressed => {
+            if app.plugin_manager_busy.is_some() {
+                return Task::none();
+            }
+            // set busy immediately (not just once a file is picked) so the
+            // spinner shows right away and the plugin-manager modal's
+            // outside-click-to-close is suppressed for the whole file-picker
+            // + install duration - opening the native dialog can otherwise
+            // cause a spurious "click outside" event once focus returns.
+            app.plugin_manager_busy = Some(PluginManagerAction::Installing);
+            iced::Task::perform(
+                async move {
+                    let file = rfd::AsyncFileDialog::new()
+                        .add_filter("Wasm Plugin", &["wasm"])
+                        .pick_file()
+                        .await?;
+                    Some(file.path().to_path_buf())
+                },
+                Message::PluginInstallFilePicked,
+            )
+        }
+        Message::PluginInstallFilePicked(path) => {
+            let Some(source) = path else {
+                app.plugin_manager_busy = None;
+                return Task::none();
+            };
+            // the actual wasm compilation (the slow part of an install) runs
+            // on a background thread via `prepare_install`, so it doesn't
+            // freeze the UI; `PluginInstallPrepared` finishes on the main
+            // thread with the already-compiled module.
+            let engine = app.plugin_manager.engine_handle();
+            let plugins_dir = app.plugin_manager.plugins_dir().to_path_buf();
+            iced::Task::perform(
+                async move {
+                    tokio::task::spawn_blocking(move || {
+                        rustrest_plugin_host::PluginManager::prepare_install(
+                            &engine,
+                            &plugins_dir,
+                            &source,
+                        )
+                        .map_err(|e| e.to_string())
+                    })
+                    .await
+                    .unwrap_or_else(|e| Err(e.to_string()))
+                },
+                Message::PluginInstallPrepared,
+            )
+        }
+        Message::PluginInstallPrepared(result) => {
+            app.plugin_manager_busy = None;
+            let task = match result {
+                Ok((dir_name, module)) => match app.plugin_manager.finish_install(dir_name, module)
+                {
+                    Ok(id) => Task::done(Message::ShowToast(
+                        format!("Plugin '{id}' installed successfully"),
+                        ToastStatus::Success,
+                    )),
+                    Err(e) => Task::done(Message::ShowToast(
+                        format!("Failed to install plugin: {e}"),
+                        ToastStatus::Error,
+                    )),
+                },
+                Err(e) => Task::done(Message::ShowToast(
+                    format!("Failed to install plugin: {e}"),
+                    ToastStatus::Error,
+                )),
+            };
+            drain_plugin_logs(app);
+            task
+        }
+        Message::UninstallPluginPressed(plugin_id) => {
+            if app.plugin_manager_busy.is_some() {
+                return Task::none();
+            }
+            app.confirm_dialog = Some(ConfirmDialogState {
+                title: "Uninstall Plugin".to_string(),
+                message: format!(
+                    "Uninstall '{plugin_id}'? This removes it from disk and can't be undone."
+                ),
+                confirm_label: "Uninstall".to_string(),
+                on_confirm: Box::new(Message::UninstallPluginConfirmed(plugin_id)),
+            });
+            Task::none()
+        }
+        Message::UninstallPluginConfirmed(plugin_id) => {
+            let Some(dir_name) = app.plugin_manager.dir_name_for(&plugin_id) else {
+                return Task::done(Message::ShowToast(
+                    format!("Plugin '{plugin_id}' not found"),
+                    ToastStatus::Error,
+                ));
+            };
+            let plugin_dir = app.plugin_manager.plugins_dir().join(&dir_name);
+            app.plugin_manager_busy = Some(PluginManagerAction::Uninstalling(plugin_id.clone()));
+            iced::Task::perform(
+                async move {
+                    tokio::task::spawn_blocking(move || std::fs::remove_dir_all(&plugin_dir))
+                        .await
+                        .map_err(|e| e.to_string())
+                        .and_then(|r| r.map_err(|e| e.to_string()))
+                },
+                move |result| Message::PluginUninstallFinished(plugin_id.clone(), result),
+            )
+        }
+        Message::PluginUninstallFinished(plugin_id, result) => {
+            app.plugin_manager_busy = None;
+            let task = match result {
+                Ok(()) => {
+                    app.plugin_manager.drop_plugin(&plugin_id);
+                    Task::done(Message::ShowToast(
+                        format!("Plugin '{plugin_id}' uninstalled"),
+                        ToastStatus::Success,
+                    ))
+                }
+                Err(e) => Task::done(Message::ShowToast(
+                    format!("Failed to uninstall plugin: {e}"),
+                    ToastStatus::Error,
+                )),
+            };
+            drain_plugin_logs(app);
+            task
         }
         Message::PluginCommand(plugin_id, command_id) => {
             let task = match app.plugin_manager.run_command(&plugin_id, &command_id) {

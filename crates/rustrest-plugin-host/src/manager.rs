@@ -1,5 +1,5 @@
 use crate::error::PluginError;
-use crate::instance::{LoadedPlugin, load_plugin};
+use crate::instance::{LoadedPlugin, compile_and_read_manifest, load_from_module, load_plugin};
 use rustrest_plugin_api::{
     Capability, CommandDef, FormatDef, MenuItemDef, PanelDef, RequestContext, ResponseContext,
     UiEvent, UiNode,
@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
-use wasmtime::{Config, Engine};
+use wasmtime::{Config, Engine, Module};
 
 const APP_NAME: &str = "Rustrest";
 
@@ -50,6 +50,21 @@ impl PluginManager {
         &self.plugins_dir
     }
 
+    fn new_engine() -> Engine {
+        let mut config = Config::new();
+        config.consume_fuel(true);
+        Engine::new(&config).expect("default wasmtime config is always valid")
+    }
+
+    /// returns a cloned handle to the shared wasmtime engine, creating it if
+    /// this is the first plugin operation. `Engine` clones are cheap (an
+    /// `Arc` handle) and `Send`, so this can be moved to a background thread
+    /// to compile a plugin (the expensive part of an install) without
+    /// blocking the UI.
+    pub fn engine_handle(&mut self) -> Engine {
+        self.engine.get_or_insert_with(Self::new_engine).clone()
+    }
+
     /// discovers and (re)loads every plugin under the plugins directory.
     /// Safe to call again to pick up newly dropped-in plugins.
     pub fn load_all(&mut self) {
@@ -79,11 +94,7 @@ impl PluginManager {
             return;
         }
 
-        let engine = self.engine.get_or_insert_with(|| {
-            let mut config = Config::new();
-            config.consume_fuel(true);
-            Engine::new(&config).expect("default wasmtime config is always valid")
-        });
+        let engine = self.engine.get_or_insert_with(Self::new_engine);
 
         self.plugins = discovered
             .into_iter()
@@ -126,6 +137,82 @@ impl PluginManager {
             plugin.enabled = enabled && plugin.runtime.is_some();
         }
         self.save_state();
+    }
+
+    /// compiles the plugin at `source` and copies it into `plugins_dir`
+    /// under a directory named after its manifest id.
+    pub fn prepare_install(
+        engine: &Engine,
+        plugins_dir: &Path,
+        source: &Path,
+    ) -> Result<(String, Module), PluginError> {
+        fs::create_dir_all(plugins_dir)?;
+        let (module, manifest) = compile_and_read_manifest(engine, source)?;
+
+        let dest_dir = plugins_dir.join(&manifest.id);
+        if dest_dir.exists() {
+            return Err(PluginError::Manifest(format!(
+                "a plugin with id '{}' is already installed",
+                manifest.id
+            )));
+        }
+        fs::create_dir_all(&dest_dir)?;
+        fs::copy(source, dest_dir.join("plugin.wasm"))?;
+
+        Ok((manifest.id, module))
+    }
+
+    /// finishes an install prepared by `prepare_install`: instantiates the
+    /// already-compiled module and activates it.
+    pub fn finish_install(
+        &mut self,
+        dir_name: String,
+        module: Module,
+    ) -> Result<String, PluginError> {
+        let engine = self.engine.get_or_insert_with(Self::new_engine);
+        let loaded = load_from_module(&dir_name, engine, &module, true);
+        let id = loaded.id().to_string();
+        let error = loaded.load_error.clone();
+
+        self.plugins.push(loaded);
+        self.save_state();
+
+        match error {
+            Some(e) => Err(PluginError::Manifest(e)),
+            None => Ok(id),
+        }
+    }
+
+    pub fn install_from_file(&mut self, source: &Path) -> Result<String, PluginError> {
+        let engine = self.engine_handle();
+        let (dir_name, module) = Self::prepare_install(&engine, &self.plugins_dir, source)?;
+        self.finish_install(dir_name, module)
+    }
+
+    /// looks up the on-disk directory name for an installed plugin by its
+    /// manifest id (or dir name, for plugins that failed to load).
+    pub fn dir_name_for(&self, plugin_id: &str) -> Option<String> {
+        self.plugins
+            .iter()
+            .find(|p| p.id() == plugin_id)
+            .map(|p| p.dir_name.clone())
+    }
+
+    /// drops a plugin from the active list and persists state, without touching disk
+    pub fn drop_plugin(&mut self, plugin_id: &str) {
+        self.plugins.retain(|p| p.id() != plugin_id);
+        self.save_state();
+    }
+
+    /// synchronous convenience wrapper that removes an installed plugin's
+    /// directory from disk and drops it from the in-memory list.
+    pub fn uninstall(&mut self, plugin_id: &str) -> Result<(), PluginError> {
+        let dir_name = self
+            .dir_name_for(plugin_id)
+            .ok_or_else(|| PluginError::NotFound(plugin_id.to_string()))?;
+        fs::remove_dir_all(self.plugins_dir.join(&dir_name))?;
+        self.drop_plugin(plugin_id);
+        Ok(())
     }
 
     fn find_active(&mut self, plugin_id: &str) -> Result<&mut LoadedPlugin, PluginError> {

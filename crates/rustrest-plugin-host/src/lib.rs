@@ -11,8 +11,8 @@ pub use error::PluginError;
 pub use instance::LoadedPlugin;
 pub use manager::PluginManager;
 
-// re-exported so consumers don't need a separate `rustrest-plugin-api`
-// dependency just to name the shared data types.
+pub use wasmtime::Module;
+
 pub use rustrest_plugin_api::{
     Capability, CommandDef, FormatDef, MenuItemDef, PanelDef, PluginManifest, RequestContext,
     ResponseContext, UiEvent, UiNode,

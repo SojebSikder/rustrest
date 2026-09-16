@@ -125,13 +125,10 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         Subscription::none()
     };
 
-    // clicking outside any open modal/command-palette (i.e. a left click
-    // that no widget inside the modal card handled) dismisses it. only the
-    // topmost overlay - matching the stacking order in `view()` - reacts, so
-    // a click meant for a modal opened on top of another doesn't also close
-    // the one beneath it
     let active_overlay = if app.command_palette.is_some() {
         Some(ActiveOverlay::CommandPalette)
+    } else if app.confirm_dialog.is_some() {
+        Some(ActiveOverlay::ConfirmDialog)
     } else if app.remote_connect_pending.is_some() {
         Some(ActiveOverlay::RemoteConnect)
     } else if app.remote_config_open {
@@ -142,8 +139,6 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         Some(ActiveOverlay::Settings)
     } else if app.plugin_manager_open {
         Some(ActiveOverlay::PluginManager)
-    } else if app.confirm_dialog.is_some() {
-        Some(ActiveOverlay::ConfirmDialog)
     } else if app.commit_modal.is_some() {
         Some(ActiveOverlay::Commit)
     } else if app.save_request_model.is_some() {
@@ -165,6 +160,9 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
             Some(ActiveOverlay::Commit) => outside_click_sub!(Message::CommitCancelled),
             Some(ActiveOverlay::ConfirmDialog) => {
                 outside_click_sub!(Message::ConfirmDialogCancelled)
+            }
+            Some(ActiveOverlay::PluginManager) if app.plugin_manager_busy.is_some() => {
+                Subscription::none()
             }
             Some(ActiveOverlay::PluginManager) => {
                 outside_click_sub!(Message::ClosePluginManagerPressed)
@@ -206,6 +204,9 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         Some(ActiveOverlay::Commit) => escape_close_sub!(Message::CommitCancelled),
         Some(ActiveOverlay::ConfirmDialog) => {
             escape_close_sub!(Message::ConfirmDialogCancelled)
+        }
+        Some(ActiveOverlay::PluginManager) if app.plugin_manager_busy.is_some() => {
+            Subscription::none()
         }
         Some(ActiveOverlay::PluginManager) => {
             escape_close_sub!(Message::ClosePluginManagerPressed)
@@ -548,16 +549,6 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
         main_interface_stack = main_interface_stack.push(commit_overlay);
     }
 
-    // generic confirm-dialog overlay
-    if let Some(confirm_dialog) = app.confirm_dialog.as_ref() {
-        let confirm_overlay = container(view_confirm_dialog(confirm_dialog))
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_x(Alignment::Center)
-            .align_y(Alignment::Center);
-        main_interface_stack = main_interface_stack.push(confirm_overlay);
-    }
-
     // manage-plugins modal overlay
     if app.plugin_manager_open {
         let plugin_manager_overlay = container(view_plugin_manager(app))
@@ -606,6 +597,18 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
             .align_x(Alignment::Center)
             .align_y(Alignment::Center);
         main_interface_stack = main_interface_stack.push(remote_connect_overlay);
+    }
+
+    // generic confirm-dialog overlay - rendered last among the blocking
+    // modals above so it's always on top, since any of them can trigger one
+    // (e.g. plugin uninstall confirmation over the "Manage Plugins" modal).
+    if let Some(confirm_dialog) = app.confirm_dialog.as_ref() {
+        let confirm_overlay = container(view_confirm_dialog(confirm_dialog))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(Alignment::Center)
+            .align_y(Alignment::Center);
+        main_interface_stack = main_interface_stack.push(confirm_overlay);
     }
 
     // menu bar layer
