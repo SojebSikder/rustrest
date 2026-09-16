@@ -12,6 +12,10 @@ Rustrest stores your collections directly on your local filesystem. It supports 
 
 You can use Git or any version control system to manage your collections.
 
+[Download Rustrest](https://github.com/SojebSikder/rustrest/releases)
+
+![Rustrest](screenshots/Screenshot1.png)
+
 ## Why Rustrest?
 
 Modern API clients like Postman or Insomnia carry massive resource overhead. Rustrest is designed for developers who prefer speed and simplicity:
@@ -33,10 +37,6 @@ Modern API clients like Postman or Insomnia carry massive resource overhead. Rus
 - **Remote Development over SSH**: Remote development using SSH for accessing collections on remote servers.
 - **Plugins**: Extend functionality with plugins
 - And many more...
-
-[Download Rustrest](https://github.com/SojebSikder/rustrest/releases)
-
-![Rustrest](screenshots/Screenshot1.png)
 
 ## Installation
 
