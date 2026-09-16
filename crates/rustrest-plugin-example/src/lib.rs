@@ -112,7 +112,7 @@ impl Plugin for ExamplePlugin {
             }
             UiEvent::Changed(id, value) if id == "stdin-input" => {
                 self.input_value = value;
-                None
+                Some(self.render_panel(panel_id))
             }
             UiEvent::Clicked(id) if id == "send" => {
                 if let Some(process) = &self.echo_process {
