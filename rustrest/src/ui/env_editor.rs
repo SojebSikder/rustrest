@@ -2,6 +2,7 @@ use crate::app::Rustrest;
 use crate::message::Message;
 use crate::ui::context_menu::{FieldTarget, with_context_menu};
 use crate::ui::modal::card;
+use crate::ui::multiline_input::multiline_input;
 use iced::widget::{button, checkbox, column, row, scrollable, text, text_input};
 use iced::{Alignment, Element, Length};
 
@@ -86,19 +87,24 @@ pub fn render_env_editor(app: &Rustrest) -> Option<Element<'_, Message>> {
             ),
         );
 
-        let value_input = with_context_menu(
-            text_input("Value...", &var.value)
-                .on_input(move |value| Message::EnvVariableValueChanged {
+        let value_input: Element<Message> = match app.env_var_value_contents.get(var_idx) {
+            Some(value_content) => multiline_input(
+                "Value...",
+                value_content,
+                4,
+                80.0,
+                move |action| Message::EnvVariableValueEditorAction {
                     env_idx,
                     var_idx,
-                    value,
-                })
-                .padding(4),
-            Message::ShowTextFieldContextMenu(
-                FieldTarget::EnvVarValue { env_idx, var_idx },
-                var.value.clone(),
+                    action,
+                },
+                Message::ShowTextFieldContextMenu(
+                    FieldTarget::EnvVarValue { env_idx, var_idx },
+                    var.value.clone(),
+                ),
             ),
-        );
+            None => text("").into(),
+        };
 
         let delete_btn = button(text("✕").size(12))
             .on_press(Message::DeleteEnvVariablePressed { env_idx, var_idx })

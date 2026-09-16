@@ -502,10 +502,10 @@ pub fn apply_field_paste(app: &mut Rustrest, target: FieldTarget, text: String) 
         FieldTarget::EnvVarValue { env_idx, var_idx } => {
             let _ = crate::app::update(
                 app,
-                Message::EnvVariableValueChanged {
+                Message::EnvVariableValueEditorAction {
                     env_idx,
                     var_idx,
-                    value: text,
+                    action: Action::Edit(Edit::Paste(Arc::new(text))),
                 },
             );
         }

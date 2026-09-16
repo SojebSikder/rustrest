@@ -111,10 +111,8 @@ macro_rules! escape_close_sub {
 
 pub fn subscription(app: &Rustrest) -> Subscription<Message> {
     let context_menu_sub = if app.active_context_menu.is_some() {
-        event::listen_with(|event, status, _window| match event {
-            Event::Mouse(iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left))
-                if status == iced::event::Status::Ignored =>
-            {
+        event::listen_with(|event, _status, _window| match event {
+            Event::Mouse(iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left)) => {
                 Some(Message::CloseContextMenu)
             }
             _ => None,

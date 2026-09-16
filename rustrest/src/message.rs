@@ -218,10 +218,10 @@ pub enum Message {
         var_idx: usize,
         key: String,
     },
-    EnvVariableValueChanged {
+    EnvVariableValueEditorAction {
         env_idx: usize,
         var_idx: usize,
-        value: String,
+        action: iced::widget::text_editor::Action,
     },
     EnvVariableToggled {
         env_idx: usize,

@@ -52,6 +52,13 @@ impl ProcessTable {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            cmd.creation_flags(CREATE_NO_WINDOW);
+        }
+
         let mut child = cmd
             .spawn()
             .map_err(|e| format!("failed to spawn '{program}': {e}"))?;

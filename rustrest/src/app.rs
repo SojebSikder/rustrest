@@ -94,6 +94,7 @@ pub struct Rustrest {
     pub remote_profiles: Vec<SshProfile>,
     pub editing_env_index: Option<usize>,
     pub editing_env_name: bool,
+    pub env_var_value_contents: Vec<iced::widget::text_editor::Content>,
     pub tabs: Vec<TabState>,
     pub active_tab_index: usize,
     pub next_tab_id: usize,
@@ -555,6 +556,7 @@ pub fn init() -> (Rustrest, Task<Message>) {
         tabs: vec![],
         active_tab_index: 0,
         editing_env_index: None,
+        env_var_value_contents: Vec::new(),
         next_tab_id: 2,
         next_request_id: 1,
         workspaces: Vec::new(),
@@ -2529,6 +2531,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             // open the environment editor on the newly created environment
             app.editing_env_index = Some(new_idx);
             app.editing_env_name = false;
+            app.env_var_value_contents = Vec::new();
 
             Task::none()
         }
@@ -2536,6 +2539,11 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         Message::DeleteEnvironmentPressed(idx) => {
             if idx < app.environments.len() {
                 app.environments.remove(idx);
+
+                if app.editing_env_index == Some(idx) {
+                    app.editing_env_index = None;
+                    app.env_var_value_contents = Vec::new();
+                }
 
                 // adjust active environment index safely
                 if app.environments.is_empty() {
@@ -3373,18 +3381,33 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         Message::EditEnvironmentPressed(idx) => {
             app.editing_env_index = Some(idx);
             app.editing_env_name = false; // reset on open
+            app.env_var_value_contents = app
+                .environments
+                .get(idx)
+                .map(|env| {
+                    env.variables
+                        .iter()
+                        .map(|v| iced::widget::text_editor::Content::with_text(&v.value))
+                        .collect()
+                })
+                .unwrap_or_default();
             Task::none()
         }
 
         Message::CloseEnvEditorPressed => {
             app.editing_env_index = None;
             app.editing_env_name = false; // reset on close
+            app.env_var_value_contents = Vec::new();
             Task::none()
         }
 
         Message::AddEnvVariablePressed(env_idx) => {
             if let Some(env) = app.environments.get_mut(env_idx) {
                 env.variables.push(KeyValuePair::new("", ""));
+                if app.editing_env_index == Some(env_idx) {
+                    app.env_var_value_contents
+                        .push(iced::widget::text_editor::Content::new());
+                }
             }
             Task::none()
         }
@@ -3393,6 +3416,11 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             if let Some(env) = app.environments.get_mut(env_idx) {
                 if var_idx < env.variables.len() {
                     env.variables.remove(var_idx);
+                    if app.editing_env_index == Some(env_idx)
+                        && var_idx < app.env_var_value_contents.len()
+                    {
+                        app.env_var_value_contents.remove(var_idx);
+                    }
                 }
             }
             Task::none()
@@ -3411,14 +3439,20 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             Task::none()
         }
 
-        Message::EnvVariableValueChanged {
+        Message::EnvVariableValueEditorAction {
             env_idx,
             var_idx,
-            value,
+            action,
         } => {
-            if let Some(env) = app.environments.get_mut(env_idx) {
-                if let Some(var) = env.variables.get_mut(var_idx) {
-                    var.value = value;
+            if app.editing_env_index == Some(env_idx) {
+                if let Some(content) = app.env_var_value_contents.get_mut(var_idx) {
+                    content.perform(action);
+                    let text = content.text();
+                    if let Some(env) = app.environments.get_mut(env_idx) {
+                        if let Some(var) = env.variables.get_mut(var_idx) {
+                            var.value = text;
+                        }
+                    }
                 }
             }
             Task::none()
