@@ -21,7 +21,7 @@ struct PersistedState {
 /// Discovers, loads, and drives every wasm plugin under the plugins
 /// directory. Owns one `wasmtime::Engine` shared by all plugin instances.
 pub struct PluginManager {
-    engine: Engine,
+    engine: Option<Engine>,
     plugins_dir: PathBuf,
     state_path: PathBuf,
     plugins: Vec<LoadedPlugin>,
@@ -38,11 +38,8 @@ impl PluginManager {
     }
 
     pub fn with_dirs(plugins_dir: PathBuf, state_path: PathBuf) -> Result<Self, PluginError> {
-        let mut config = Config::new();
-        config.consume_fuel(true);
-        let engine = Engine::new(&config)?;
         Ok(Self {
-            engine,
+            engine: None,
             plugins_dir,
             state_path,
             plugins: Vec::new(),
@@ -77,11 +74,22 @@ impl PluginManager {
             }
         }
 
+        if discovered.is_empty() {
+            self.plugins = Vec::new();
+            return;
+        }
+
+        let engine = self.engine.get_or_insert_with(|| {
+            let mut config = Config::new();
+            config.consume_fuel(true);
+            Engine::new(&config).expect("default wasmtime config is always valid")
+        });
+
         self.plugins = discovered
             .into_iter()
             .map(|(dir_name, wasm_path)| {
                 let enabled = !disabled.contains(&dir_name);
-                load_plugin(&self.engine, &dir_name, &wasm_path, enabled)
+                load_plugin(engine, &dir_name, &wasm_path, enabled)
             })
             .collect();
     }

@@ -48,7 +48,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 const APP_NAME: &str = "Rustrest";
-const APP_VERSION: &str = "0.1.9";
+const APP_VERSION: &str = "0.1.10";
 
 const APP_ICON: &[u8] = include_bytes!("../../assets/images/logo-transparent.png");
 
@@ -438,7 +438,10 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
         },
         MenuGroup::new(
             "Settings",
-            vec![DropdownItem::new("Preferences...", MenuMessage::OpenSettings)],
+            vec![DropdownItem::new(
+                "Preferences...",
+                MenuMessage::OpenSettings,
+            )],
         ),
         MenuGroup::new(
             "Help",
