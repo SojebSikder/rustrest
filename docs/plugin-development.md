@@ -14,9 +14,12 @@ This guide covers basic fundamendal of Rustrest plugin development.
 - [Sidebar panel UI](#sidebar-panel-ui)
 - [The `ExternalProcess` capability](#the-externalprocess-capability)
 - [Logging and debugging](#logging-and-debugging)
+- [Publishing to the plugin gallery](#publishing-to-the-plugin-gallery)
 - [Publishing checklist](#publishing-checklist)
 
 ## Installing a plugin
+
+Rustrest plugins can be installed two ways: from a local folder, or from the gallery.
 
 Open the **Manage Plugins** tab any of these ways:
 
@@ -24,11 +27,15 @@ Open the **Manage Plugins** tab any of these ways:
 - Menu bar -> **Plugins → Manage Plugins...**
 - Command Palette (`Ctrl+Shift+P`) -> **Manage Plugins...**
 
-From there:
+The tab has two views, switched with the **Installed** / **Browse** buttons at the top:
+
+**Installed** (the default):
 
 1. Click **Install Plugin Folder...** and pick a folder that directly contains a `plugin.toml` and a `plugin.wasm`. Rustrest validates the manifest, compiles the wasm, and copies both files into its own plugins directory under a subfolder named after the plugin's `id`.
 2. Toggle the checkbox next to a plugin to enable/disable it (it stays on disk, just inactive).
 3. Click **Uninstall** to remove it from disk entirely (confirmation required).
+
+**Browse**: lists plugins published to the gallery index (see [Publishing to the plugin gallery](#publishing-to-the-plugin-gallery)). Click **Install** next to an entry to download, verify, and install it the same way as a local folder - no manual download/unzip needed. Click **Refresh** to re-fetch the index.
 
 Each installed plugin shows capability badges (Request Hooks, Commands, Sidebar Panel, **External Process**, etc.) so you can see what it can touch before turning it on - a plugin with **External Process** can reach the network, run programs, and read/write its own storage directory.
 
@@ -314,6 +321,37 @@ rustrest_plugin_api::log("something happened");
 ```
 
 Log lines are prefixed with your plugin's id and forwarded into Rustrest's own console/log output. A plugin that panics, traps, or returns an error for a given call has that one call's error surfaced (and logged) without taking down the rest of the app - a bad `on_pre_request`, for example, just gets skipped for that request while every other enabled plugin still runs.
+
+## Publishing to the plugin gallery
+
+The **Browse** view in Manage Plugins fetches a JSON index from a separate, curated repo - [`Rustrest/plugins`](https://github.com/Rustrest/plugins) - rather than anything built into Rustrest itself. That keeps plugin curation decoupled from app releases: adding a plugin to the gallery is a pull request to that repo, not a change to Rustrest.
+
+The index is a single `index.json` at the repo root:
+
+```json
+{
+  "plugins": [
+    {
+      "id": "example",
+      "name": "Example Plugin",
+      "version": "0.1.0",
+      "author": "Rustrest",
+      "description": "Demonstrates a request hook, a command, and a sidebar panel.",
+      "download_url": "https://github.com/<you>/<repo>/releases/download/v0.1.0/example.zip",
+      "sha256": "<sha256 of the zip, optional but recommended>",
+      "homepage": "https://github.com/<you>/<repo>"
+    }
+  ]
+}
+```
+
+`download_url` must point at a `.zip` containing `plugin.toml` and `plugin.wasm` at its root (or in a single top-level folder - the installer searches the extracted archive for `plugin.toml`). GitHub Releases work well as a host: attach the zip (and a matching `sha256` if you want integrity-checked installs) to a release of your plugin's own repo, then point `download_url` at the release asset.
+
+To publish:
+
+1. Build and zip your plugin (`plugin.toml` + `plugin.wasm`), attach it to a release in your own repo.
+2. Open a pull request against [`Rustrest/plugins`](https://github.com/Rustrest/plugins) adding an entry to `index.json`.
+3. Once merged, it shows up in every user's **Browse** view (they may need to click **Refresh**).
 
 ## Publishing checklist
 

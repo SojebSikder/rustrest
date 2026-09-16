@@ -14,7 +14,7 @@ pub use error::PluginError;
 pub use instance::LoadedPlugin;
 pub use manager::PluginManager;
 
-pub use wasmtime::Module;
+pub use wasmtime::{Engine, Module};
 
 pub use rustrest_plugin_api::{
     Capability, CommandDef, FormatDef, MenuItemDef, PanelDef, PluginManifest, ProcessStream,

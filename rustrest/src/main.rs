@@ -6,6 +6,7 @@ mod collection;
 mod collection_adapter;
 mod http_client;
 mod message;
+mod plugin_gallery;
 mod remote_agent;
 mod script_engine;
 mod session;
@@ -48,7 +49,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 const APP_NAME: &str = "Rustrest";
-const APP_VERSION: &str = "0.1.10";
+const APP_VERSION: &str = "0.1.11";
 
 const APP_ICON: &[u8] = include_bytes!("../../assets/images/logo-transparent.png");
 

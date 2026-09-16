@@ -13,7 +13,7 @@ use crate::ui::confirm_dialog::ConfirmDialogState;
 use crate::ui::context_menu::{ContextMenu, FieldTarget, apply_field_paste};
 use crate::ui::menu::menu::DropdownMenuState;
 use crate::ui::menu::menu_message::MenuMessage;
-use crate::ui::plugin_manager::PluginManagerAction;
+use crate::ui::plugin_manager::{PluginManagerAction, PluginManagerView};
 use crate::ui::remote::{PendingRemoteConnect, RemoteAuthKind, join_remote_path};
 use crate::ui::save_request_model::types::SaveRequestModalState;
 use crate::ui::settings::{AppTheme, SettingsTab};
@@ -213,6 +213,11 @@ pub struct Rustrest {
     /// set while an install or uninstall is running on a background thread,
     /// so the plugin manager can show a spinner and disable other actions.
     pub plugin_manager_busy: Option<crate::ui::plugin_manager::PluginManagerAction>,
+    /// which sub-view of the Manage Plugins tab is showing (installed, browse).
+    pub plugin_manager_view: crate::ui::plugin_manager::PluginManagerView,
+    /// cached result of the last plugin gallery index fetch; `None` until
+    /// the Browse view has been opened at least once.
+    pub plugin_gallery_entries: Option<Result<Vec<crate::plugin_gallery::GalleryEntry>, String>>,
     /// set while the user is choosing which installed export-format plugin
     /// to export a collection through (only shown when more than one
     /// plugin/format is available - a single option is used directly).
@@ -626,6 +631,8 @@ pub fn init() -> (Rustrest, Task<Message>) {
         }),
         plugin_panel_state: std::collections::HashMap::new(),
         plugin_manager_busy: None,
+        plugin_manager_view: crate::ui::plugin_manager::PluginManagerView::default(),
+        plugin_gallery_entries: None,
         export_plugin_picker: None,
         settings_open: false,
         settings_tab: SettingsTab::default(),
@@ -4790,6 +4797,59 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             };
             drain_plugin_logs(app);
             task
+        }
+        Message::ShowPluginManagerView(view) => {
+            app.plugin_manager_view = view;
+            if view == PluginManagerView::Browse && app.plugin_gallery_entries.is_none() {
+                return update(app, Message::FetchPluginGallery);
+            }
+            Task::none()
+        }
+        Message::FetchPluginGallery => {
+            if app.plugin_manager_busy.is_some() {
+                return Task::none();
+            }
+            app.plugin_manager_busy = Some(PluginManagerAction::FetchingGallery);
+            iced::Task::perform(
+                async {
+                    tokio::task::spawn_blocking(crate::plugin_gallery::fetch_index)
+                        .await
+                        .unwrap_or_else(|e| Err(e.to_string()))
+                },
+                Message::GalleryIndexFetched,
+            )
+        }
+        Message::GalleryIndexFetched(result) => {
+            app.plugin_manager_busy = None;
+            let task = if let Err(e) = &result {
+                Task::done(Message::ShowToast(
+                    format!("Failed to fetch plugin gallery: {e}"),
+                    ToastStatus::Error,
+                ))
+            } else {
+                Task::none()
+            };
+            app.plugin_gallery_entries = Some(result);
+            task
+        }
+        Message::InstallFromGalleryPressed(entry) => {
+            if app.plugin_manager_busy.is_some() {
+                return Task::none();
+            }
+            app.plugin_manager_busy =
+                Some(PluginManagerAction::InstallingFromGallery(entry.id.clone()));
+            let engine = app.plugin_manager.engine_handle();
+            let plugins_dir = app.plugin_manager.plugins_dir().to_path_buf();
+            iced::Task::perform(
+                async move {
+                    tokio::task::spawn_blocking(move || {
+                        crate::plugin_gallery::download_and_prepare(&engine, &plugins_dir, &entry)
+                    })
+                    .await
+                    .unwrap_or_else(|e| Err(e.to_string()))
+                },
+                Message::PluginInstallPrepared,
+            )
         }
         Message::PluginCommand(plugin_id, command_id) => {
             let task = match app.plugin_manager.run_command(&plugin_id, &command_id) {

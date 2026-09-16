@@ -2,6 +2,7 @@ use crate::app::CollectionSubTab;
 use crate::collection::collection::{PostmanCollection, PostmanRequestNode};
 use crate::collection::git_ops::{GitRemoteOp, GitStatusSnapshot};
 use crate::http_client::HttpResponse;
+use crate::plugin_gallery::GalleryEntry;
 use crate::ui::command_palette::AppCommand;
 use crate::ui::confirm_dialog::ConfirmDialogState;
 use crate::ui::context_menu::FieldTarget;
@@ -528,6 +529,16 @@ pub enum Message {
     /// plugin_id, result - a background thread finished deleting the
     /// plugin's directory from disk (or failed).
     PluginUninstallFinished(String, Result<(), String>),
+
+    /// switches the Manage Plugins tab between the installed list and the
+    /// remote gallery; fetches the index the first time Browse is shown.
+    ShowPluginManagerView(crate::ui::plugin_manager::PluginManagerView),
+    /// fetches the remote plugin gallery index.
+    FetchPluginGallery,
+    /// a background thread finished fetching the gallery index (or failed).
+    GalleryIndexFetched(Result<Vec<GalleryEntry>, String>),
+    /// the "Install" button was pressed for a gallery entry.
+    InstallFromGalleryPressed(GalleryEntry),
 
     /// plugin_id, format_id, file-picker extensions - opens a file dialog
     /// and routes the picked file through `PluginManager::import`.
