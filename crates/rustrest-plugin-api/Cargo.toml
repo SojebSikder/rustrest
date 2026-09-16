@@ -3,6 +3,12 @@ name = "rustrest-plugin-api"
 version = "0.1.0"
 edition = "2024"
 description = "SDK for writing native Rustrest plugins (compiled to wasm32-unknown-unknown)"
+license = "MIT"
+repository = "https://github.com/SojebSikder/rustrest/tree/main/crates/rustrest-plugin-api"
+homepage = "https://github.com/SojebSikder/rustrest"
+readme = "README.md"
+keywords = ["rustrest", "plugin", "wasm", "sdk"]
+categories = ["wasm", "api-bindings"]
 
 [lib]
 name = "rustrest_plugin_api"
