@@ -1,8 +1,8 @@
 # Plugin Development Guide
 
-Rustrest plugins are small [WebAssembly](https://webassembly.org/) modules, sandboxed with [`wasmtime`](https://wasmtime.dev/), that hook into requests/responses, add commands and menu items, contribute a sidebar panel, add import/export formats, and (opt-in) download and drive external binaries. A plugin is a directory - a `plugin.toml` manifest plus a compiled `plugin.wasm` - the same shape as a Zed extension.
+Rustrest plugins are small [WebAssembly](https://webassembly.org/) modules, sandboxed with [`wasmtime`](https://wasmtime.dev/). A plugin is a directory with a `plugin.toml` manifest plus a compiled `plugin.wasm`.
 
-This guide covers both sides: installing a plugin as a user, and building one as a developer.
+This guide covers basic fundamendal of Rustrest plugin development.
 
 ## Contents
 
@@ -20,9 +20,9 @@ This guide covers both sides: installing a plugin as a user, and building one as
 
 Open the **Manage Plugins** tab any of these ways:
 
-- Sidebar → the ⚙ icon in the **PLUGINS** section
-- Menu bar → **Plugins → Manage Plugins...**
-- Command Palette (`Ctrl+Shift+P`) → **Manage Plugins...**
+- Sidebar -> the gear (⚙) icon in the **PLUGINS** section
+- Menu bar -> **Plugins → Manage Plugins...**
+- Command Palette (`Ctrl+Shift+P`) -> **Manage Plugins...**
 
 From there:
 
@@ -36,9 +36,9 @@ Plugins live under Rustrest's data directory:
 
 | OS      | Plugins directory                                      |
 | ------- | ------------------------------------------------------ |
-| Linux   | `~/.local/share/Rustrest/plugins/<id>/`                 |
-| macOS   | `~/Library/Application Support/Rustrest/plugins/<id>/`  |
-| Windows | `%APPDATA%\Rustrest\plugins\<id>\`                      |
+| Linux   | `~/.local/share/Rustrest/plugins/<id>/`                |
+| macOS   | `~/Library/Application Support/Rustrest/plugins/<id>/` |
+| Windows | `%APPDATA%\Rustrest\plugins\<id>\`                     |
 
 Which plugins are disabled is tracked in `plugins.json` next to the `plugins/` folder. Rustrest only scans the plugins directory at startup - if you drop a plugin folder in manually rather than using **Install Plugin Folder...**, restart Rustrest to pick it up.
 
@@ -153,8 +153,6 @@ impl Plugin for MyPlugin {
 rustrest_plugin_api::export_plugin!(MyPlugin);
 ```
 
-`Plugin` has a no-op default for every method - only override what your declared capabilities need. `id`/`name` etc. no longer live in code: the host reads them straight from `plugin.toml` and never has to run your wasm just to know what it does.
-
 ### 5. Build
 
 ```bash
@@ -218,17 +216,17 @@ Every table under `[capabilities]` is optional - only declare what you use. The 
 
 ## The `Plugin` trait
 
-| Method                                          | Capability needed | Purpose                                                                 |
-| ------------------------------------------------ | ------------------ | ------------------------------------------------------------------------ |
-| `on_pre_request(ctx) -> ctx`                     | `request_hooks`    | Mutate method/url/headers/body/variables before a request is sent.      |
-| `on_post_response(ctx) -> ctx`                   | `request_hooks`    | Inspect/mutate status/headers/body/variables/test results after a response. |
-| `on_command(id) -> Result<Option<String>, String>` | `commands`/`menu_items` | Handle a command-palette or menu action; the returned string shows as a toast. |
-| `render_panel(panel_id) -> UiNode`               | `sidebar_panel`     | Render (or re-render) your panel's declarative widget tree.             |
-| `on_panel_event(panel_id, event) -> Option<UiNode>` | `sidebar_panel`  | Handle a widget interaction; return `Some(tree)` to update the panel.    |
-| `import(format_id, bytes) -> Result<Value, String>` | `import_formats` | Decode into Rustrest's own collection JSON (Postman v2.1-shaped).        |
-| `export(format_id, collection) -> Result<Vec<u8>, String>` | `export_formats` | Encode Rustrest's collection JSON into your format.                     |
-| `on_process_output(handle, stream, chunk)`       | `external_process`  | New stdout/stderr from a process you spawned via `Process::spawn`.      |
-| `on_process_exit(handle, code)`                  | `external_process`  | A spawned process exited.                                               |
+| Method                                                     | Capability needed       | Purpose                                                                        |
+| ---------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------ |
+| `on_pre_request(ctx) -> ctx`                               | `request_hooks`         | Mutate method/url/headers/body/variables before a request is sent.             |
+| `on_post_response(ctx) -> ctx`                             | `request_hooks`         | Inspect/mutate status/headers/body/variables/test results after a response.    |
+| `on_command(id) -> Result<Option<String>, String>`         | `commands`/`menu_items` | Handle a command-palette or menu action; the returned string shows as a toast. |
+| `render_panel(panel_id) -> UiNode`                         | `sidebar_panel`         | Render (or re-render) your panel's declarative widget tree.                    |
+| `on_panel_event(panel_id, event) -> Option<UiNode>`        | `sidebar_panel`         | Handle a widget interaction; return `Some(tree)` to update the panel.          |
+| `import(format_id, bytes) -> Result<Value, String>`        | `import_formats`        | Decode into Rustrest's own collection JSON (Postman v2.1-shaped).              |
+| `export(format_id, collection) -> Result<Vec<u8>, String>` | `export_formats`        | Encode Rustrest's collection JSON into your format.                            |
+| `on_process_output(handle, stream, chunk)`                 | `external_process`      | New stdout/stderr from a process you spawned via `Process::spawn`.             |
+| `on_process_exit(handle, code)`                            | `external_process`      | A spawned process exited.                                                      |
 
 `RequestContext`/`ResponseContext` mirror the shape of Rustrest's built-in `pm.*` pre-request/test scripting context, so behavior is consistent between the two mechanisms.
 
@@ -307,7 +305,7 @@ impl Plugin for MyPlugin {
 
 `Process::write`/`kill`/`try_wait` are synchronous and cheap (they just touch a pipe or a handle). Output isn't polled - the host drains it on a timer and delivers it via `on_process_output`/`on_process_exit`, the same call path `on_command`/`on_panel_event` already use. There's no persistent-process cleanup you need to write yourself: disabling or uninstalling the plugin kills anything it spawned.
 
-`rustrest-plugin-example` demonstrates the full spawn → write → streamed-output round trip using `cat` (or `findstr /R "^"` on Windows) as a network-free stand-in for a real downloaded tool - a good starting point to copy from.
+`rustrest-plugin-example` demonstrates the full spawn -> write -> streamed-output round trip using `cat` (or `findstr /R "^"` on Windows) as a network-free stand-in for a real downloaded tool - a good starting point to copy from.
 
 ## Logging and debugging
 
