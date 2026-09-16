@@ -12,6 +12,7 @@
 
 use crate::hooks::{RequestContext, ResponseContext};
 use crate::plugin::Plugin;
+use crate::process::ProcessStream;
 use crate::ui::UiEvent;
 use serde::{Deserialize, Serialize};
 
@@ -48,7 +49,6 @@ fn route<T: Plugin>(plugin: &mut T, input: &[u8]) -> Vec<u8> {
     };
 
     match envelope.fn_name.as_str() {
-        "manifest" => encode_ok(&plugin.manifest()),
         "on_pre_request" => match decode_payload::<RequestContext>(envelope.payload) {
             Ok(ctx) => encode_ok(&plugin.on_pre_request(ctx)),
             Err(bytes) => bytes,
@@ -84,6 +84,18 @@ fn route<T: Plugin>(plugin: &mut T, input: &[u8]) -> Vec<u8> {
                 Ok(v) => encode_ok(&v),
                 Err(e) => encode_err(&e),
             },
+            Err(bytes) => bytes,
+        },
+        "on_process_output" => {
+            match decode_payload::<(u32, ProcessStream, Vec<u8>)>(envelope.payload) {
+                Ok((handle, stream, chunk)) => {
+                    encode_ok(&plugin.on_process_output(handle, stream, chunk))
+                }
+                Err(bytes) => bytes,
+            }
+        }
+        "on_process_exit" => match decode_payload::<(u32, Option<i32>)>(envelope.payload) {
+            Ok((handle, code)) => encode_ok(&plugin.on_process_exit(handle, code)),
             Err(bytes) => bytes,
         },
         other => encode_err(&format!("unknown plugin call: {other}")),

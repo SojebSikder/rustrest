@@ -8,6 +8,22 @@ use crate::ui::modal::{danger_text_color, muted_text_color};
 use crate::ui::spinner::spinner_with_label;
 use iced::widget::{button, checkbox, column, container, row, scrollable, text};
 use iced::{Alignment, Element, Length, Theme};
+use rustrest_plugin_host::Capability;
+
+/// short, user-facing label for a declared capability, shown as a badge in
+/// the plugin manager so what a plugin can touch is visible before it's
+/// even enabled
+fn capability_label(capability: &Capability) -> &'static str {
+    match capability {
+        Capability::RequestHooks => "Request Hooks",
+        Capability::Commands(_) => "Commands",
+        Capability::MenuItems(_) => "Menu Items",
+        Capability::SidebarPanel(_) => "Sidebar Panel",
+        Capability::ImportFormat(_) => "Import Format",
+        Capability::ExportFormat(_) => "Export Format",
+        Capability::ExternalProcess => "External Process",
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PluginManagerAction {
@@ -23,7 +39,7 @@ pub fn render_plugin_manager_tab(app: &Rustrest) -> Element<'_, Message> {
         if app.plugin_manager_busy == Some(PluginManagerAction::Installing) {
             spinner_with_label(app.spinner_tick, "Installing...")
         } else {
-            button(text("Install Local Plugin...").size(13))
+            button(text("Install Plugin Folder...").size(13))
                 .on_press_maybe((!is_busy).then_some(Message::InstallPluginPressed))
                 .padding([6, 12])
                 .style(button::secondary)
@@ -90,6 +106,24 @@ pub fn render_plugin_manager_tab(app: &Rustrest) -> Element<'_, Message> {
                 .spacing(8)
                 .align_y(Alignment::Center);
 
+                let mut badges = row![].spacing(6);
+                for capability in &manifest.capabilities {
+                    let is_external_process = matches!(capability, Capability::ExternalProcess);
+                    badges = badges.push(
+                        container(text(capability_label(capability)).size(10))
+                            .padding([2, 6])
+                            .style(move |theme: &Theme| {
+                                let mut style = container::rounded_box(theme);
+                                if is_external_process {
+                                    style.text_color = Some(danger_text_color(theme));
+                                } else {
+                                    style.text_color = Some(muted_text_color(theme));
+                                }
+                                style
+                            }),
+                    );
+                }
+
                 column![
                     meta_row,
                     text(manifest.description.clone())
@@ -97,6 +131,7 @@ pub fn render_plugin_manager_tab(app: &Rustrest) -> Element<'_, Message> {
                         .style(|theme: &Theme| text::Style {
                             color: Some(muted_text_color(theme)),
                         }),
+                    badges,
                 ]
                 .spacing(4)
                 .into()

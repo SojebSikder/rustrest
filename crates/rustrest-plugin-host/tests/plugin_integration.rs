@@ -13,15 +13,32 @@
 use rustrest_plugin_api::{RequestContext, UiEvent, UiNode};
 use rustrest_plugin_host::PluginManager;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
-fn example_wasm_path() -> PathBuf {
+fn example_crate_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("rustrest-plugin-example")
+}
+
+fn example_wasm_path() -> PathBuf {
+    example_crate_dir()
         .join("target")
         .join("wasm32-unknown-unknown")
         .join("release")
         .join("rustrest_plugin_example.wasm")
+}
+
+fn example_manifest_path() -> PathBuf {
+    example_crate_dir().join("plugin.toml")
+}
+
+/// stages `plugin.toml` (crate root) + the built `plugin.wasm` together into
+/// one directory, matching the on-disk shape a real plugin install expects.
+fn stage_plugin_dir(dest: &std::path::Path) {
+    std::fs::create_dir_all(dest).unwrap();
+    std::fs::copy(example_manifest_path(), dest.join("plugin.toml")).unwrap();
+    std::fs::copy(example_wasm_path(), dest.join("plugin.wasm")).unwrap();
 }
 
 #[test]
@@ -38,9 +55,7 @@ fn loads_and_drives_the_example_plugin() {
     let tmp =
         std::env::temp_dir().join(format!("rustrest-plugin-host-test-{}", std::process::id()));
     let plugins_dir = tmp.join("plugins");
-    let plugin_dir = plugins_dir.join("example");
-    std::fs::create_dir_all(&plugin_dir).unwrap();
-    std::fs::copy(&wasm_path, plugin_dir.join("plugin.wasm")).unwrap();
+    stage_plugin_dir(&plugins_dir.join("example"));
 
     let mut manager = PluginManager::with_dirs(plugins_dir, tmp.join("plugins.json")).unwrap();
     manager.load_all();
@@ -55,6 +70,16 @@ fn loads_and_drives_the_example_plugin() {
     );
     assert!(plugin.is_active());
     assert_eq!(plugin.id(), "example");
+    assert!(
+        plugin
+            .manifest
+            .as_ref()
+            .unwrap()
+            .capabilities
+            .iter()
+            .any(|c| matches!(c, rustrest_plugin_host::Capability::ExternalProcess)),
+        "expected the manifest.toml-declared ExternalProcess capability to survive parsing"
+    );
 
     let commands = manager.commands();
     assert_eq!(commands.len(), 1);
@@ -111,7 +136,7 @@ fn loads_and_drives_the_example_plugin() {
 }
 
 #[test]
-fn installs_and_uninstalls_a_plugin_from_a_local_file() {
+fn installs_and_uninstalls_a_plugin_from_a_local_folder() {
     let wasm_path = example_wasm_path();
     if !wasm_path.is_file() {
         eprintln!(
@@ -126,12 +151,14 @@ fn installs_and_uninstalls_a_plugin_from_a_local_file() {
         std::process::id()
     ));
     let plugins_dir = tmp.join("plugins");
+    let source_dir = tmp.join("source");
+    stage_plugin_dir(&source_dir);
 
     let mut manager = PluginManager::with_dirs(plugins_dir, tmp.join("plugins.json")).unwrap();
     manager.load_all();
     assert!(manager.installed().is_empty());
 
-    let id = manager.install_from_file(&wasm_path).unwrap();
+    let id = manager.install_from_dir(&source_dir).unwrap();
     assert_eq!(id, "example");
     assert!(
         manager
@@ -140,13 +167,20 @@ fn installs_and_uninstalls_a_plugin_from_a_local_file() {
             .join("plugin.wasm")
             .is_file()
     );
+    assert!(
+        manager
+            .plugins_dir()
+            .join("example")
+            .join("plugin.toml")
+            .is_file()
+    );
 
     let installed = manager.installed();
     assert_eq!(installed.len(), 1);
     assert!(installed[0].is_active());
 
     // installing the same plugin again is rejected rather than overwritten.
-    assert!(manager.install_from_file(&wasm_path).is_err());
+    assert!(manager.install_from_dir(&source_dir).is_err());
 
     manager.uninstall("example").unwrap();
     assert!(manager.installed().is_empty());
@@ -156,4 +190,77 @@ fn installs_and_uninstalls_a_plugin_from_a_local_file() {
     assert!(manager.uninstall("example").is_err());
 
     std::fs::remove_dir_all(&tmp).ok();
+}
+
+#[test]
+fn spawns_and_streams_output_from_an_external_process() {
+    let wasm_path = example_wasm_path();
+    if !wasm_path.is_file() {
+        eprintln!(
+            "skipping: example plugin not built at {}; see file header for build instructions",
+            wasm_path.display()
+        );
+        return;
+    }
+
+    let tmp = std::env::temp_dir().join(format!(
+        "rustrest-plugin-host-process-test-{}",
+        std::process::id()
+    ));
+    let plugins_dir = tmp.join("plugins");
+    stage_plugin_dir(&plugins_dir.join("example"));
+
+    let mut manager = PluginManager::with_dirs(plugins_dir, tmp.join("plugins.json")).unwrap();
+    manager.load_all();
+    assert!(manager.installed()[0].load_error.is_none());
+
+    // clicking "spawn" in the panel spawns a persistent echo-style process
+    // (`cat` on unix, `findstr /R "^"` on Windows) via the ExternalProcess
+    // capability - the same shape a real plugin would use to drive a
+    // downloaded binary like `rust-analyzer`.
+    manager
+        .panel_event("example", "main", UiEvent::Clicked("spawn".to_string()))
+        .expect("spawning the echo process should succeed");
+
+    manager
+        .panel_event(
+            "example",
+            "main",
+            UiEvent::Changed("stdin-input".to_string(), "hello from the host".to_string()),
+        )
+        .unwrap();
+    manager
+        .panel_event("example", "main", UiEvent::Clicked("send".to_string()))
+        .expect("writing to the process's stdin should succeed");
+
+    // background OS threads feed the echoed line back asynchronously; poll
+    // `pump_processes` (what the app's timer subscription drives) until it
+    // shows up or we give up.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut saw_echo = false;
+    while Instant::now() < deadline && !saw_echo {
+        manager.pump_processes();
+        let tree = manager.render_panel("example", "main").unwrap();
+        saw_echo = panel_contains(&tree, "hello from the host");
+        if !saw_echo {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
+    assert!(
+        saw_echo,
+        "expected the spawned process's echoed output to reach the plugin panel"
+    );
+
+    std::fs::remove_dir_all(&tmp).ok();
+}
+
+fn panel_contains(node: &UiNode, needle: &str) -> bool {
+    match node {
+        UiNode::Label(s) => s.contains(needle),
+        UiNode::List(items) => items.iter().any(|s| s.contains(needle)),
+        UiNode::Row(children) | UiNode::Column(children) => {
+            children.iter().any(|c| panel_contains(c, needle))
+        }
+        _ => false,
+    }
 }

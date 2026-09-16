@@ -1,0 +1,21 @@
+id = "insomnia"
+name = "Insomnia Collections"
+version = "0.1.0"
+author = "Rustrest"
+description = "Import/export Insomnia v4 (JSON) and v5.1 (YAML) collections."
+schema_version = 1
+
+[[capabilities.import_formats]]
+id = "insomnia"
+title = "Insomnia (v4 JSON / v5.1 YAML)"
+extensions = ["json", "yaml", "yml"]
+
+[[capabilities.export_formats]]
+id = "insomnia-v4"
+title = "Insomnia v4 (JSON)"
+extensions = ["json"]
+
+[[capabilities.export_formats]]
+id = "insomnia-v5"
+title = "Insomnia v5.1 (YAML)"
+extensions = ["yaml"]

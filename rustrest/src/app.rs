@@ -4615,16 +4615,13 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             app.plugin_manager_busy = Some(PluginManagerAction::Installing);
             iced::Task::perform(
                 async move {
-                    let file = rfd::AsyncFileDialog::new()
-                        .add_filter("Wasm Plugin", &["wasm"])
-                        .pick_file()
-                        .await?;
-                    Some(file.path().to_path_buf())
+                    let folder = rfd::AsyncFileDialog::new().pick_folder().await?;
+                    Some(folder.path().to_path_buf())
                 },
-                Message::PluginInstallFilePicked,
+                Message::PluginInstallFolderPicked,
             )
         }
-        Message::PluginInstallFilePicked(path) => {
+        Message::PluginInstallFolderPicked(path) => {
             let Some(source) = path else {
                 app.plugin_manager_busy = None;
                 return Task::none();
@@ -4654,17 +4651,21 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         Message::PluginInstallPrepared(result) => {
             app.plugin_manager_busy = None;
             let task = match result {
-                Ok((dir_name, module)) => match app.plugin_manager.finish_install(dir_name, module)
-                {
-                    Ok(id) => Task::done(Message::ShowToast(
-                        format!("Plugin '{id}' installed successfully"),
-                        ToastStatus::Success,
-                    )),
-                    Err(e) => Task::done(Message::ShowToast(
-                        format!("Failed to install plugin: {e}"),
-                        ToastStatus::Error,
-                    )),
-                },
+                Ok((dir_name, manifest, module)) => {
+                    match app
+                        .plugin_manager
+                        .finish_install(dir_name, manifest, module)
+                    {
+                        Ok(id) => Task::done(Message::ShowToast(
+                            format!("Plugin '{id}' installed successfully"),
+                            ToastStatus::Success,
+                        )),
+                        Err(e) => Task::done(Message::ShowToast(
+                            format!("Failed to install plugin: {e}"),
+                            ToastStatus::Error,
+                        )),
+                    }
+                }
                 Err(e) => Task::done(Message::ShowToast(
                     format!("Failed to install plugin: {e}"),
                     ToastStatus::Error,
@@ -4796,6 +4797,31 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             };
             drain_plugin_logs(app);
             task
+        }
+        Message::PluginProcessTick => {
+            let touched = app.plugin_manager.pump_processes();
+            if !touched.is_empty() {
+                let open_panels: Vec<(String, String)> = app
+                    .tabs
+                    .iter()
+                    .filter_map(|t| match &t.content {
+                        WorkspaceContent::Plugin {
+                            plugin_id,
+                            panel_id,
+                        } if touched.contains(plugin_id) => {
+                            Some((plugin_id.clone(), panel_id.clone()))
+                        }
+                        _ => None,
+                    })
+                    .collect();
+                for (plugin_id, panel_id) in open_panels {
+                    if let Ok(tree) = app.plugin_manager.render_panel(&plugin_id, &panel_id) {
+                        app.plugin_panel_state.insert((plugin_id, panel_id), tree);
+                    }
+                }
+                drain_plugin_logs(app);
+            }
+            Task::none()
         }
 
         Message::DismissToast(id) => {

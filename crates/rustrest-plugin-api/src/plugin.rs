@@ -1,14 +1,12 @@
 use crate::hooks::{RequestContext, ResponseContext};
-use crate::manifest::PluginManifest;
+use crate::process::ProcessStream;
 use crate::ui::{UiEvent, UiNode};
 
 /// Implemented by a plugin's single entry-point type. Every method has a
 /// no-op default so a plugin only needs to override the capabilities it
-/// declared in `manifest()`; the host only ever calls the methods matching a
-/// declared `Capability`.
+/// declared in its `plugin.toml` manifest; the host only ever calls the
+/// methods matching a declared `Capability`.
 pub trait Plugin: Default + Send + 'static {
-    fn manifest(&self) -> PluginManifest;
-
     fn on_pre_request(&mut self, ctx: RequestContext) -> RequestContext {
         ctx
     }
@@ -50,4 +48,13 @@ pub trait Plugin: Default + Send + 'static {
     ) -> Result<Vec<u8>, String> {
         Err("export not supported by this plugin".to_string())
     }
+
+    /// delivered whenever a process spawned via `process::Process::spawn`
+    /// produces new output. Requires `Capability::ExternalProcess`.
+    fn on_process_output(&mut self, _handle: u32, _stream: ProcessStream, _chunk: Vec<u8>) {}
+
+    /// delivered once a process spawned via `process::Process::spawn` exits.
+    /// `code` is `None` if it was killed by a signal. Requires
+    /// `Capability::ExternalProcess`.
+    fn on_process_exit(&mut self, _handle: u32, _code: Option<i32>) {}
 }

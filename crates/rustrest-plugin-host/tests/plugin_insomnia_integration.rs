@@ -13,10 +13,14 @@
 use rustrest_plugin_host::PluginManager;
 use std::path::PathBuf;
 
-fn wasm_path() -> PathBuf {
+fn insomnia_crate_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("rustrest-plugin-insomnia")
+}
+
+fn wasm_path() -> PathBuf {
+    insomnia_crate_dir()
         .join("target")
         .join("wasm32-unknown-unknown")
         .join("release")
@@ -44,6 +48,11 @@ fn with_manager(f: impl FnOnce(&mut PluginManager)) {
     let plugins_dir = tmp.join("plugins");
     let plugin_dir = plugins_dir.join("insomnia");
     std::fs::create_dir_all(&plugin_dir).unwrap();
+    std::fs::copy(
+        insomnia_crate_dir().join("plugin.toml"),
+        plugin_dir.join("plugin.toml"),
+    )
+    .unwrap();
     std::fs::copy(&wasm_path, plugin_dir.join("plugin.wasm")).unwrap();
 
     let mut manager = PluginManager::with_dirs(plugins_dir, tmp.join("plugins.json")).unwrap();

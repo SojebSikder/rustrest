@@ -1,16 +1,20 @@
 //! SDK for writing native Rustrest plugins.
 //!
-//! A plugin is a Rust crate compiled to `wasm32-unknown-unknown`. Implement
-//! [`Plugin`] for a type, then call [`export_plugin!`] once at the crate
-//! root to generate the wasm export glue the host (`rustrest-plugin-host`)
-//! calls into:
+//! A plugin is a Rust crate compiled to `wasm32-unknown-unknown`, plus a
+//! `plugin.toml` manifest (see [`PluginManifest`]) sitting next to it in the
+//! same install directory - the host reads that file directly and never
+//! executes guest code just to learn what a plugin declares.
+//!
+//! Implement [`Plugin`] for a type, then call [`export_plugin!`] once at the
+//! crate root to generate the wasm export glue the host
+//! (`rustrest-plugin-host`) calls into:
 //!
 //! ```ignore
 //! #[derive(Default)]
 //! struct MyPlugin;
 //!
 //! impl rustrest_plugin_api::Plugin for MyPlugin {
-//!     fn manifest(&self) -> rustrest_plugin_api::PluginManifest {
+//!     fn on_command(&mut self, command_id: &str) -> Result<Option<String>, String> {
 //!         // ...
 //!         # unimplemented!()
 //!     }
@@ -20,21 +24,37 @@
 //! ```
 
 mod hooks;
+#[cfg(target_arch = "wasm32")]
 mod host;
+#[cfg(target_arch = "wasm32")]
+mod hostcall;
 mod manifest;
 mod plugin;
+pub mod process;
 mod ui;
 
+// guest-only wasm export glue for `export_plugin!` below - meaningless (and
+// not needed) in a native build, since only a `wasm32` plugin crate ever
+// invokes that macro.
 #[doc(hidden)]
+#[cfg(target_arch = "wasm32")]
 pub mod _internal {
     pub use crate::runtime::{alloc, dealloc, dispatch};
 }
+#[cfg(target_arch = "wasm32")]
 mod runtime;
 
 pub use hooks::{RequestContext, ResponseContext, TestResult};
+#[cfg(target_arch = "wasm32")]
 pub use host::log;
-pub use manifest::{Capability, CommandDef, FormatDef, MenuItemDef, PanelDef, PluginManifest};
+pub use manifest::{
+    CURRENT_SCHEMA_VERSION, Capability, CommandDef, FormatDef, MenuItemDef, PanelDef,
+    PluginManifest,
+};
 pub use plugin::Plugin;
+#[cfg(target_arch = "wasm32")]
+pub use process::Process;
+pub use process::{CommandOutput, ProcessStream};
 pub use ui::{UiEvent, UiNode};
 
 /// Generates the `rustrest_alloc` / `rustrest_dealloc` / `rustrest_call`

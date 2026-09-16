@@ -6,9 +6,10 @@
 //! cargo build --release --target wasm32-unknown-unknown
 //! ```
 //!
-//! then copy `target/wasm32-unknown-unknown/release/rustrest_plugin_insomnia.wasm`
-//! to `<plugins-dir>/insomnia/plugin.wasm` (the containing directory name
-//! must match the plugin's `manifest().id`, here `"insomnia"`).
+//! then copy both `target/wasm32-unknown-unknown/release/rustrest_plugin_insomnia.wasm`
+//! and `plugin.toml` into `<plugins-dir>/insomnia/` (the containing
+//! directory name must match the `id` declared in `plugin.toml`, here
+//! `"insomnia"`).
 //!
 //! Conversions target Rustrest's own collection JSON model, which is
 //! Postman Collection v2.1 shaped (see
@@ -22,40 +23,12 @@ mod ids;
 mod v4;
 mod v5;
 
-use rustrest_plugin_api::{Capability, FormatDef, Plugin, PluginManifest};
+use rustrest_plugin_api::Plugin;
 
 #[derive(Default)]
 struct InsomniaPlugin;
 
 impl Plugin for InsomniaPlugin {
-    fn manifest(&self) -> PluginManifest {
-        PluginManifest {
-            id: "insomnia".to_string(),
-            name: "Insomnia Collections".to_string(),
-            version: "0.1.0".to_string(),
-            author: "Rustrest".to_string(),
-            description: "Import/export Insomnia v4 (JSON) and v5.1 (YAML) collections."
-                .to_string(),
-            capabilities: vec![
-                Capability::ImportFormat(FormatDef {
-                    id: "insomnia".to_string(),
-                    title: "Insomnia (v4 JSON / v5.1 YAML)".to_string(),
-                    extensions: vec!["json".to_string(), "yaml".to_string(), "yml".to_string()],
-                }),
-                Capability::ExportFormat(FormatDef {
-                    id: "insomnia-v4".to_string(),
-                    title: "Insomnia v4 (JSON)".to_string(),
-                    extensions: vec!["json".to_string()],
-                }),
-                Capability::ExportFormat(FormatDef {
-                    id: "insomnia-v5".to_string(),
-                    title: "Insomnia v5.1 (YAML)".to_string(),
-                    extensions: vec!["yaml".to_string()],
-                }),
-            ],
-        }
-    }
-
     fn import(&mut self, format_id: &str, bytes: Vec<u8>) -> Result<serde_json::Value, String> {
         if format_id != "insomnia" {
             return Err(format!("unknown import format: {format_id}"));

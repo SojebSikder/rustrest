@@ -241,6 +241,23 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         Subscription::none()
     };
 
+    // drains buffered stdout/stderr from any process a plugin spawned via
+    // the `ExternalProcess` capability.
+    // only runs while some active plugin actually declared that capability,
+    // same "don't tick the event loop for nothing" rule as `spinner_sub`.
+    let plugin_process_sub = if app.plugin_manager.installed().iter().any(|p| {
+        p.is_active()
+            && p.manifest.as_ref().is_some_and(|m| {
+                m.capabilities
+                    .iter()
+                    .any(|c| matches!(c, rustrest_plugin_host::Capability::ExternalProcess))
+            })
+    }) {
+        iced::time::every(std::time::Duration::from_millis(100)).map(|_| Message::PluginProcessTick)
+    } else {
+        Subscription::none()
+    };
+
     // catch the native window close button so we can flush the session
     // before the process actually exits (for the main window), or just
     // close that one window (for the secondary remote-config window),
@@ -340,6 +357,7 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         keyboard_shortcuts,
         autosave,
         spinner_sub,
+        plugin_process_sub,
         close_requested,
         cursor_tracker,
         modifiers_tracker,

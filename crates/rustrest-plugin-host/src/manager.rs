@@ -1,8 +1,10 @@
 use crate::error::PluginError;
-use crate::instance::{LoadedPlugin, compile_and_read_manifest, load_from_module, load_plugin};
+use crate::instance::{LoadedPlugin, compile, load_from_module, load_plugin};
+use crate::manifest_toml::{self, MANIFEST_FILE_NAME, WASM_FILE_NAME};
+use crate::process::{ProcessEvent, ProcessTable};
 use rustrest_plugin_api::{
-    Capability, CommandDef, FormatDef, MenuItemDef, PanelDef, RequestContext, ResponseContext,
-    UiEvent, UiNode,
+    Capability, CommandDef, FormatDef, MenuItemDef, PanelDef, PluginManifest, RequestContext,
+    ResponseContext, UiEvent, UiNode,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -66,7 +68,10 @@ impl PluginManager {
     }
 
     /// discovers and (re)loads every plugin under the plugins directory.
-    /// Safe to call again to pick up newly dropped-in plugins.
+    /// Safe to call again to pick up newly dropped-in plugin directories.
+    /// A directory is only considered a plugin if it has a `plugin.toml` -
+    /// that file alone is enough to list/validate it, no wasm is compiled
+    /// or run just to discover what's installed.
     pub fn load_all(&mut self) {
         let disabled = self.read_disabled();
         fs::create_dir_all(&self.plugins_dir).ok();
@@ -78,14 +83,13 @@ impl PluginManager {
                 if !path.is_dir() {
                     continue;
                 }
-                let wasm_path = path.join("plugin.wasm");
-                if !wasm_path.is_file() {
+                if !path.join(MANIFEST_FILE_NAME).is_file() {
                     continue;
                 }
                 let Some(dir_name) = path.file_name().and_then(|n| n.to_str()) else {
                     continue;
                 };
-                discovered.push((dir_name.to_string(), wasm_path));
+                discovered.push((dir_name.to_string(), path));
             }
         }
 
@@ -98,9 +102,9 @@ impl PluginManager {
 
         self.plugins = discovered
             .into_iter()
-            .map(|(dir_name, wasm_path)| {
+            .map(|(dir_name, plugin_dir)| {
                 let enabled = !disabled.contains(&dir_name);
-                load_plugin(engine, &dir_name, &wasm_path, enabled)
+                load_plugin(engine, &dir_name, &plugin_dir, enabled)
             })
             .collect();
     }
@@ -135,20 +139,33 @@ impl PluginManager {
     pub fn set_enabled(&mut self, plugin_id: &str, enabled: bool) {
         if let Some(plugin) = self.plugins.iter_mut().find(|p| p.id() == plugin_id) {
             plugin.enabled = enabled && plugin.runtime.is_some();
+            if !plugin.enabled
+                && let Some(runtime) = &plugin.runtime
+            {
+                ProcessTable::kill_all(&runtime.processes);
+            }
         }
         self.save_state();
     }
 
-    /// compiles the plugin at `source` and copies it into `plugins_dir`
-    /// under a directory named after its manifest id.
+    /// validates the plugin folder at `source` (must contain `plugin.toml`
+    /// and `plugin.wasm`), compiles its wasm, and copies both files into
+    /// `plugins_dir` under a directory named after the manifest id.
     pub fn prepare_install(
         engine: &Engine,
         plugins_dir: &Path,
         source: &Path,
-    ) -> Result<(String, Module), PluginError> {
-        fs::create_dir_all(plugins_dir)?;
-        let (module, manifest) = compile_and_read_manifest(engine, source)?;
+    ) -> Result<(String, PluginManifest, Module), PluginError> {
+        let manifest = manifest_toml::read_from_dir(source)?;
+        let wasm_path = source.join(WASM_FILE_NAME);
+        if !wasm_path.is_file() {
+            return Err(PluginError::Manifest(format!(
+                "missing {WASM_FILE_NAME} in plugin folder"
+            )));
+        }
+        let module = compile(engine, &wasm_path)?;
 
+        fs::create_dir_all(plugins_dir)?;
         let dest_dir = plugins_dir.join(&manifest.id);
         if dest_dir.exists() {
             return Err(PluginError::Manifest(format!(
@@ -157,9 +174,13 @@ impl PluginManager {
             )));
         }
         fs::create_dir_all(&dest_dir)?;
-        fs::copy(source, dest_dir.join("plugin.wasm"))?;
+        fs::copy(
+            source.join(MANIFEST_FILE_NAME),
+            dest_dir.join(MANIFEST_FILE_NAME),
+        )?;
+        fs::copy(&wasm_path, dest_dir.join(WASM_FILE_NAME))?;
 
-        Ok((manifest.id, module))
+        Ok((manifest.id.clone(), manifest, module))
     }
 
     /// finishes an install prepared by `prepare_install`: instantiates the
@@ -167,10 +188,12 @@ impl PluginManager {
     pub fn finish_install(
         &mut self,
         dir_name: String,
+        manifest: PluginManifest,
         module: Module,
     ) -> Result<String, PluginError> {
         let engine = self.engine.get_or_insert_with(Self::new_engine);
-        let loaded = load_from_module(&dir_name, engine, &module, true);
+        let plugin_dir = self.plugins_dir.join(&dir_name);
+        let loaded = load_from_module(&dir_name, engine, &module, &manifest, &plugin_dir, true);
         let id = loaded.id().to_string();
         let error = loaded.load_error.clone();
 
@@ -183,10 +206,11 @@ impl PluginManager {
         }
     }
 
-    pub fn install_from_file(&mut self, source: &Path) -> Result<String, PluginError> {
+    pub fn install_from_dir(&mut self, source: &Path) -> Result<String, PluginError> {
         let engine = self.engine_handle();
-        let (dir_name, module) = Self::prepare_install(&engine, &self.plugins_dir, source)?;
-        self.finish_install(dir_name, module)
+        let (dir_name, manifest, module) =
+            Self::prepare_install(&engine, &self.plugins_dir, source)?;
+        self.finish_install(dir_name, manifest, module)
     }
 
     /// looks up the on-disk directory name for an installed plugin by its
@@ -200,6 +224,11 @@ impl PluginManager {
 
     /// drops a plugin from the active list and persists state, without touching disk
     pub fn drop_plugin(&mut self, plugin_id: &str) {
+        if let Some(plugin) = self.plugins.iter().find(|p| p.id() == plugin_id)
+            && let Some(runtime) = &plugin.runtime
+        {
+            ProcessTable::kill_all(&runtime.processes);
+        }
         self.plugins.retain(|p| p.id() != plugin_id);
         self.save_state();
     }
@@ -235,6 +264,45 @@ impl PluginManager {
             }
         }
         all
+    }
+
+    /// drains buffered process output/exit events across every active
+    /// plugin with a spawned process, delivering each into the owning
+    /// plugin via the same synchronous call path `run_command`/
+    /// `on_panel_event` already use, and returns which plugin ids had
+    /// activity so the caller can re-render an open panel for one of them.
+    pub fn pump_processes(&mut self) -> Vec<String> {
+        let mut touched = Vec::new();
+        for plugin in self.plugins.iter_mut().filter(|p| p.is_active()) {
+            let plugin_id = plugin.id().to_string();
+            let dir_name = plugin.dir_name.clone();
+            let runtime = plugin.runtime.as_mut().expect("checked active");
+            let events = ProcessTable::drain_events(&runtime.processes);
+            if events.is_empty() {
+                continue;
+            }
+            touched.push(plugin_id);
+            for event in events {
+                let result = match event {
+                    ProcessEvent::Output(handle, stream, chunk) => {
+                        runtime.handles.call_json::<_, ()>(
+                            &mut runtime.store,
+                            "on_process_output",
+                            (handle, stream, chunk),
+                        )
+                    }
+                    ProcessEvent::Exit(handle, code) => runtime.handles.call_json::<_, ()>(
+                        &mut runtime.store,
+                        "on_process_exit",
+                        (handle, code),
+                    ),
+                };
+                if let Err(e) = result {
+                    log_hook_error(runtime, &dir_name, "process-event", &e);
+                }
+            }
+        }
+        touched
     }
 
     pub fn commands(&self) -> Vec<(String, CommandDef)> {

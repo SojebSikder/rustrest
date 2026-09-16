@@ -49,7 +49,15 @@ pub enum Capability {
     SidebarPanel(PanelDef),
     ImportFormat(FormatDef),
     ExportFormat(FormatDef),
+    /// unlocks the `which` / `download_file` / `make_executable` /
+    /// `storage_dir` / `run_command` / `process_*` host calls. Declared separately from the other
+    /// capabilities because it's the one that lets a plugin touch the
+    /// outside world (network, filesystem under its storage dir, processes).
+    ExternalProcess,
 }
+
+/// manifest schema version
+pub const CURRENT_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginManifest {
@@ -59,6 +67,13 @@ pub struct PluginManifest {
     pub version: String,
     pub author: String,
     pub description: String,
+    /// manifest schema version the plugin was written against
+    #[serde(default = "default_schema_version")]
+    pub schema_version: u32,
     #[serde(default)]
     pub capabilities: Vec<Capability>,
+}
+
+fn default_schema_version() -> u32 {
+    1
 }

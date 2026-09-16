@@ -1,0 +1,19 @@
+id = "example"
+name = "Example Plugin"
+version = "0.1.0"
+author = "Rustrest"
+description = "Demonstrates a request hook, a command, a sidebar panel, and spawning an external process."
+schema_version = 1
+
+[capabilities]
+request_hooks = true
+external_process = true
+
+[[capabilities.commands]]
+id = "say-hello"
+title = "Example: Say Hello"
+subtitle = "from the example plugin"
+
+[capabilities.sidebar_panel]
+id = "main"
+title = "Example"

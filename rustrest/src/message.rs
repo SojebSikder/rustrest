@@ -497,13 +497,27 @@ pub enum Message {
     /// opens (or focuses) the "Manage Plugins" tab.
     OpenPluginManagerPressed,
     TogglePluginEnabled(String, bool),
-    /// opens a file dialog to pick a local `.wasm` file to install.
+    /// opens a folder dialog to pick a local plugin directory (containing
+    /// `plugin.toml` + `plugin.wasm`) to install.
     InstallPluginPressed,
-    /// the file picked by `InstallPluginPressed` (or `None` if cancelled).
-    PluginInstallFilePicked(Option<std::path::PathBuf>),
-    /// a background thread finished compiling the picked file and copying it
-    /// into the plugins directory (or failed) - see `PluginManager::prepare_install`.
-    PluginInstallPrepared(Result<(String, rustrest_plugin_host::Module), String>),
+    /// the folder picked by `InstallPluginPressed` (or `None` if cancelled).
+    PluginInstallFolderPicked(Option<std::path::PathBuf>),
+    /// a background thread finished compiling the picked plugin's wasm and
+    /// copying it into the plugins directory (or failed)
+    PluginInstallPrepared(
+        Result<
+            (
+                String,
+                rustrest_plugin_host::PluginManifest,
+                rustrest_plugin_host::Module,
+            ),
+            String,
+        >,
+    ),
+    /// driven by a timer; drains buffered output from any process a plugin
+    /// spawned via the `ExternalProcess` capability and delivers it into the
+    /// owning plugin.
+    PluginProcessTick,
     /// plugin_id - shows a confirmation dialog before uninstalling.
     UninstallPluginPressed(String),
     /// plugin_id - the uninstall confirmation was accepted.
