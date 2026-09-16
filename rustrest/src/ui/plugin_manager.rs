@@ -7,9 +7,36 @@ use crate::message::Message;
 use crate::plugin_gallery::GalleryEntry;
 use crate::ui::modal::{danger_text_color, muted_text_color};
 use crate::ui::spinner::spinner_with_label;
-use iced::widget::{button, checkbox, column, container, row, scrollable, text};
+use iced::widget::{button, checkbox, column, container, row, scrollable, text, text_input};
 use iced::{Alignment, Element, Length, Theme};
+use rustrest_command_palette::{Command, filter};
 use rustrest_plugin_host::Capability;
+
+/// reusable search box
+fn search_bar<'a>(value: &'a str, placeholder: &'static str) -> Element<'a, Message> {
+    text_input(placeholder, value)
+        .on_input(Message::PluginManagerSearchChanged)
+        .padding(8)
+        .size(13)
+        .into()
+}
+
+fn search_matches<T>(
+    items: &[T],
+    query: &str,
+    text_for: impl Fn(&T) -> String,
+    id_for: impl Fn(&T) -> String,
+) -> Vec<usize> {
+    let commands: Vec<Command<usize>> = items
+        .iter()
+        .enumerate()
+        .map(|(idx, item)| Command::new(id_for(item), text_for(item), idx))
+        .collect();
+    filter(&commands, query)
+        .into_iter()
+        .map(|c| c.action)
+        .collect()
+}
 
 /// short, user-facing label for a declared capability, shown as a badge in
 /// the plugin manager so what a plugin can touch is visible before it's
@@ -111,12 +138,18 @@ pub fn render_plugin_manager_tab(app: &Rustrest) -> Element<'_, Message> {
     ]
     .align_y(Alignment::Center);
 
+    let search_placeholder = match app.plugin_manager_view {
+        PluginManagerView::Installed => "Search installed plugins...",
+        PluginManagerView::Browse => "Search gallery...",
+    };
+    let search = search_bar(&app.plugin_manager_search, search_placeholder);
+
     let body = match app.plugin_manager_view {
         PluginManagerView::Installed => render_installed_list(app, is_busy),
         PluginManagerView::Browse => render_gallery_list(app, is_busy),
     };
 
-    column![header, scrollable(body).height(Length::Fill)]
+    column![header, search, scrollable(body).height(Length::Fill)]
         .spacing(20)
         .padding(20)
         .width(Length::Fill)
@@ -139,9 +172,31 @@ fn render_installed_list(app: &Rustrest, is_busy: bool) -> Element<'_, Message> 
                 color: Some(muted_text_color(theme)),
             }),
         );
+        return list.into();
     }
 
-    for plugin in installed {
+    let matches = search_matches(
+        installed,
+        &app.plugin_manager_search,
+        |p| match &p.manifest {
+            Some(m) => format!("{} {} {}", m.name, m.author, m.description),
+            None => p.dir_name.clone(),
+        },
+        |p| p.dir_name.clone(),
+    );
+
+    if matches.is_empty() {
+        list = list.push(
+            text("No plugins match your search.")
+                .size(12)
+                .style(|theme: &Theme| text::Style {
+                    color: Some(muted_text_color(theme)),
+                }),
+        );
+    }
+
+    for &idx in &matches {
+        let plugin = &installed[idx];
         let id = plugin.id().to_string();
         let uninstall_control: Element<'_, Message> = if app.plugin_manager_busy
             == Some(PluginManagerAction::Uninstalling(id.clone()))
@@ -277,7 +332,23 @@ fn render_gallery_list(app: &Rustrest, is_busy: bool) -> Element<'_, Message> {
                 .map(|p| p.id())
                 .collect();
 
-            for entry in entries {
+            let matches = search_matches(
+                entries,
+                &app.plugin_manager_search,
+                |e| format!("{} {} {}", e.name, e.author, e.description),
+                |e| e.id.clone(),
+            );
+
+            if matches.is_empty() {
+                list = list.push(text("No plugins match your search.").size(12).style(
+                    |theme: &Theme| text::Style {
+                        color: Some(muted_text_color(theme)),
+                    },
+                ));
+            }
+
+            for idx in matches {
+                let entry = &entries[idx];
                 list = list.push(render_gallery_entry(
                     app,
                     entry,

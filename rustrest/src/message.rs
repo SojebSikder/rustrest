@@ -539,6 +539,9 @@ pub enum Message {
     GalleryIndexFetched(Result<Vec<GalleryEntry>, String>),
     /// the "Install" button was pressed for a gallery entry.
     InstallFromGalleryPressed(GalleryEntry),
+    /// the Manage Plugins search box changed; filters whichever of
+    /// Installed/Browse is currently showing.
+    PluginManagerSearchChanged(String),
 
     /// plugin_id, format_id, file-picker extensions - opens a file dialog
     /// and routes the picked file through `PluginManager::import`.

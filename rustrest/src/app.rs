@@ -218,6 +218,9 @@ pub struct Rustrest {
     /// cached result of the last plugin gallery index fetch; `None` until
     /// the Browse view has been opened at least once.
     pub plugin_gallery_entries: Option<Result<Vec<crate::plugin_gallery::GalleryEntry>, String>>,
+    /// current text in the Manage Plugins search box, applied to whichever
+    /// of Installed/Browse is showing.
+    pub plugin_manager_search: String,
     /// set while the user is choosing which installed export-format plugin
     /// to export a collection through (only shown when more than one
     /// plugin/format is available - a single option is used directly).
@@ -633,6 +636,7 @@ pub fn init() -> (Rustrest, Task<Message>) {
         plugin_manager_busy: None,
         plugin_manager_view: crate::ui::plugin_manager::PluginManagerView::default(),
         plugin_gallery_entries: None,
+        plugin_manager_search: String::new(),
         export_plugin_picker: None,
         settings_open: false,
         settings_tab: SettingsTab::default(),
@@ -4850,6 +4854,10 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 },
                 Message::PluginInstallPrepared,
             )
+        }
+        Message::PluginManagerSearchChanged(query) => {
+            app.plugin_manager_search = query;
+            Task::none()
         }
         Message::PluginCommand(plugin_id, command_id) => {
             let task = match app.plugin_manager.run_command(&plugin_id, &command_id) {
