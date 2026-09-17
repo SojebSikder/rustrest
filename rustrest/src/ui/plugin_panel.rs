@@ -11,16 +11,54 @@ pub fn render_plugin_panel<'a>(
     tree: Option<&'a UiNode>,
 ) -> Element<'a, Message> {
     match tree {
-        Some(node) => scrollable(render_node(
-            plugin_id,
-            panel_id,
-            node,
-            Message::PluginPanelEvent,
-        ))
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into(),
+        Some(node) => render_root(plugin_id, panel_id, node, Message::PluginPanelEvent),
         None => text("(plugin panel unavailable)").into(),
+    }
+}
+
+pub(crate) fn render_root<'a>(
+    plugin_id: &str,
+    panel_id: &str,
+    node: &'a UiNode,
+    to_message: fn(String, String, UiEvent) -> Message,
+) -> Element<'a, Message> {
+    if !contains_scrollable(node) {
+        return scrollable(render_node(plugin_id, panel_id, node, to_message))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into();
+    }
+
+    match node {
+        UiNode::Column(children) => {
+            let mut c = column![]
+                .spacing(8)
+                .width(Length::Fill)
+                .height(Length::Fill);
+            for child in children {
+                c = c.push(render_node(plugin_id, panel_id, child, to_message));
+            }
+            c.into()
+        }
+        UiNode::Row(children) => {
+            let mut r = row![].spacing(8).width(Length::Fill).height(Length::Fill);
+            for child in children {
+                r = r.push(render_node(plugin_id, panel_id, child, to_message));
+            }
+            r.into()
+        }
+        _ => render_node(plugin_id, panel_id, node, to_message),
+    }
+}
+
+/// true if `node` contains a `UiNode::Scrollable` anywhere in its tree.
+fn contains_scrollable(node: &UiNode) -> bool {
+    match node {
+        UiNode::Scrollable(_) => true,
+        UiNode::Row(children) | UiNode::Column(children) => {
+            children.iter().any(contains_scrollable)
+        }
+        _ => false,
     }
 }
 
@@ -57,18 +95,28 @@ pub(crate) fn render_node<'a>(
             id,
             value,
             placeholder,
+            on_submit,
         } => {
-            let id = id.clone();
-            text_input(placeholder, value)
-                .padding(8)
-                .on_input(move |new_value| {
+            let input_id = id.clone();
+            let mut widget = text_input(placeholder, value).padding(8).on_input({
+                let plugin_id = plugin_id.clone();
+                let panel_id = panel_id.clone();
+                move |new_value| {
                     to_message(
                         plugin_id.clone(),
                         panel_id.clone(),
-                        UiEvent::Changed(id.clone(), new_value),
+                        UiEvent::Changed(input_id.clone(), new_value),
                     )
-                })
-                .into()
+                }
+            });
+            if let Some(submit_id) = on_submit {
+                widget = widget.on_submit(to_message(
+                    plugin_id,
+                    panel_id,
+                    UiEvent::Clicked(submit_id.clone()),
+                ));
+            }
+            widget.into()
         }
 
         UiNode::Checkbox { id, label, checked } => {
@@ -109,6 +157,18 @@ pub(crate) fn render_node<'a>(
             c.into()
         }
 
-        UiNode::Spacer => Space::new().width(Length::Fill).height(Length::Fill).into(),
+        UiNode::HorizontalSpacer => Space::new().width(Length::Fill).into(),
+        UiNode::VerticalSpacer => Space::new().height(Length::Fill).into(),
+        UiNode::FixedSpace { width, height } => Space::new()
+            .width(Length::Fixed(*width))
+            .height(Length::Fixed(*height))
+            .into(),
+
+        UiNode::Scrollable(inner) => {
+            scrollable(render_node(&plugin_id, &panel_id, inner, to_message))
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+        }
     }
 }

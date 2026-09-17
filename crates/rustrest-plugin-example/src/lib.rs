@@ -78,6 +78,7 @@ impl Plugin for ExamplePlugin {
                     id: "stdin-input".to_string(),
                     value: self.input_value.clone(),
                     placeholder: "text to echo".to_string(),
+                    on_submit: Some("send".to_string()),
                 },
                 UiNode::Button {
                     id: "send".to_string(),

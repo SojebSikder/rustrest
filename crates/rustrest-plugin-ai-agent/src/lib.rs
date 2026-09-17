@@ -125,16 +125,19 @@ impl AiAgentPlugin {
                 id: "api-key".to_string(),
                 value: self.draft_api_key.clone(),
                 placeholder: "API key".to_string(),
+                on_submit: Some("save-settings".to_string()),
             },
             UiNode::TextInput {
                 id: "model".to_string(),
                 value: self.draft_model.clone(),
                 placeholder: "model name".to_string(),
+                on_submit: Some("save-settings".to_string()),
             },
             UiNode::TextInput {
                 id: "base-url".to_string(),
                 value: self.draft_base_url.clone(),
                 placeholder: "https:// base URL".to_string(),
+                on_submit: Some("save-settings".to_string()),
             },
             UiNode::Muted(
                 "Requests must go to an https:// endpoint (a local Ollama server \
@@ -157,18 +160,20 @@ impl AiAgentPlugin {
     }
 
     fn render_chat(&self, ctx: &RightPanelContext) -> UiNode {
-        let mut children = vec![UiNode::Row(vec![
+        let header = UiNode::Row(vec![
             UiNode::Muted(format!("Provider: {}", self.config.provider)),
-            UiNode::Spacer,
+            UiNode::HorizontalSpacer,
             UiNode::Button {
                 id: "toggle-settings".to_string(),
                 label: "\u{2699}".to_string(), // gear icon
                 primary: false,
             },
-        ])];
+        ]);
+
+        let mut conversation = Vec::new();
 
         match (&ctx.active_request, &ctx.active_response) {
-            (None, _) => children.push(UiNode::Muted(
+            (None, _) => conversation.push(UiNode::Muted(
                 "No active request - open one for context.".to_string(),
             )),
             (Some(req), resp) => {
@@ -176,18 +181,18 @@ impl AiAgentPlugin {
                 if let Some(resp) = resp {
                     summary.push_str(&format!(" \u{2192} {}", resp.status));
                 }
-                children.push(UiNode::Muted(summary));
+                conversation.push(UiNode::Muted(summary));
             }
         }
 
         if self.messages.is_empty() {
-            children.push(UiNode::Muted(
+            conversation.push(UiNode::Muted(
                 "Ask a question, or tell me what to change - e.g. \"explain this response\" \
                  or \"add an Authorization header\"."
                     .to_string(),
             ));
         } else {
-            children.push(UiNode::Column(
+            conversation.push(UiNode::Column(
                 self.messages
                     .iter()
                     .map(|m| {
@@ -201,23 +206,28 @@ impl AiAgentPlugin {
         }
 
         if self.busy {
-            children.push(UiNode::Muted("Thinking...".to_string()));
+            conversation.push(UiNode::Muted("Thinking...".to_string()));
         }
 
-        children.push(UiNode::Row(vec![
+        let input_row = UiNode::Row(vec![
             UiNode::TextInput {
                 id: "chat-input".to_string(),
                 value: self.draft_input.clone(),
                 placeholder: "Ask about this request...".to_string(),
+                on_submit: Some("send".to_string()),
             },
             UiNode::Button {
                 id: "send".to_string(),
                 label: "Send".to_string(),
                 primary: true,
             },
-        ]));
+        ]);
 
-        UiNode::Column(children)
+        UiNode::Column(vec![
+            header,
+            UiNode::Scrollable(Box::new(UiNode::Column(conversation))),
+            input_row,
+        ])
     }
 
     fn start_request(&mut self, instruction: String, ctx: &RightPanelContext) {

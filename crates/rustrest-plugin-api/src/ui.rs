@@ -21,6 +21,12 @@ pub enum UiNode {
         id: String,
         value: String,
         placeholder: String,
+        /// if set, pressing Enter in this field fires `UiEvent::Clicked`
+        /// with this id, as if that button had been pressed - e.g. wiring
+        /// a chat input to its Send button's id so Enter submits without
+        /// reaching for the mouse.
+        #[serde(default)]
+        on_submit: Option<String>,
     },
     Checkbox {
         id: String,
@@ -30,10 +36,21 @@ pub enum UiNode {
     List(Vec<String>),
     Row(Vec<UiNode>),
     Column(Vec<UiNode>),
-    /// flexible blank space that expands to fill whatever room is left in
-    /// its parent `Row`/`Column` - e.g. pushing a header's icon button to
-    /// the opposite end from a label it's sharing a row with.
-    Spacer,
+    /// Fills horizontal space (Length::Fill width, 0 height)
+    HorizontalSpacer,
+    /// Fills vertical space (0 width, Length::Fill height)
+    VerticalSpacer,
+    FixedSpace {
+        width: f32,
+        height: f32,
+    }, // Fixed dimensions
+    /// marks this subtree as an independent scroll region. The host only
+    /// auto-scrolls a plugin's whole panel when it contains no explicit
+    /// `Scrollable` anywhere; once a plugin uses one, it's opting into
+    /// controlling scrolling itself - typically to keep a header and/or
+    /// footer (e.g. a settings button, a send box) pinned in place while
+    /// just the middle section scrolls.
+    Scrollable(Box<UiNode>),
 }
 
 /// A user interaction with a previously rendered `UiNode` tree, identified by
