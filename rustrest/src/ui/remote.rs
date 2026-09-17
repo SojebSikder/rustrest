@@ -100,7 +100,7 @@ pub fn view_remote_config_modal(app: &Rustrest) -> Element<'_, Message> {
     };
 
     let mut saved_hosts = column![].spacing(6);
-    if app.remote_profiles.is_empty() {
+    if app.remote.remote_profiles.is_empty() {
         saved_hosts =
             saved_hosts.push(text("No saved hosts yet.").size(12).style(|theme: &Theme| {
                 text::Style {
@@ -108,8 +108,8 @@ pub fn view_remote_config_modal(app: &Rustrest) -> Element<'_, Message> {
                 }
             }));
     }
-    for profile in &app.remote_profiles {
-        let connected = app.remote_sessions.contains_key(&profile.id);
+    for profile in &app.remote.remote_profiles {
+        let connected = app.remote.remote_sessions.contains_key(&profile.id);
 
         let mut row_el = row![
             text(format!(
@@ -143,7 +143,7 @@ pub fn view_remote_config_modal(app: &Rustrest) -> Element<'_, Message> {
                         .padding([3, 8])
                         .style(button::danger),
                 );
-        } else if app.remote_connecting == Some(profile.id) {
+        } else if app.remote.remote_connecting == Some(profile.id) {
             row_el = row_el.push(spinner_with_label(app.spinner_tick, "Connecting..."));
         } else {
             row_el = row_el.push(
@@ -164,7 +164,7 @@ pub fn view_remote_config_modal(app: &Rustrest) -> Element<'_, Message> {
         let mut item = column![row_el].spacing(4);
 
         if connected {
-            if let Some(explorer) = app.remote_explorers.get(&profile.id) {
+            if let Some(explorer) = app.remote.remote_explorers.get(&profile.id) {
                 if explorer.visible {
                     item = item.push(render_explorer(profile.id, explorer, app.spinner_tick));
                 }
@@ -174,7 +174,7 @@ pub fn view_remote_config_modal(app: &Rustrest) -> Element<'_, Message> {
         saved_hosts = saved_hosts.push(item);
     }
 
-    let form = &app.remote_profile_form;
+    let form = &app.remote.remote_profile_form;
     let add_form = column![
         text_input("Name", &form.name)
             .on_input(Message::RemoteProfileNameChanged)

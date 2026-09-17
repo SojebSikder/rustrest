@@ -70,7 +70,7 @@ pub fn commands(app: &Rustrest) -> Vec<Command<AppCommand>> {
         ),
     ];
 
-    for (plugin_id, cmd) in app.plugin_manager.commands() {
+    for (plugin_id, cmd) in app.plugins.plugin_manager.commands() {
         let mut entry = Command::new(
             format!("plugin:{}:{}", plugin_id, cmd.id),
             cmd.title,

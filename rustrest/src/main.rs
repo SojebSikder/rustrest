@@ -65,7 +65,7 @@ pub fn main() -> iced::Result {
 }
 
 fn theme(app: &Rustrest, _window_id: window::Id) -> iced::Theme {
-    app.theme.to_iced()
+    app.settings.theme.to_iced()
 }
 
 fn title(_app: &Rustrest, _window_id: window::Id) -> String {
@@ -113,7 +113,7 @@ macro_rules! escape_close_sub {
 }
 
 pub fn subscription(app: &Rustrest) -> Subscription<Message> {
-    let context_menu_sub = if app.active_context_menu.is_some() {
+    let context_menu_sub = if app.overlays.active_context_menu.is_some() {
         event::listen_with(|event, _status, _window| match event {
             Event::Mouse(iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left)) => {
                 Some(Message::CloseContextMenu)
@@ -124,31 +124,31 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         Subscription::none()
     };
 
-    let active_overlay = if app.command_palette.is_some() {
+    let active_overlay = if app.overlays.command_palette.is_some() {
         Some(ActiveOverlay::CommandPalette)
-    } else if app.confirm_dialog.is_some() {
+    } else if app.overlays.confirm_dialog.is_some() {
         Some(ActiveOverlay::ConfirmDialog)
-    } else if app.remote_connect_pending.is_some() {
+    } else if app.remote.remote_connect_pending.is_some() {
         Some(ActiveOverlay::RemoteConnect)
-    } else if app.remote_config_open {
+    } else if app.remote.remote_config_open {
         Some(ActiveOverlay::RemoteConfig)
-    } else if app.export_plugin_picker.is_some() {
+    } else if app.plugins.export_plugin_picker.is_some() {
         Some(ActiveOverlay::ExportPicker)
-    } else if app.settings_open {
+    } else if app.settings.settings_open {
         Some(ActiveOverlay::Settings)
-    } else if app.commit_modal.is_some() {
+    } else if app.git.commit_modal.is_some() {
         Some(ActiveOverlay::Commit)
-    } else if app.response_timing_modal.is_some() {
+    } else if app.overlays.response_timing_modal.is_some() {
         Some(ActiveOverlay::ResponseTiming)
-    } else if app.save_request_model.is_some() {
+    } else if app.workbench.save_request_model.is_some() {
         Some(ActiveOverlay::SaveRequest)
-    } else if app.editing_env_index.is_some() {
+    } else if app.env.editing_env_index.is_some() {
         Some(ActiveOverlay::EnvEditor)
     } else {
         None
     };
 
-    let click_outside_sub = if app.close_on_outside_click {
+    let click_outside_sub = if app.settings.close_on_outside_click {
         match active_overlay {
             Some(ActiveOverlay::EnvEditor) => {
                 outside_click_sub!(Message::CloseEnvEditorPressed)
@@ -185,7 +185,7 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
     // Escape clears the sidebar multi-selection, but only when no overlay is
     // open (an open overlay's own Escape handling below takes priority).
     let sidebar_selection_escape_sub = match active_overlay {
-        None if !app.selected_sidebar_items.is_empty() => {
+        None if !app.sidebar.selected_sidebar_items.is_empty() => {
             escape_close_sub!(Message::ClearSidebarSelection)
         }
         _ => Subscription::none(),
@@ -218,7 +218,7 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         None => Subscription::none(),
     };
 
-    let menu_bar_sub = if app.menu_state.open_index.is_some() {
+    let menu_bar_sub = if app.overlays.menu_state.open_index.is_some() {
         event::listen_with(|event, status, _window| match event {
             // Only treat this as an "outside" click if no widget (e.g. a menu
             // header button switching to a different menu) already handled it;
@@ -254,7 +254,7 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
     // the `ExternalProcess` capability.
     // only runs while some active plugin actually declared that capability,
     // same "don't tick the event loop for nothing" rule as `spinner_sub`.
-    let plugin_process_sub = if app.plugin_manager.installed().iter().any(|p| {
+    let plugin_process_sub = if app.plugins.plugin_manager.installed().iter().any(|p| {
         p.is_active()
             && p.manifest.as_ref().is_some_and(|m| {
                 m.capabilities
@@ -281,7 +281,7 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
     // while the command palette is open, Up/Down move the selection; Escape
     // (handled by `escape_close_sub` above) closes it, and typing/Enter are
     // handled by its text input directly.
-    let command_palette_sub = if app.command_palette.is_some() {
+    let command_palette_sub = if app.overlays.command_palette.is_some() {
         event::listen_with(|event, _status, _window| match event {
             Event::Keyboard(iced::keyboard::Event::KeyPressed {
                 key: Key::Named(Named::ArrowUp),
@@ -330,7 +330,7 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
     };
 
     // while a panel divider is being dragged, release the drag on mouse-up
-    let resize_drag_sub = if app.resize_drag.is_some() {
+    let resize_drag_sub = if app.layout.resize_drag.is_some() {
         event::listen_with(|event, _status, _window| match event {
             Event::Mouse(iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left)) => {
                 Some(Message::ResizeDragEnded)
@@ -342,7 +342,7 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
     };
 
     // while a tab is being dragged to reorder it, release the drag on mouse-up
-    let tab_drag_sub = if app.dragging_tab_index.is_some() {
+    let tab_drag_sub = if app.workbench.dragging_tab_index.is_some() {
         event::listen_with(|event, _status, _window| match event {
             Event::Mouse(iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left)) => {
                 Some(Message::TabDragEnded)
@@ -354,7 +354,7 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
     };
 
     let terminal_events_data = TerminalEventsData {
-        receiver: app.terminal_event_rx.clone(),
+        receiver: app.terminal.terminal_event_rx.clone(),
     };
     let terminal_sub = Subscription::run_with(terminal_events_data, terminal_events_stream);
 
@@ -419,7 +419,7 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
                 DropdownItem::new("Import Collection", MenuMessage::FileOpen),
                 DropdownItem::new("Import Git Folder...", MenuMessage::FileOpenGitFolder),
             ];
-            for (plugin_id, format) in app.plugin_manager.import_formats() {
+            for (plugin_id, format) in app.plugins.plugin_manager.import_formats() {
                 items.push(DropdownItem::new(
                     format!("Import via {}", format.title),
                     MenuMessage::ImportViaPlugin(plugin_id, format.id, format.extensions),
@@ -440,7 +440,7 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
                 "Manage Plugins...",
                 MenuMessage::OpenPluginManager,
             )];
-            for (plugin_id, item) in app.plugin_manager.menu_items() {
+            for (plugin_id, item) in app.plugins.plugin_manager.menu_items() {
                 items.push(DropdownItem::new(
                     item.label,
                     MenuMessage::Plugin(plugin_id, item.command_id),
@@ -471,8 +471,9 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
         .width(Length::Fill)
         .align_y(Alignment::Center);
     // only shown once at least one enabled plugin declares `RightPanel`
-    if let Some((plugin_id, panel)) = app.plugin_manager.right_panels().into_iter().next() {
+    if let Some((plugin_id, panel)) = app.plugins.plugin_manager.right_panels().into_iter().next() {
         let is_open = app
+            .plugins
             .right_panel_open
             .as_ref()
             .is_some_and(|(p, _)| *p == plugin_id);
@@ -500,26 +501,26 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
     );
     let workbench = ui::workspace::render_workbench(app);
 
-    let toast_layer = app.toast_manager.view(
+    let toast_layer = app.overlays.toast_manager.view(
         app.spinner_tick,
         Message::DismissToast,
         Message::ToastActionPressed,
     );
 
-    let console_bar = render_console_bar(&app.console_logs, app.console_collapsed);
+    let console_bar = render_console_bar(&app.layout.console_logs, app.layout.console_collapsed);
 
     let mut workbench_column = column![workbench, console_bar]
         .spacing(10)
         .width(Length::Fill)
         .height(Length::Fill);
 
-    if !app.console_collapsed {
+    if !app.layout.console_collapsed {
         let console_resize_handle = resize_handle(
             DividerOrientation::Horizontal,
             Message::ResizeDragStarted(ResizeKind::ConsolePanel),
         );
-        let console_content = container(render_console_panel(&app.console_logs))
-            .height(Length::Fixed(app.console_panel_height))
+        let console_content = container(render_console_panel(&app.layout.console_logs))
+            .height(Length::Fixed(app.layout.console_panel_height))
             .width(Length::Fill)
             .padding(10)
             .style(container::bordered_box);
@@ -534,7 +535,7 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
         .width(Length::Fill)
         .height(Length::Fill);
 
-    if let Some((plugin_id, panel_id)) = &app.right_panel_open {
+    if let Some((plugin_id, panel_id)) = &app.plugins.right_panel_open {
         let right_panel_resize_handle = resize_handle(
             DividerOrientation::Vertical,
             Message::ResizeDragStarted(ResizeKind::RightPanel),
@@ -542,9 +543,9 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
         let right_panel_content = container(ui::right_panel::render_right_panel(
             plugin_id,
             panel_id,
-            app.right_panel_tree.as_ref(),
+            app.plugins.right_panel_tree.as_ref(),
         ))
-        .width(Length::Fixed(app.right_panel_width))
+        .width(Length::Fixed(app.plugins.right_panel_width))
         .height(Length::Fill)
         .padding(10)
         .style(container::bordered_box);
@@ -588,7 +589,7 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
     }
 
     // commit-changes modal overlay
-    if let Some(commit_modal) = app.commit_modal.as_ref() {
+    if let Some(commit_modal) = app.git.commit_modal.as_ref() {
         let commit_overlay = container(view_commit_modal(commit_modal, app.spinner_tick))
             .width(Length::Fill)
             .height(Length::Fill)
@@ -598,7 +599,7 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
     }
 
     // response timing modal overlay
-    if let Some(timing_modal) = app.response_timing_modal.as_ref() {
+    if let Some(timing_modal) = app.overlays.response_timing_modal.as_ref() {
         let timing_overlay = container(view_response_timing_modal(timing_modal))
             .width(Length::Fill)
             .height(Length::Fill)
@@ -608,7 +609,7 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
     }
 
     // settings modal overlay
-    if app.settings_open {
+    if app.settings.settings_open {
         let settings_overlay = container(view_settings_modal(app))
             .width(Length::Fill)
             .height(Length::Fill)
@@ -628,7 +629,7 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
     }
 
     // remote development (SSH) configuration modal overlay
-    if app.remote_config_open {
+    if app.remote.remote_config_open {
         let remote_config_overlay = container(view_remote_config_modal(app))
             .width(Length::Fill)
             .height(Length::Fill)
@@ -638,7 +639,7 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
     }
 
     // remote-connect (password/passphrase) modal overlay
-    if let Some(pending) = app.remote_connect_pending.as_ref() {
+    if let Some(pending) = app.remote.remote_connect_pending.as_ref() {
         let remote_connect_overlay = container(view_remote_connect_modal(pending))
             .width(Length::Fill)
             .height(Length::Fill)
@@ -650,7 +651,7 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
     // generic confirm-dialog overlay - rendered last among the blocking
     // modals above so it's always on top, since any of them can trigger one
     // (e.g. plugin uninstall confirmation over the "Manage Plugins" modal).
-    if let Some(confirm_dialog) = app.confirm_dialog.as_ref() {
+    if let Some(confirm_dialog) = app.overlays.confirm_dialog.as_ref() {
         let confirm_overlay = container(view_confirm_dialog(confirm_dialog))
             .width(Length::Fill)
             .height(Length::Fill)
@@ -663,7 +664,7 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
     main_interface_stack = main_interface_stack.push(menu_strip);
 
     // dropdown menu overlay
-    if let Some(overlay) = render_menu_overlay(&app.menu_state, &menu_structure) {
+    if let Some(overlay) = render_menu_overlay(&app.overlays.menu_state, &menu_structure) {
         main_interface_stack = main_interface_stack.push(overlay.map(Message::MenuInteraction));
     }
 
@@ -673,7 +674,7 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
     }
 
     // command palette overlay (Ctrl+Shift+P)
-    if let Some(palette_state) = app.command_palette.as_ref() {
+    if let Some(palette_state) = app.overlays.command_palette.as_ref() {
         let palette_overlay = container(view_command_palette(app, palette_state))
             .width(Length::Fill)
             .height(Length::Fill)

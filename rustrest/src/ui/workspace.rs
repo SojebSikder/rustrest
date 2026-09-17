@@ -171,7 +171,7 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
         WorkspaceContent::HttpRequest => active_tab_state.tab.view(
             Message::ActiveTabMessage,
             Message::SendPressed,
-            app.request_pane_height,
+            app.layout.request_pane_height,
             Message::ResizeDragStarted(ResizeKind::RequestPane),
         ),
 
@@ -189,7 +189,7 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
         WorkspaceContent::Terminal {
             terminal_id,
             widget_id,
-        } => match app.terminal_manager.get(*terminal_id) {
+        } => match app.terminal.terminal_manager.get(*terminal_id) {
             Some(session) => {
                 super::terminal_view::TerminalView::show(session, *terminal_id, widget_id.clone())
             }
@@ -235,6 +235,7 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
             panel_id,
         } => {
             let tree = app
+                .plugins
                 .plugin_panel_state
                 .get(&(plugin_id.clone(), panel_id.clone()));
             super::plugin_panel::render_plugin_panel(plugin_id, panel_id, tree)

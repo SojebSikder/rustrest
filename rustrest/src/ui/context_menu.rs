@@ -107,26 +107,27 @@ where
 }
 
 /// renders the floating Copy/Paste (or CRUD, for sidebar items) dropdown, positioned
-/// at `app.context_menu_position`, if a context menu is currently open.
+/// at `app.overlays.context_menu_position`, if a context menu is currently open.
 pub fn render_context_menu_overlay<'a>(app: &Rustrest) -> Option<Element<'a, Message>> {
-    let context_menu = app.active_context_menu.as_ref()?;
+    let context_menu = app.overlays.active_context_menu.as_ref()?;
 
     // suppress the panel while the targeted item is mid-rename, since its
     // row is showing a text input instead of the label the menu anchors to
     let is_editing = match context_menu {
-        ContextMenu::Collection(id) => app.editing_collection_id == Some(*id),
+        ContextMenu::Collection(id) => app.sidebar.editing_collection_id == Some(*id),
         ContextMenu::Folder { col_id, path } => {
-            app.editing_folder_collection_id == Some(*col_id) && app.editing_folder_path == *path
+            app.sidebar.editing_folder_collection_id == Some(*col_id)
+                && app.sidebar.editing_folder_path == *path
         }
         ContextMenu::Request { col_id, req_id, .. } => {
-            app.editing_request_collection_id == Some(*col_id)
-                && app.editing_request_id == Some(*req_id)
+            app.sidebar.editing_request_collection_id == Some(*col_id)
+                && app.sidebar.editing_request_id == Some(*req_id)
         }
         ContextMenu::SavedResponse {
             col_id,
             req_id,
             index,
-        } => app.editing_saved_response == Some((*col_id, *req_id, *index)),
+        } => app.sidebar.editing_saved_response == Some((*col_id, *req_id, *index)),
         ContextMenu::GitActions(_) => false,
         ContextMenu::TextField { .. } => false,
         ContextMenu::MultiSelection(_) => false,
@@ -142,7 +143,7 @@ pub fn render_context_menu_overlay<'a>(app: &Rustrest) -> Option<Element<'a, Mes
             Message::ContextMenuAction(Box::new(Message::BatchDeleteSelectedPressed)),
         )];
         let dropdown = render_dropdown(options);
-        let pos = app.context_menu_position;
+        let pos = app.overlays.context_menu_position;
         return Some(
             column![
                 container(text("")).height(Length::Fixed(pos.y)),
@@ -193,7 +194,7 @@ pub fn render_context_menu_overlay<'a>(app: &Rustrest) -> Option<Element<'a, Mes
                 opts.push(("Commit changes...", Message::CommitChangesPressed(col_id)));
             }
             opts.push(("Export As...", Message::ExportCollectionPressed(col_id)));
-            if !app.plugin_manager.export_formats().is_empty() {
+            if !app.plugins.plugin_manager.export_formats().is_empty() {
                 opts.push((
                     "Export via Plugin...",
                     Message::ExportViaPluginPressed(col_id),
@@ -280,7 +281,7 @@ pub fn render_context_menu_overlay<'a>(app: &Rustrest) -> Option<Element<'a, Mes
         ],
         ContextMenu::GitActions(id) => {
             let col_id = *id;
-            match app.git_remote_op_running.get(&col_id).copied() {
+            match app.git.git_remote_op_running.get(&col_id).copied() {
                 Some(crate::collection::git_ops::GitRemoteOp::Fetch) => {
                     vec![("Fetching...", Message::GitStatusRequested(col_id))]
                 }
@@ -317,7 +318,7 @@ pub fn render_context_menu_overlay<'a>(app: &Rustrest) -> Option<Element<'a, Mes
         .collect();
 
     let dropdown = render_dropdown(options);
-    let pos = app.context_menu_position;
+    let pos = app.overlays.context_menu_position;
 
     // spacer trick: pad down/right to the captured cursor position so the
     // panel appears to float at the click site instead of shifting layout.

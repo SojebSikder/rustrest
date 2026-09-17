@@ -10,7 +10,7 @@ use iced::widget::{button, column, container, text};
 use iced::{Font, Length};
 
 pub fn view_export_plugin_picker(app: &Rustrest) -> Option<iced::Element<'_, Message>> {
-    let (col_id, formats) = app.export_plugin_picker.as_ref()?;
+    let (col_id, formats) = app.plugins.export_plugin_picker.as_ref()?;
 
     let title = text("Export via Plugin").size(18).font(Font {
         weight: iced::font::Weight::Bold,

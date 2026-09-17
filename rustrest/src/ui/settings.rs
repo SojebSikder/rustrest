@@ -71,7 +71,7 @@ pub fn view_settings_modal(app: &Rustrest) -> iced::Element<'_, Message> {
                 .on_press(Message::SettingsTabSelected(tab))
                 .width(Length::Fill)
                 .padding([8, 12])
-                .style(if app.settings_tab == tab {
+                .style(if app.settings.settings_tab == tab {
                     button::primary
                 } else {
                     button::text
@@ -79,7 +79,7 @@ pub fn view_settings_modal(app: &Rustrest) -> iced::Element<'_, Message> {
         );
     }
 
-    let tab_content = match app.settings_tab {
+    let tab_content = match app.settings.settings_tab {
         SettingsTab::Theme => view_theme_tab(app),
         SettingsTab::General => view_general_tab(app),
     };
@@ -110,7 +110,7 @@ fn view_theme_tab(app: &Rustrest) -> iced::Element<'_, Message> {
                 .on_press(Message::ThemeSelected(theme))
                 .width(Length::Fill)
                 .padding([8, 12])
-                .style(if app.theme == theme {
+                .style(if app.settings.theme == theme {
                     button::primary
                 } else {
                     button::secondary
@@ -133,7 +133,7 @@ fn view_general_tab(app: &Rustrest) -> iced::Element<'_, Message> {
         text("General").size(12).style(|theme: &Theme| text::Style {
             color: Some(muted_text_color(theme)),
         }),
-        checkbox(app.close_on_outside_click)
+        checkbox(app.settings.close_on_outside_click)
             .label("Close windows by clicking outside")
             .on_toggle(Message::CloseOnOutsideClickToggled),
     ]

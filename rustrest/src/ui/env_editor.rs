@@ -7,11 +7,11 @@ use iced::widget::{button, checkbox, column, row, scrollable, text, text_input};
 use iced::{Alignment, Element, Length};
 
 pub fn render_env_editor(app: &Rustrest) -> Option<Element<'_, Message>> {
-    let env_idx = app.editing_env_index?;
-    let env = app.environments.get(env_idx)?;
+    let env_idx = app.env.editing_env_index?;
+    let env = app.env.environments.get(env_idx)?;
 
     // header with editable name, rename toggle, and close button
-    let name_display: Element<Message> = if app.editing_env_name {
+    let name_display: Element<Message> = if app.env.editing_env_name {
         with_context_menu(
             text_input("Environment name...", &env.name)
                 .on_input(move |name| Message::EnvNameChanged(env_idx, name))
@@ -28,7 +28,7 @@ pub fn render_env_editor(app: &Rustrest) -> Option<Element<'_, Message>> {
             .into()
     };
 
-    let rename_btn: Element<Message> = if app.editing_env_name {
+    let rename_btn: Element<Message> = if app.env.editing_env_name {
         button(text("✓").size(12))
             .on_press(Message::SaveEnvNamePressed(env_idx))
             .style(button::primary)
@@ -87,7 +87,7 @@ pub fn render_env_editor(app: &Rustrest) -> Option<Element<'_, Message>> {
             ),
         );
 
-        let value_input: Element<Message> = match app.env_var_value_contents.get(var_idx) {
+        let value_input: Element<Message> = match app.env.env_var_value_contents.get(var_idx) {
             Some(value_content) => multiline_input(
                 "Value...",
                 value_content,

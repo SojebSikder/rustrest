@@ -13,7 +13,7 @@ use iced::widget::{
 use iced::{Alignment, Element, Font, Length};
 
 fn sidebar_click_message(app: &Rustrest, key: SidebarItemKey, default: Message) -> Message {
-    let modifiers = app.current_modifiers;
+    let modifiers = app.sidebar.current_modifiers;
     if modifiers.shift() {
         Message::SidebarItemRangeSelect(key)
     } else if modifiers.command() {
@@ -52,7 +52,7 @@ pub fn flatten_visible_sidebar_items(app: &Rustrest) -> Vec<SidebarItemKey> {
     let mut out = Vec::new();
     for col in &app.collections {
         out.push(SidebarItemKey::Collection(col.id));
-        if app.collapsed_collections.contains(&col.id) {
+        if app.sidebar.collapsed_collections.contains(&col.id) {
             continue;
         }
         let mut path = Vec::new();
@@ -78,6 +78,7 @@ fn flatten_sidebar_item(
                 path: current_path.clone(),
             });
             let is_collapsed = app
+                .sidebar
                 .collapsed_folders
                 .contains(&(collection_id, current_path.clone()));
             if !is_collapsed {
@@ -109,8 +110,8 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
     } else {
         for col in &app.collections {
             let col_id = col.id;
-            let is_editing_col = app.editing_collection_id == Some(col_id);
-            let is_collapsed_col = app.collapsed_collections.contains(&col_id);
+            let is_editing_col = app.sidebar.editing_collection_id == Some(col_id);
+            let is_collapsed_col = app.sidebar.collapsed_collections.contains(&col_id);
 
             let collection_header_title: Element<'_, Message> = if is_editing_col {
                 row![
@@ -135,7 +136,7 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
             } else {
                 let remote_profile_id = col.remote_dir.as_ref().map(|r| r.profile_id);
                 let is_online = remote_profile_id
-                    .map(|id| app.remote_sessions.contains_key(&id))
+                    .map(|id| app.remote.remote_sessions.contains_key(&id))
                     .unwrap_or(true);
 
                 let collapse_arrow =
@@ -169,6 +170,7 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
 
                 if col.storage_dir.is_some() {
                     let has_changes = app
+                        .git
                         .git_status_cache
                         .get(&col_id)
                         .map(|r| matches!(r, Ok(s) if !s.files.is_empty()))
@@ -198,7 +200,7 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
                 }
 
                 let collection_key = SidebarItemKey::Collection(col_id);
-                let is_row_selected = app.selected_sidebar_items.contains(&collection_key);
+                let is_row_selected = app.sidebar.selected_sidebar_items.contains(&collection_key);
 
                 mouse_area(
                     container(header_row)
@@ -231,7 +233,7 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
     sidebar_contents = sidebar_contents.push(render_plugins_section(app));
 
     container(scrollable(sidebar_contents))
-        .width(Length::Fixed(app.sidebar_width))
+        .width(Length::Fixed(app.layout.sidebar_width))
         .height(Length::Fill)
         .padding(10)
         .style(container::bordered_box)
@@ -252,7 +254,7 @@ fn render_plugins_section(app: &Rustrest) -> Element<'_, Message> {
     ]
     .spacing(4);
 
-    for plugin in app.plugin_manager.installed() {
+    for plugin in app.plugins.plugin_manager.installed() {
         if !plugin.is_active() {
             continue;
         }
@@ -278,10 +280,16 @@ fn render_plugins_section(app: &Rustrest) -> Element<'_, Message> {
 }
 
 pub fn render_env_selector(app: &Rustrest) -> Element<'_, Message> {
-    let env_options: Vec<String> = app.environments.iter().map(|e| e.name.clone()).collect();
+    let env_options: Vec<String> = app
+        .env
+        .environments
+        .iter()
+        .map(|e| e.name.clone())
+        .collect();
     let current_env_selection = app
+        .env
         .active_env_index
-        .and_then(|idx| app.environments.get(idx))
+        .and_then(|idx| app.env.environments.get(idx))
         .map(|e| e.name.clone());
 
     // build environment selector row with controls
@@ -301,7 +309,7 @@ pub fn render_env_selector(app: &Rustrest) -> Element<'_, Message> {
     .align_y(Alignment::Center);
 
     // show Edit and Delete buttons if an active environment is selected
-    if let Some(active_idx) = app.active_env_index {
+    if let Some(active_idx) = app.env.active_env_index {
         env_row = env_row
             .push(
                 button(text("⚙️").size(12))
@@ -328,14 +336,15 @@ pub fn render_env_selector(app: &Rustrest) -> Element<'_, Message> {
 }
 
 pub fn render_workspace_selector(app: &Rustrest) -> Element<'_, Message> {
-    let active_id = app.active_workspace_id;
+    let active_id = app.workspace.active_workspace_id;
     let active_name = app
+        .workspace
         .workspaces
         .iter()
         .find(|w| w.id == active_id)
         .map(|w| w.name.clone());
 
-    let is_editing = app.editing_workspace_id == Some(active_id);
+    let is_editing = app.workspace.editing_workspace_id == Some(active_id);
 
     let content: Element<'_, Message> = if is_editing {
         let current_name = active_name.clone().unwrap_or_default();
@@ -359,8 +368,12 @@ pub fn render_workspace_selector(app: &Rustrest) -> Element<'_, Message> {
         .align_y(Alignment::Center)
         .into()
     } else {
-        let workspace_options: Vec<String> =
-            app.workspaces.iter().map(|w| w.name.clone()).collect();
+        let workspace_options: Vec<String> = app
+            .workspace
+            .workspaces
+            .iter()
+            .map(|w| w.name.clone())
+            .collect();
 
         let mut ws_row = row![
             pick_list(workspace_options, active_name, |selected| {
@@ -380,7 +393,7 @@ pub fn render_workspace_selector(app: &Rustrest) -> Element<'_, Message> {
         .spacing(6)
         .align_y(Alignment::Center);
 
-        if app.workspaces.len() > 1 {
+        if app.workspace.workspaces.len() > 1 {
             ws_row = ws_row.push(
                 button(text("✕").size(12))
                     .on_press(Message::DeleteWorkspacePressed(active_id))
@@ -420,9 +433,10 @@ fn render_sidebar_item<'a>(
             let path_for_drag = current_path.clone();
             let path_for_drop = current_path.clone();
 
-            let is_editing_folder = app.editing_folder_collection_id == Some(collection_id)
-                && app.editing_folder_path == current_path;
+            let is_editing_folder = app.sidebar.editing_folder_collection_id == Some(collection_id)
+                && app.sidebar.editing_folder_path == current_path;
             let is_collapsed = app
+                .sidebar
                 .collapsed_folders
                 .contains(&(collection_id, current_path.clone()));
 
@@ -481,7 +495,7 @@ fn render_sidebar_item<'a>(
                     collection_id,
                     path: current_path.clone(),
                 };
-                let is_row_selected = app.selected_sidebar_items.contains(&folder_key);
+                let is_row_selected = app.sidebar.selected_sidebar_items.contains(&folder_key);
 
                 mouse_area(
                     container(title_row)
@@ -534,14 +548,15 @@ fn render_sidebar_item<'a>(
             let path_for_drop = current_path.clone();
             let req_id = req_node.id;
 
-            let is_editing_request = app.editing_request_collection_id == Some(collection_id)
-                && app.editing_request_id == Some(req_id);
+            let is_editing_request = app.sidebar.editing_request_collection_id
+                == Some(collection_id)
+                && app.sidebar.editing_request_id == Some(req_id);
             let has_saved_responses = req_node
                 .response
                 .as_ref()
                 .map(|examples| !examples.is_empty())
                 .unwrap_or(false);
-            let is_responses_collapsed = app.collapsed_saved_responses.contains(&req_id);
+            let is_responses_collapsed = app.sidebar.collapsed_saved_responses.contains(&req_id);
 
             let request_title: Element<'_, Message> = if is_editing_request {
                 row![
@@ -596,7 +611,7 @@ fn render_sidebar_item<'a>(
                     parent_path: current_path.clone(),
                     request_id: req_id,
                 };
-                let is_row_selected = app.selected_sidebar_items.contains(&request_key);
+                let is_row_selected = app.sidebar.selected_sidebar_items.contains(&request_key);
 
                 mouse_area(
                     container(label_row)
@@ -660,7 +675,7 @@ fn render_saved_response_row<'a>(
     example: &'a PostmanResponseExample,
 ) -> Element<'a, Message> {
     let request_id = req_node.id;
-    let is_editing = app.editing_saved_response == Some((collection_id, request_id, index));
+    let is_editing = app.sidebar.editing_saved_response == Some((collection_id, request_id, index));
 
     if is_editing {
         row![

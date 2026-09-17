@@ -89,25 +89,25 @@ fn view_tab_button(
 
 pub fn render_plugin_manager_tab(app: &Rustrest) -> Element<'_, Message> {
     let title = text("Manage Plugins").size(28);
-    let is_busy = app.plugin_manager_busy.is_some();
+    let is_busy = app.plugins.plugin_manager_busy.is_some();
 
     let view_tabs = row![
         view_tab_button(
             "Installed",
-            app.plugin_manager_view == PluginManagerView::Installed,
+            app.plugins.plugin_manager_view == PluginManagerView::Installed,
             Message::ShowPluginManagerView(PluginManagerView::Installed),
         ),
         view_tab_button(
             "Browse",
-            app.plugin_manager_view == PluginManagerView::Browse,
+            app.plugins.plugin_manager_view == PluginManagerView::Browse,
             Message::ShowPluginManagerView(PluginManagerView::Browse),
         ),
     ]
     .spacing(6);
 
-    let trailing_control: Element<'_, Message> = match app.plugin_manager_view {
+    let trailing_control: Element<'_, Message> = match app.plugins.plugin_manager_view {
         PluginManagerView::Installed => {
-            if app.plugin_manager_busy == Some(PluginManagerAction::Installing) {
+            if app.plugins.plugin_manager_busy == Some(PluginManagerAction::Installing) {
                 spinner_with_label(app.spinner_tick, "Installing...")
             } else {
                 button(text("Install Plugin Folder...").size(13))
@@ -118,7 +118,7 @@ pub fn render_plugin_manager_tab(app: &Rustrest) -> Element<'_, Message> {
             }
         }
         PluginManagerView::Browse => {
-            if app.plugin_manager_busy == Some(PluginManagerAction::FetchingGallery) {
+            if app.plugins.plugin_manager_busy == Some(PluginManagerAction::FetchingGallery) {
                 spinner_with_label(app.spinner_tick, "Fetching...")
             } else {
                 button(text("Refresh").size(13))
@@ -139,13 +139,13 @@ pub fn render_plugin_manager_tab(app: &Rustrest) -> Element<'_, Message> {
     ]
     .align_y(Alignment::Center);
 
-    let search_placeholder = match app.plugin_manager_view {
+    let search_placeholder = match app.plugins.plugin_manager_view {
         PluginManagerView::Installed => "Search installed plugins...",
         PluginManagerView::Browse => "Search gallery...",
     };
-    let search = search_bar(&app.plugin_manager_search, search_placeholder);
+    let search = search_bar(&app.plugins.plugin_manager_search, search_placeholder);
 
-    let body = match app.plugin_manager_view {
+    let body = match app.plugins.plugin_manager_view {
         PluginManagerView::Installed => render_installed_list(app, is_busy),
         PluginManagerView::Browse => render_gallery_list(app, is_busy),
     };
@@ -159,14 +159,14 @@ pub fn render_plugin_manager_tab(app: &Rustrest) -> Element<'_, Message> {
 }
 
 fn render_installed_list(app: &Rustrest, is_busy: bool) -> Element<'_, Message> {
-    let installed = app.plugin_manager.installed();
+    let installed = app.plugins.plugin_manager.installed();
     let mut list = column![].spacing(10);
 
     if installed.is_empty() {
         list = list.push(
             text(format!(
                 "No plugins found in {}",
-                app.plugin_manager.plugins_dir().display()
+                app.plugins.plugin_manager.plugins_dir().display()
             ))
             .size(12)
             .style(|theme: &Theme| text::Style {
@@ -178,7 +178,7 @@ fn render_installed_list(app: &Rustrest, is_busy: bool) -> Element<'_, Message> 
 
     let matches = search_matches(
         installed,
-        &app.plugin_manager_search,
+        &app.plugins.plugin_manager_search,
         |p| match &p.manifest {
             Some(m) => format!("{} {} {}", m.name, m.author, m.description),
             None => p.dir_name.clone(),
@@ -199,7 +199,7 @@ fn render_installed_list(app: &Rustrest, is_busy: bool) -> Element<'_, Message> 
     for &idx in &matches {
         let plugin = &installed[idx];
         let id = plugin.id().to_string();
-        let uninstall_control: Element<'_, Message> = if app.plugin_manager_busy
+        let uninstall_control: Element<'_, Message> = if app.plugins.plugin_manager_busy
             == Some(PluginManagerAction::Uninstalling(id.clone()))
         {
             spinner_with_label(app.spinner_tick, "Uninstalling...")
@@ -297,7 +297,7 @@ fn render_installed_list(app: &Rustrest, is_busy: bool) -> Element<'_, Message> 
 fn render_gallery_list(app: &Rustrest, is_busy: bool) -> Element<'_, Message> {
     let mut list = column![].spacing(10);
 
-    match &app.plugin_gallery_entries {
+    match &app.plugins.plugin_gallery_entries {
         None => {
             list = list.push(
                 text("Press Refresh to browse available plugins.")
@@ -327,6 +327,7 @@ fn render_gallery_list(app: &Rustrest, is_busy: bool) -> Element<'_, Message> {
         }
         Some(Ok(entries)) => {
             let already_installed: std::collections::HashSet<&str> = app
+                .plugins
                 .plugin_manager
                 .installed()
                 .iter()
@@ -335,7 +336,7 @@ fn render_gallery_list(app: &Rustrest, is_busy: bool) -> Element<'_, Message> {
 
             let matches = search_matches(
                 entries,
-                &app.plugin_manager_search,
+                &app.plugins.plugin_manager_search,
                 |e| format!("{} {} {}", e.name, e.author, e.description),
                 |e| e.id.clone(),
             );
@@ -371,7 +372,7 @@ fn render_gallery_entry<'a>(
 ) -> Element<'a, Message> {
     let is_installed = already_installed.contains(entry.id.as_str());
 
-    let action_control: Element<'_, Message> = if app.plugin_manager_busy
+    let action_control: Element<'_, Message> = if app.plugins.plugin_manager_busy
         == Some(PluginManagerAction::InstallingFromGallery(entry.id.clone()))
     {
         spinner_with_label(app.spinner_tick, "Installing...")

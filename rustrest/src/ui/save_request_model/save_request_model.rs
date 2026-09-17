@@ -5,7 +5,7 @@ use iced::widget::{button, column, container, pick_list, row, text, text_input};
 use iced::{Element, Font, Length, Theme};
 
 pub fn view_save_request_modal(app: &Rustrest) -> Option<Element<'_, Message>> {
-    let modal = app.save_request_model.as_ref()?;
+    let modal = app.workbench.save_request_model.as_ref()?;
 
     let collection_options: Vec<String> = app
         .collections
