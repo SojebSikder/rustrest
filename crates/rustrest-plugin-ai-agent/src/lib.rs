@@ -7,7 +7,6 @@ use rustrest_plugin_api::{
     UiEvent, UiNode,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 const CONFIG_FILE: &str = "config.json";
 
@@ -52,14 +51,6 @@ struct ChatMessage {
     text: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Intent {
-    Chat,
-    ExplainResponse,
-    EditRequest,
-    GenerateTests,
-}
-
 #[derive(Default)]
 struct AiAgentPlugin {
     config: AgentConfig,
@@ -71,7 +62,9 @@ struct AiAgentPlugin {
     draft_base_url: String,
     messages: Vec<ChatMessage>,
     draft_input: String,
-    pending: HashMap<u32, Intent>,
+    /// the outbound request's handle, while one is in flight - at most one
+    /// at a time, since there's a single Send action to start one.
+    pending: Option<u32>,
     busy: bool,
     /// a patch discovered while handling an `on_http_response` (which has no
     /// return value the host acts on) - flushed on the next
@@ -117,11 +110,8 @@ impl AiAgentPlugin {
     fn render_settings(&self) -> UiNode {
         let provider_button = |id: &str, label: &str| UiNode::Button {
             id: format!("provider-{id}"),
-            label: if self.draft_provider == id {
-                format!("> {label}")
-            } else {
-                label.to_string()
-            },
+            label: label.to_string(),
+            primary: self.draft_provider == id,
         };
 
         UiNode::Column(vec![
@@ -146,7 +136,7 @@ impl AiAgentPlugin {
                 value: self.draft_base_url.clone(),
                 placeholder: "https:// base URL".to_string(),
             },
-            UiNode::Label(
+            UiNode::Muted(
                 "Requests must go to an https:// endpoint (a local Ollama server \
                  needs an https-terminating proxy/tunnel in front of it)."
                     .to_string(),
@@ -155,10 +145,12 @@ impl AiAgentPlugin {
                 UiNode::Button {
                     id: "save-settings".to_string(),
                     label: "Save".to_string(),
+                    primary: true,
                 },
                 UiNode::Button {
                     id: "cancel-settings".to_string(),
                     label: "Cancel".to_string(),
+                    primary: false,
                 },
             ]),
         ])
@@ -166,29 +158,50 @@ impl AiAgentPlugin {
 
     fn render_chat(&self, ctx: &RightPanelContext) -> UiNode {
         let mut children = vec![UiNode::Row(vec![
-            UiNode::Label(format!("Provider: {}", self.config.provider)),
+            UiNode::Muted(format!("Provider: {}", self.config.provider)),
+            UiNode::Spacer,
             UiNode::Button {
                 id: "toggle-settings".to_string(),
-                label: "Settings".to_string(),
+                label: "\u{2699}".to_string(), // gear icon
+                primary: false,
             },
         ])];
 
-        if let Some(req) = &ctx.active_request {
-            children.push(UiNode::Label(format!("Active: {} {}", req.method, req.url)));
-        }
-        if let Some(resp) = &ctx.active_response {
-            children.push(UiNode::Label(format!("Last response: {}", resp.status)));
+        match (&ctx.active_request, &ctx.active_response) {
+            (None, _) => children.push(UiNode::Muted(
+                "No active request - open one for context.".to_string(),
+            )),
+            (Some(req), resp) => {
+                let mut summary = format!("{} {}", req.method, req.url);
+                if let Some(resp) = resp {
+                    summary.push_str(&format!(" \u{2192} {}", resp.status));
+                }
+                children.push(UiNode::Muted(summary));
+            }
         }
 
-        children.push(UiNode::Column(
-            self.messages
-                .iter()
-                .map(|m| UiNode::Label(format!("{}: {}", m.role, m.text)))
-                .collect(),
-        ));
+        if self.messages.is_empty() {
+            children.push(UiNode::Muted(
+                "Ask a question, or tell me what to change - e.g. \"explain this response\" \
+                 or \"add an Authorization header\"."
+                    .to_string(),
+            ));
+        } else {
+            children.push(UiNode::Column(
+                self.messages
+                    .iter()
+                    .map(|m| {
+                        UiNode::Column(vec![
+                            UiNode::Muted(m.role.clone()),
+                            UiNode::Label(m.text.clone()),
+                        ])
+                    })
+                    .collect(),
+            ));
+        }
 
         if self.busy {
-            children.push(UiNode::Label("Thinking...".to_string()));
+            children.push(UiNode::Muted("Thinking...".to_string()));
         }
 
         children.push(UiNode::Row(vec![
@@ -200,27 +213,17 @@ impl AiAgentPlugin {
             UiNode::Button {
                 id: "send".to_string(),
                 label: "Send".to_string(),
-            },
-        ]));
-        children.push(UiNode::Row(vec![
-            UiNode::Button {
-                id: "explain-response".to_string(),
-                label: "Explain response".to_string(),
-            },
-            UiNode::Button {
-                id: "generate-tests".to_string(),
-                label: "Generate tests".to_string(),
-            },
-            UiNode::Button {
-                id: "edit-request".to_string(),
-                label: "Edit request".to_string(),
+                primary: true,
             },
         ]));
 
         UiNode::Column(children)
     }
 
-    fn start_request(&mut self, intent: Intent, instruction: String, ctx: &RightPanelContext) {
+    fn start_request(&mut self, instruction: String, ctx: &RightPanelContext) {
+        if self.busy || instruction.trim().is_empty() {
+            return;
+        }
         if self.config.api_key.is_empty() && self.config.provider != "ollama" {
             self.messages.push(ChatMessage {
                 role: "Error".to_string(),
@@ -228,11 +231,8 @@ impl AiAgentPlugin {
             });
             return;
         }
-        if instruction.trim().is_empty() {
-            return;
-        }
 
-        let system_prompt = build_system_prompt(intent, ctx);
+        let system_prompt = build_system_prompt(ctx);
         let spec = match build_request_spec(&self.config, &system_prompt, &instruction) {
             Ok(spec) => spec,
             Err(e) => {
@@ -246,7 +246,7 @@ impl AiAgentPlugin {
 
         match rustrest_plugin_api::http_request(spec) {
             Ok(handle) => {
-                self.pending.insert(handle, intent);
+                self.pending = Some(handle);
                 self.busy = true;
                 self.messages.push(ChatMessage {
                     role: "You".to_string(),
@@ -311,27 +311,7 @@ impl Plugin for AiAgentPlugin {
                         }
                         "send" => {
                             let instruction = self.draft_input.clone();
-                            self.start_request(Intent::Chat, instruction, &ctx);
-                        }
-                        "edit-request" => {
-                            let instruction = self.draft_input.clone();
-                            self.start_request(Intent::EditRequest, instruction, &ctx);
-                        }
-                        "generate-tests" => {
-                            self.start_request(
-                                Intent::GenerateTests,
-                                "Write a post-response test script for this request/response."
-                                    .to_string(),
-                                &ctx,
-                            );
-                        }
-                        "explain-response" => {
-                            self.start_request(
-                                Intent::ExplainResponse,
-                                "Explain this response, including any errors, in plain language."
-                                    .to_string(),
-                                &ctx,
-                            );
+                            self.start_request(instruction, &ctx);
                         }
                         _ => return RightPanelAction::None,
                     }
@@ -351,9 +331,10 @@ impl Plugin for AiAgentPlugin {
     }
 
     fn on_http_response(&mut self, handle: u32, result: Result<HttpResponseData, String>) {
-        let Some(intent) = self.pending.remove(&handle) else {
+        if self.pending != Some(handle) {
             return;
-        };
+        }
+        self.pending = None;
         self.busy = false;
 
         match result {
@@ -363,9 +344,10 @@ impl Plugin for AiAgentPlugin {
             }),
             Ok(data) => match parse_provider_reply(&self.config.provider, &data.body) {
                 Ok(text) => {
-                    if matches!(intent, Intent::EditRequest | Intent::GenerateTests)
-                        && let Some(patch) = extract_patch(&text)
-                    {
+                    // the model decides for itself, per the system prompt,
+                    // whether a reply warrants a patch - so every reply is
+                    // checked, regardless of what was asked.
+                    if let Some(patch) = extract_patch(&text) {
                         self.pending_patch = Some(patch);
                     }
                     self.messages.push(ChatMessage {
@@ -375,17 +357,22 @@ impl Plugin for AiAgentPlugin {
                 }
                 Err(e) => self.messages.push(ChatMessage {
                     role: "Error".to_string(),
-                    text: format!("couldn't parse provider response (HTTP {}): {e}", data.status),
+                    text: format!(
+                        "couldn't parse provider response (HTTP {}): {e}",
+                        data.status
+                    ),
                 }),
             },
         }
     }
 }
 
-fn build_system_prompt(intent: Intent, ctx: &RightPanelContext) -> String {
+fn build_system_prompt(ctx: &RightPanelContext) -> String {
     let mut prompt = String::from(
-        "You are an AI assistant embedded in Rustrest, a REST API client. \
-         You help the user with the request/response currently open in their active tab.",
+        "You are an AI assistant embedded in Rustrest, a REST API client, docked next to \
+         whatever request the user has open. You can: answer questions, explain responses \
+         and errors in plain language, edit the active request, and write post-response test \
+         scripts. Decide what's needed from the user's message - don't ask them to pick a mode.",
     );
 
     if let Some(req) = &ctx.active_request {
@@ -401,29 +388,16 @@ fn build_system_prompt(intent: Intent, ctx: &RightPanelContext) -> String {
         ));
     }
 
-    match intent {
-        Intent::Chat | Intent::ExplainResponse => {
-            prompt.push_str("\n\nAnswer in plain, concise language.");
-        }
-        Intent::EditRequest => {
-            prompt.push_str(
-                "\n\nThe user wants you to edit the active request. After a short explanation, \
-                 append a fenced ```json code block containing ONLY the fields that should \
-                 change, matching this shape: \
-                 {\"method\":string|null,\"url\":string|null,\"headers\":[[string,string]]|null,\"body\":string|null}. \
-                 Omit fields you don't want to change (or set them to null).",
-            );
-        }
-        Intent::GenerateTests => {
-            prompt.push_str(
-                "\n\nThe user wants a post-response test script (JavaScript, using the pm.* \
-                 scripting API this app exposes, e.g. pm.test(name, fn), pm.expect(...), \
-                 pm.response.status/json()). After a short explanation, append a fenced ```json \
-                 code block of the shape {\"post_response_script\": string} containing the \
-                 script as a single string.",
-            );
-        }
-    }
+    prompt.push_str(
+        "\n\nAnswer in plain, concise language. If, and only if, the user's message asks you to \
+         change the active request or add/replace its post-response test script, follow your \
+         explanation with exactly one fenced ```json code block containing ONLY the fields that \
+         should change, matching this shape: {\"method\":string|null,\"url\":string|null,\
+         \"headers\":[[string,string]]|null,\"body\":string|null,\"post_response_script\":string|null}. \
+         Omit fields you don't want to change (or set them to null). The test script, if any, is \
+         JavaScript using the pm.* scripting API this app exposes (pm.test(name, fn), \
+         pm.expect(...), pm.response.status/json()). Otherwise, don't include a code block at all.",
+    );
 
     prompt
 }
@@ -514,9 +488,7 @@ fn parse_provider_reply(provider: &str, body: &[u8]) -> Result<String, String> {
             .pointer("/choices/0/message/content")
             .and_then(|v| v.as_str()),
         "ollama" => value.pointer("/message/content").and_then(|v| v.as_str()),
-        _ => value
-            .pointer("/content/0/text")
-            .and_then(|v| v.as_str()),
+        _ => value.pointer("/content/0/text").and_then(|v| v.as_str()),
     };
 
     text.map(str::to_string)

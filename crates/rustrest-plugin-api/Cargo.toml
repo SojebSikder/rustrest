@@ -1,6 +1,6 @@
 [package]
 name = "rustrest-plugin-api"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 description = "SDK for writing native Rustrest plugins (compiled to wasm32-unknown-unknown)"
 license = "MIT"

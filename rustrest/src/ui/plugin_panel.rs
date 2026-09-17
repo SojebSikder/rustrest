@@ -1,8 +1,8 @@
 //! Renders a plugin's declarative `UiNode` tree
 
 use crate::message::Message;
-use iced::Element;
-use iced::widget::{button, checkbox, column, row, scrollable, text, text_input};
+use iced::widget::{Space, button, checkbox, column, row, scrollable, text, text_input};
+use iced::{Element, Length};
 use rustrest_plugin_host::{UiEvent, UiNode};
 
 pub fn render_plugin_panel<'a>(
@@ -17,8 +17,8 @@ pub fn render_plugin_panel<'a>(
             node,
             Message::PluginPanelEvent,
         ))
-        .width(iced::Length::Fill)
-        .height(iced::Length::Fill)
+        .width(Length::Fill)
+        .height(Length::Fill)
         .into(),
         None => text("(plugin panel unavailable)").into(),
     }
@@ -37,7 +37,15 @@ pub(crate) fn render_node<'a>(
     match node {
         UiNode::Label(label) => text(label.clone()).into(),
 
-        UiNode::Button { id, label } => button(text(label.clone()))
+        UiNode::Muted(label) => text(label.clone()).size(11).style(text::secondary).into(),
+
+        UiNode::Button { id, label, primary } => button(text(label.clone()))
+            .padding([6, 12])
+            .style(if *primary {
+                button::primary
+            } else {
+                button::secondary
+            })
             .on_press(to_message(
                 plugin_id,
                 panel_id,
@@ -52,6 +60,7 @@ pub(crate) fn render_node<'a>(
         } => {
             let id = id.clone();
             text_input(placeholder, value)
+                .padding(8)
                 .on_input(move |new_value| {
                     to_message(
                         plugin_id.clone(),
@@ -99,5 +108,7 @@ pub(crate) fn render_node<'a>(
             }
             c.into()
         }
+
+        UiNode::Spacer => Space::new().width(Length::Fill).height(Length::Fill).into(),
     }
 }

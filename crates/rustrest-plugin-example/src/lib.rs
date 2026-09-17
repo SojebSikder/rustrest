@@ -36,7 +36,10 @@ fn echo_program() -> (String, Vec<String>) {
     if rustrest_plugin_api::process::which("cat").is_some() {
         ("cat".to_string(), Vec::new())
     } else {
-        ("findstr".to_string(), vec!["/R".to_string(), "^".to_string()])
+        (
+            "findstr".to_string(),
+            vec!["/R".to_string(), "^".to_string()],
+        )
     }
 }
 
@@ -65,6 +68,7 @@ impl Plugin for ExamplePlugin {
             UiNode::Button {
                 id: "clicked".to_string(),
                 label: "Click me".to_string(),
+                primary: false,
             },
         ];
 
@@ -78,10 +82,12 @@ impl Plugin for ExamplePlugin {
                 UiNode::Button {
                     id: "send".to_string(),
                     label: "Send".to_string(),
+                    primary: true,
                 },
                 UiNode::Button {
                     id: "kill".to_string(),
                     label: "Stop process".to_string(),
+                    primary: false,
                 },
             ]));
             children.push(UiNode::List(self.output_log.clone()));
@@ -89,6 +95,7 @@ impl Plugin for ExamplePlugin {
             children.push(UiNode::Button {
                 id: "spawn".to_string(),
                 label: "Spawn echo process".to_string(),
+                primary: true,
             });
         }
 
@@ -183,10 +190,14 @@ impl ExamplePlugin {
     fn render_right_panel_tree(&self, ctx: &RightPanelContext) -> UiNode {
         let mut children = vec![
             UiNode::Label("Example right panel".to_string()),
-            UiNode::Label(format!("Button clicked {} time(s)", self.right_panel_clicks)),
+            UiNode::Label(format!(
+                "Button clicked {} time(s)",
+                self.right_panel_clicks
+            )),
             UiNode::Button {
                 id: "right-panel-clicked".to_string(),
                 label: "Click me".to_string(),
+                primary: true,
             },
         ];
 
