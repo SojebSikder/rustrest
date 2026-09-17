@@ -2,7 +2,7 @@
 
 Rustrest plugins are small [WebAssembly](https://webassembly.org/) modules, sandboxed with [`wasmtime`](https://wasmtime.dev/). A plugin is a directory with a `plugin.toml` manifest plus a compiled `plugin.wasm`.
 
-This guide covers basic fundamendal of Rustrest plugin development.
+This guide covers the fundamentals of Rustrest plugin development.
 
 ## Contents
 
@@ -13,6 +13,10 @@ This guide covers basic fundamendal of Rustrest plugin development.
 - [The `Plugin` trait](#the-plugin-trait)
 - [Sidebar panel UI](#sidebar-panel-ui)
 - [Right panel (ambient-context) capability](#right-panel-ambient-context-capability)
+- [Opening your right panel from a command](#opening-your-right-panel-from-a-command)
+- [Collection/environment context and proposing tree operations](#collectionenvironment-context-and-proposing-tree-operations)
+- [Streaming HTTP responses](#streaming-http-responses)
+- [Picking files from disk](#picking-files-from-disk)
 - [The `ExternalProcess` capability](#the-externalprocess-capability)
 - [Logging and debugging](#logging-and-debugging)
 - [Publishing to the plugin gallery](#publishing-to-the-plugin-gallery)
@@ -67,7 +71,7 @@ Three real plugins ship in this repo as references:
 
 - [`crates/rustrest-plugin-example`](../crates/rustrest-plugin-example) - a template touching every capability, including spawning a persistent external process.
 - [`crates/rustrest-plugin-insomnia`](../crates/rustrest-plugin-insomnia) - a real import/export plugin for Insomnia v4/v5 collections.
-- [`crates/rustrest-plugin-ai-agent`](../crates/rustrest-plugin-ai-agent) - an AI agent docked in the right panel: chat about the active request/response, generate a test script, or edit the request from natural language, backed by a user-configured Anthropic/OpenAI/Ollama-compatible endpoint. The full reference for the `right_panel`/outbound-HTTP/storage capabilities it uses.
+- [`crates/rustrest-plugin-ai-agent`](../crates/rustrest-plugin-ai-agent) - an AI agent docked in the right panel: chat about the active request/response, generate a test script, edit the request or the collection tree from natural language, and pull in selected collections/environments/files as extra context - backed by a user-configured Anthropic/OpenAI/Ollama-compatible endpoint. The full reference for the `right_panel` capability, streamed responses, proposing collection-tree operations, the file picker, and outbound-HTTP/storage in general.
 
 All three are deliberately excluded from the root Cargo workspace (see their own `Cargo.toml`/`.cargo/config.toml`) so a normal `cargo build` of Rustrest itself doesn't require the `wasm32-unknown-unknown` target.
 
@@ -200,6 +204,9 @@ external_process = true     # unlock which/download_file/run_command/Process (se
 id = "say-hello"
 title = "Example: Say Hello"
 subtitle = "from the example plugin"   # optional
+# a command id shaped `open-right-panel:<panel_id>` is a reserved
+# convention the host handles directly, without reaching `on_command` -
+# see "Opening your right panel from a command" below.
 
 [[capabilities.menu_items]] # appended to a top menu-bar group (created if it doesn't exist)
 group = "File"
@@ -247,6 +254,8 @@ Every table under `[capabilities]` is optional - only declare what you use. The 
 | `render_right_panel(panel_id, ctx) -> RightPanelAction`          | `right_panel`           | Render (or re-render) the right panel; `ctx` is the active request/response.   |
 | `on_right_panel_event(panel_id, ctx, event) -> RightPanelAction` | `right_panel`           | Handle a widget interaction in the right panel.                                |
 | `on_http_response(handle, result)`                               | `external_process`      | An outbound request started via `network::http_request` completed.             |
+| `on_http_response_chunk(handle, chunk)`                          | `external_process`      | One line of a response body, as it's read off the socket (before the final result). |
+| `on_files_picked(handle, result)`                                | `external_process`      | A `process::pick_files` dialog resolved (or was cancelled).                    |
 
 `RequestContext`/`ResponseContext` mirror the shape of Rustrest's built-in `pm.*` pre-request/test scripting context, so behavior is consistent between the two mechanisms.
 
@@ -259,12 +268,18 @@ use rustrest_plugin_api::{UiEvent, UiNode};
 
 enum UiNode {
     Label(String),
-    Button { id: String, label: String },
-    TextInput { id: String, value: String, placeholder: String },
+    Muted(String),                 // dim/secondary line - hints, timestamps, role labels
+    Button { id: String, label: String, primary: bool }, // primary = the one emphasized action
+    TextInput { id: String, value: String, placeholder: String, on_submit: Option<String> },
     Checkbox { id: String, label: String, checked: bool },
     List(Vec<String>),
     Row(Vec<UiNode>),
     Column(Vec<UiNode>),
+    HorizontalSpacer,              // fills horizontal space
+    VerticalSpacer,                // fills vertical space
+    FixedSpace { width: f32, height: f32 },
+    Scrollable(Box<UiNode>),       // an independent scroll region
+    AutoScroll(Box<UiNode>),       // like Scrollable, but snapped to the bottom on every render
 }
 
 enum UiEvent {
@@ -276,27 +291,56 @@ enum UiEvent {
 
 `on_panel_event` gets called with the `id` of whichever widget the user interacted with; return the updated tree from `Some(...)` (or `None` to leave the currently-rendered tree as-is).
 
+The host only auto-scrolls a panel's whole tree when it contains no explicit `Scrollable`/`AutoScroll` anywhere; once you use one, you're opting into controlling scrolling yourself - typically to keep a header/footer (a settings button, a send box) pinned while just the middle section scrolls. `TextInput.on_submit`, if set, fires `UiEvent::Clicked` with that id when the user presses Enter in the field - e.g. wiring a chat input to its Send button's id so Enter submits without reaching for the mouse. Every `Label`/`Muted` line is automatically right-click "Copy"-able - the host handles this itself, nothing to do on your end.
+
 ## Right panel (ambient-context) capability
 
 `sidebar_panel` opens as a tab and gets no context about what the user is working on. `right_panel` is different: it's docked in a panel on the right of the window (toggled from a button in the top bar), reuses the same `UiNode`/`UiEvent` tree from above, and every `render_right_panel`/`on_right_panel_event` call is handed a `RightPanelContext` snapshot of the active tab:
 
 ```rust
-use rustrest_plugin_api::{RequestContext, ResponseContext, RequestPatch, RightPanelAction, RightPanelContext};
+use rustrest_plugin_api::{
+    RequestContext, ResponseContext, RequestPatch, RightPanelAction, RightPanelContext,
+    CollectionSummary, RequestSummary, EnvSummary,
+};
 
 struct RightPanelContext {
     active_request: Option<RequestContext>,   // None if the active tab isn't an HTTP request
     active_response: Option<ResponseContext>, // None if it hasn't been sent yet
+    collections: Vec<CollectionSummary>,      // every collection currently loaded
+    environments: Vec<EnvSummary>,            // every environment currently defined
+}
+
+struct CollectionSummary {
+    id: usize,
+    name: String,
+    folders: Vec<Vec<String>>,      // every folder's full path, e.g. ["Auth", "Login"]
+    requests: Vec<RequestSummary>,
+}
+
+struct RequestSummary {
+    id: usize,
+    name: String,
+    folder_path: Vec<String>,
+    method: String,
+}
+
+struct EnvSummary {
+    name: String,
+    variables: Vec<(String, String)>, // values included - see the warning below
 }
 ```
 
-Both hooks return a `RightPanelAction` rather than a plain tree, so a plugin can also ask the host to edit the active request - the mechanism an AI-assistant-style plugin uses to turn a natural-language instruction into request changes or a generated test script:
+`collections`/`environments` are always populated, regardless of what tab is active - only `active_request`/`active_response` depend on it. `EnvSummary.variables` includes actual variable *values*, which may be secrets (API keys, tokens); if your UI lets the user pick which environments to include, say so visibly rather than sending them silently - see `rustrest-plugin-ai-agent`'s context picker for a working example.
+
+Both hooks return a `RightPanelAction` rather than a plain tree, so a plugin can also ask the host to edit the active request, or propose a change to the collection tree itself - the mechanism an AI-assistant-style plugin uses to turn a natural-language instruction into request changes, a generated test script, or a create/rename/delete/move on a collection/folder/request:
 
 ```rust
 enum RightPanelAction {
     None,
-    UpdateUi(UiNode),                        // re-render the panel only
-    ApplyPatch(RequestPatch),                // edit the active tab only
-    UpdateUiAndApplyPatch(UiNode, RequestPatch), // both
+    UpdateUi(UiNode),                                       // re-render the panel only
+    ApplyPatch(RequestPatch),                                // edit the active tab only
+    UpdateUiAndApplyPatch(UiNode, RequestPatch),             // both
+    UpdateUiAndProposeCollectionOp(UiNode, CollectionOperation), // re-render + propose a tree edit
 }
 
 struct RequestPatch {
@@ -310,6 +354,103 @@ struct RequestPatch {
 ```
 
 Every `RequestPatch` field is optional - only set the ones you want changed. Since `on_http_response` (see below) has no return value the host acts on, a common pattern for an async flow (e.g. "wait for the LLM's reply, then apply it") is to stash the patch on `self` from `on_http_response` and flush it as `UpdateUiAndApplyPatch` the next time `render_right_panel` is called - see `rustrest-plugin-ai-agent`'s `pending_patch` field for a working example.
+
+## Opening your right panel from a command
+
+Opening a right panel is a host-only action (there's no wasm involved in flipping a docked panel open) - so rather than routing through `on_command` just to have your plugin ask the host to open its own panel, declare a command whose `id` is `open-right-panel:<panel_id>`, matching the `id` you gave that panel under `[capabilities.right_panel]`:
+
+```toml
+[[capabilities.commands]]
+id = "open-right-panel:chat"
+title = "Open AI Agent"
+
+[capabilities.right_panel]
+id = "chat"
+title = "AI Agent"
+```
+
+The host intercepts that command id before it ever reaches your wasm code and opens the panel directly (a no-op if it's already open). This shows up as a normal command-palette/menu entry with no extra code on your end - `on_command` is never called for it.
+
+## Collection/environment context and proposing tree operations
+
+A `right_panel` plugin isn't limited to editing the currently-open request - `RightPanelContext.collections`/`.environments` (above) give it enough information to act on the whole workspace, and `RightPanelAction::UpdateUiAndProposeCollectionOp` lets it propose a change to that tree:
+
+```rust
+use rustrest_plugin_api::CollectionOperation;
+
+#[serde(tag = "op", rename_all = "snake_case")]
+enum CollectionOperation {
+    CreateCollection { name: String },
+    RenameCollection { collection_id: usize, new_name: String },
+    DeleteCollection { collection_id: usize },
+    CreateFolder { collection_id: usize, parent_path: Vec<String>, name: String },
+    RenameFolder { collection_id: usize, path: Vec<String>, new_name: String },
+    DeleteFolder { collection_id: usize, path: Vec<String> },
+    CreateRequest { collection_id: usize, parent_path: Vec<String>, name: String, method: String, url: String },
+    RenameRequest { collection_id: usize, request_id: usize, new_name: String },
+    DeleteRequest { collection_id: usize, parent_path: Vec<String>, request_id: usize },
+    DuplicateRequest { collection_id: usize, parent_path: Vec<String>, request_id: usize },
+    MoveRequest { collection_id: usize, from_path: Vec<String>, request_id: usize, to_path: Vec<String> },
+}
+```
+
+`parent_path`/`path`/`from_path`/`to_path` are folder-name arrays (`[]` for a collection's root, `["Auth"]` for a top-level folder named "Auth") - use the ids/paths handed to you in `RightPanelContext.collections`, never invented ones. The enum is internally tagged (`#[serde(tag = "op", rename_all = "snake_case")]`) specifically so it's easy to have an LLM produce directly, e.g. `{"op":"create_folder","collection_id":1,"parent_path":[],"name":"Auth"}`.
+
+The host applies `CreateCollection`/`RenameCollection`/`CreateFolder`/`RenameFolder`/`CreateRequest`/`RenameRequest` immediately, but shows the user a confirmation dialog first for `DeleteCollection`/`DeleteFolder`/`DeleteRequest`/`MoveRequest` (anything that removes or relocates something) before applying it - you don't need to build this yourself, just return the action and the host handles the rest, including the toast reporting success/failure. `rustrest-plugin-ai-agent` extracts one of these from a fenced ` ```collection-action ` block in an LLM reply (parallel to how it extracts a `RequestPatch` from a ` ```json ` block) - see its `extract_collection_op`/`build_system_prompt` for a full working example, including how it lists `ctx.collections` in the prompt so the model has real ids to reference.
+
+## Streaming HTTP responses
+
+`network::http_request` (below) delivers its result in one shot via `on_http_response`. For a chat-completion-style API where the response streams in as Server-Sent Events or newline-delimited JSON, `on_http_response_chunk` is delivered once per line, as it's read off the socket - before the terminal `on_http_response` call with the full accumulated body:
+
+```rust
+impl Plugin for MyPlugin {
+    fn on_http_response_chunk(&mut self, handle: u32, chunk: Vec<u8>) {
+        // one line at a time - parse whatever line-delimited shape your
+        // provider streams (an SSE `data: {...}` line, a raw NDJSON object)
+        // and append any text delta to a message you're building up.
+    }
+
+    fn on_http_response(&mut self, handle: u32, result: Result<HttpResponseData, String>) {
+        // the streamed message is already complete by the time this runs -
+        // this is just where you do any end-of-reply bookkeeping (clear a
+        // "busy" flag, extract a trailing action block from the full text).
+    }
+}
+```
+
+This has no separate capability or opt-in - just implement it if you care about partial data, and ignore it (the default no-op) if you only need the final result. Nothing needs to change about how you start the request, other than asking the provider to actually stream (typically a `"stream": true` field in the request body). Pair a chat feed's `UiNode::AutoScroll` with this so new text is visible immediately as it arrives - the ~100ms tick that delivers chunks also re-renders any open right panel, so there's no extra polling to write. See `rustrest-plugin-ai-agent`'s `on_http_response_chunk`/`extract_stream_delta` for Anthropic/OpenAI SSE and Ollama NDJSON parsing side by side.
+
+## Picking files from disk
+
+Declaring `external_process = true` also unlocks a native "choose files" dialog, for pulling arbitrary local files in as context (e.g. an OpenAPI spec, a README) rather than requiring the user to paste content by hand:
+
+```rust
+use rustrest_plugin_api::{Plugin, PickFilesResult, process::pick_files};
+
+#[derive(Default)]
+struct MyPlugin { pending_pick: Option<u32> }
+
+impl Plugin for MyPlugin {
+    fn on_command(&mut self, command_id: &str) -> Result<Option<String>, String> {
+        if command_id == "attach-files" {
+            self.pending_pick = Some(pick_files()?);
+        }
+        Ok(None)
+    }
+
+    fn on_files_picked(&mut self, handle: u32, result: PickFilesResult) {
+        if self.pending_pick != Some(handle) {
+            return; // a stale/cancelled pick
+        }
+        self.pending_pick = None;
+        // result.files: Vec<PickedFile { name, text }> - successfully read as UTF-8 text
+        // result.skipped: Vec<String> - one "<name>: <reason>" per file that couldn't be
+        // attached (too large, or not valid UTF-8 text)
+    }
+}
+```
+
+Like `http_request`, this never blocks - the dialog opens on a host-owned background thread, and the call returns a handle immediately with the result delivered later via `on_files_picked` (an empty `result.files` means the user cancelled, not an error). Files are capped at 5 MB and must be valid UTF-8 text; anything else is reported in `skipped` rather than silently dropped. See `rustrest-plugin-ai-agent`'s "Attach Files..." button (`pending_file_pick`/`attached_files`) for a working example, including a per-file "Remove" button.
 
 ## The `ExternalProcess` capability
 
@@ -339,7 +480,7 @@ storage_write("config.json", b"{...}")?;
 let bytes: Option<Vec<u8>> = storage_read("config.json")?; // None if it doesn't exist yet
 ```
 
-And outbound HTTP requests, for anything that needs to talk to a real API (an LLM provider, a webhook, ...) rather than download a file. Unlike everything else in `Plugin`, this call never blocks the plugin call path - it starts the request on a host-owned background thread and returns a handle immediately, with the result delivered later via `on_http_response`:
+And outbound HTTP requests, for anything that needs to talk to a real API (an LLM provider, a webhook, ...) rather than download a file. Unlike everything else in `Plugin`, this call never blocks the plugin call path - it starts the request on a host-owned background thread and returns a handle immediately, with the result delivered later via `on_http_response` (and, if you want it, incrementally via `on_http_response_chunk` - see [Streaming HTTP responses](#streaming-http-responses) above):
 
 ```rust
 use rustrest_plugin_api::{HttpRequestSpec, HttpResponseData, Plugin, http_request};
