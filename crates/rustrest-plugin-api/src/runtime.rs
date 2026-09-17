@@ -13,7 +13,7 @@
 use crate::hooks::{RequestContext, ResponseContext, RightPanelContext};
 use crate::network::HttpResponseData;
 use crate::plugin::Plugin;
-use crate::process::ProcessStream;
+use crate::process::{PickFilesResult, ProcessStream};
 use crate::ui::UiEvent;
 use serde::{Deserialize, Serialize};
 
@@ -119,6 +119,10 @@ fn route<T: Plugin>(plugin: &mut T, input: &[u8]) -> Vec<u8> {
         }
         "on_http_response_chunk" => match decode_payload::<(u32, Vec<u8>)>(envelope.payload) {
             Ok((handle, chunk)) => encode_ok(&plugin.on_http_response_chunk(handle, chunk)),
+            Err(bytes) => bytes,
+        },
+        "on_files_picked" => match decode_payload::<(u32, PickFilesResult)>(envelope.payload) {
+            Ok((handle, result)) => encode_ok(&plugin.on_files_picked(handle, result)),
             Err(bytes) => bytes,
         },
         other => encode_err(&format!("unknown plugin call: {other}")),

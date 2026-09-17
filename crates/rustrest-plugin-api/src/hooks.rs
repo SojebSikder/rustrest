@@ -57,6 +57,16 @@ pub struct CollectionSummary {
     pub requests: Vec<RequestSummary>,
 }
 
+/// a read-only snapshot of one environment (name + its active variables),
+/// handed to a `RightPanel` plugin so it can offer environment variables as
+/// optional context. Variable *values* are included, which may be secrets
+/// a plugin surfacing these to a user-selectable list should say so in its UI.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct EnvSummary {
+    pub name: String,
+    pub variables: Vec<(String, String)>,
+}
+
 /// ambient context handed to a `RightPanel` plugin on every render/event -
 /// a snapshot of whatever the active tab currently holds, so a docked panel
 /// (e.g. an AI assistant) can act on "the current request" without needing
@@ -70,6 +80,9 @@ pub struct RightPanelContext {
     /// collection tree itself (not just the active request).
     #[serde(default)]
     pub collections: Vec<CollectionSummary>,
+    /// every environment currently defined.
+    #[serde(default)]
+    pub environments: Vec<EnvSummary>,
 }
 
 /// a set of edits a `RightPanel` plugin wants applied to the active request

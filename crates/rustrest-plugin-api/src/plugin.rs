@@ -1,6 +1,6 @@
 use crate::hooks::{RequestContext, ResponseContext, RightPanelAction, RightPanelContext};
 use crate::network::HttpResponseData;
-use crate::process::ProcessStream;
+use crate::process::{PickFilesResult, ProcessStream};
 use crate::ui::{UiEvent, UiNode};
 
 /// Implemented by a plugin's single entry-point type. Every method has a
@@ -92,4 +92,9 @@ pub trait Plugin: Default + Send + 'static {
     /// incrementally. Default no-op, for plugins that only need the final
     /// result. Requires `Capability::ExternalProcess`.
     fn on_http_response_chunk(&mut self, _handle: u32, _chunk: Vec<u8>) {}
+
+    /// delivered once the dialog started by `process::pick_files` resolves
+    /// (or the user cancels, in which case `result.files` is empty).
+    /// Requires `Capability::ExternalProcess`.
+    fn on_files_picked(&mut self, _handle: u32, _result: PickFilesResult) {}
 }

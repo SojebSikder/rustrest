@@ -58,18 +58,19 @@ pub fn drain_plugin_logs(app: &mut Rustrest) {
         .extend(app.plugins.plugin_manager.drain_logs());
 }
 
-/// snapshots the active tab (if it's an HTTP request tab) into the ambient
-/// context handed to a `RightPanel` plugin on every render/event.
+/// snapshots the active tab (if it's an HTTP request tab) plus every
+/// currently loaded collection/environment into the ambient context handed
+/// to a `RightPanel` plugin on every render/event. `collections`/
+/// `environments` are always populated regardless of what tab is active -
+/// only `active_request`/`active_response` depend on it.
 pub fn build_right_panel_context(app: &Rustrest) -> RightPanelContext {
-    let Some(tab_state) = app.tabs.get(app.active_tab_index) else {
-        return RightPanelContext::default();
-    };
-    if !matches!(tab_state.content, WorkspaceContent::HttpRequest) {
-        return RightPanelContext::default();
-    }
-    let tab = &tab_state.tab;
+    let http_tab = app
+        .tabs
+        .get(app.active_tab_index)
+        .filter(|tab_state| matches!(tab_state.content, WorkspaceContent::HttpRequest))
+        .map(|tab_state| &tab_state.tab);
 
-    let active_request = Some(rustrest_plugin_host::RequestContext {
+    let active_request = http_tab.map(|tab| rustrest_plugin_host::RequestContext {
         method: tab.method.to_string(),
         url: tab.url.clone(),
         headers: tab
@@ -82,27 +83,45 @@ pub fn build_right_panel_context(app: &Rustrest) -> RightPanelContext {
         variables: std::collections::HashMap::new(),
     });
 
-    let active_response = tab.response.as_ref().map(|result| match result {
-        Ok(resp) => rustrest_plugin_host::ResponseContext {
-            status: resp.status,
-            headers: resp.headers.clone(),
-            body: resp.body.clone(),
-            variables: std::collections::HashMap::new(),
-            test_results: Vec::new(),
-        },
-        Err(err) => rustrest_plugin_host::ResponseContext {
-            status: 0,
-            headers: std::collections::HashMap::new(),
-            body: err.clone(),
-            variables: std::collections::HashMap::new(),
-            test_results: Vec::new(),
-        },
+    let active_response = http_tab.and_then(|tab| {
+        tab.response.as_ref().map(|result| match result {
+            Ok(resp) => rustrest_plugin_host::ResponseContext {
+                status: resp.status,
+                headers: resp.headers.clone(),
+                body: resp.body.clone(),
+                variables: std::collections::HashMap::new(),
+                test_results: Vec::new(),
+            },
+            Err(err) => rustrest_plugin_host::ResponseContext {
+                status: 0,
+                headers: std::collections::HashMap::new(),
+                body: err.clone(),
+                variables: std::collections::HashMap::new(),
+                test_results: Vec::new(),
+            },
+        })
     });
+
+    let environments = app
+        .env
+        .environments
+        .iter()
+        .map(|env| rustrest_plugin_host::EnvSummary {
+            name: env.name.clone(),
+            variables: env
+                .variables
+                .iter()
+                .filter(|v| v.is_active && !v.key.trim().is_empty())
+                .map(|v| (v.key.clone(), v.value.clone()))
+                .collect(),
+        })
+        .collect();
 
     RightPanelContext {
         active_request,
         active_response,
         collections: app.collections.iter().map(summarize_collection).collect(),
+        environments,
     }
 }
 
@@ -611,6 +630,7 @@ pub fn panel_event(
 pub fn process_tick(app: &mut Rustrest) -> Task<Message> {
     let mut touched = app.plugins.plugin_manager.pump_processes();
     touched.extend(app.plugins.plugin_manager.pump_network());
+    touched.extend(app.plugins.plugin_manager.pump_files());
     if !touched.is_empty() {
         let open_panels: Vec<(String, String)> = app
             .tabs

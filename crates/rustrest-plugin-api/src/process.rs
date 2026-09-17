@@ -65,6 +65,34 @@ pub struct CommandOutput {
     pub stderr: Vec<u8>,
 }
 
+/// one file a user picked via [`pick_files`], successfully read as UTF-8 text.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PickedFile {
+    pub name: String,
+    pub text: String,
+}
+
+/// delivered to `Plugin::on_files_picked` once a [`pick_files`] dialog
+/// resolves. `files` is empty (not an error) if the user cancelled.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct PickFilesResult {
+    pub files: Vec<PickedFile>,
+    /// one entry per picked file that couldn't be attached (too large, or
+    /// not valid UTF-8 text), shaped `"<name>: <reason>"`.
+    pub skipped: Vec<String>,
+}
+
+/// opens a native "choose files" dialog on a background thread (so this
+/// call never blocks) and reads the chosen files' text contents, returning
+/// a handle immediately - the result is delivered later via
+/// `Plugin::on_files_picked`. Files that aren't valid UTF-8 text, or exceed
+/// a host-enforced size cap, are reported in the result's `skipped` list
+/// rather than included.
+#[cfg(target_arch = "wasm32")]
+pub fn pick_files() -> Result<u32, String> {
+    hostcall::call("pick_files", ())
+}
+
 /// runs `program` to completion (spawn, wait, capture output), host-enforced
 /// timeout. For anything long-lived (a server-like process you'll write to
 /// / read from repeatedly), use [`Process::spawn`] instead.

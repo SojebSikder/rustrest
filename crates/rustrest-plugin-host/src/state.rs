@@ -1,3 +1,4 @@
+use crate::files::FileTable;
 use crate::network::NetworkTable;
 use crate::process::ProcessTable;
 use std::path::PathBuf;
@@ -10,4 +11,5 @@ pub struct PluginState {
     pub storage_dir: PathBuf,
     pub processes: Arc<Mutex<ProcessTable>>,
     pub network: Arc<Mutex<NetworkTable>>,
+    pub files: Arc<Mutex<FileTable>>,
 }

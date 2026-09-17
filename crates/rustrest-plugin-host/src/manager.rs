@@ -1,4 +1,5 @@
 use crate::error::PluginError;
+use crate::files::FileEvent;
 use crate::instance::{LoadedPlugin, compile, load_from_module, load_plugin};
 use crate::manifest_toml::{self, MANIFEST_FILE_NAME, WASM_FILE_NAME};
 use crate::network::{NetworkEvent, NetworkTable};
@@ -336,6 +337,36 @@ impl PluginManager {
                 };
                 if let Err(e) = call_result {
                     log_hook_error(runtime, &dir_name, "http-response", &e);
+                }
+            }
+        }
+        touched
+    }
+
+    /// mirror of `pump_network` for file-picker dialogs started via
+    /// `pick_files`: drains buffered `FileEvent`s and delivers each into the
+    /// owning plugin's `on_files_picked`, returning which plugin ids had
+    /// activity so the caller can re-render an open panel for one of them.
+    pub fn pump_files(&mut self) -> Vec<String> {
+        let mut touched = Vec::new();
+        for plugin in self.plugins.iter_mut().filter(|p| p.is_active()) {
+            let plugin_id = plugin.id().to_string();
+            let dir_name = plugin.dir_name.clone();
+            let runtime = plugin.runtime.as_mut().expect("checked active");
+            let events = crate::files::FileTable::drain_events(&runtime.files);
+            if events.is_empty() {
+                continue;
+            }
+            touched.push(plugin_id);
+            for event in events {
+                let FileEvent::Picked(handle, result) = event;
+                let call_result = runtime.handles.call_json::<_, ()>(
+                    &mut runtime.store,
+                    "on_files_picked",
+                    (handle, result),
+                );
+                if let Err(e) = call_result {
+                    log_hook_error(runtime, &dir_name, "files-picked", &e);
                 }
             }
         }

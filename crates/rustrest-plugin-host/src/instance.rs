@@ -1,4 +1,5 @@
 use crate::error::PluginError;
+use crate::files::FileTable;
 use crate::hostcall::link_host_functions;
 use crate::manifest_toml::{self, WASM_FILE_NAME};
 use crate::network::NetworkTable;
@@ -17,6 +18,7 @@ pub struct PluginRuntime {
     pub logs: Arc<Mutex<Vec<String>>>,
     pub processes: Arc<Mutex<ProcessTable>>,
     pub network: Arc<Mutex<NetworkTable>>,
+    pub files: Arc<Mutex<FileTable>>,
 }
 
 pub struct LoadedPlugin {
@@ -119,6 +121,7 @@ fn instantiate_module(
     let logs = Arc::new(Mutex::new(Vec::new()));
     let processes = Arc::new(Mutex::new(ProcessTable::default()));
     let network = Arc::new(Mutex::new(NetworkTable::default()));
+    let files = Arc::new(Mutex::new(FileTable::default()));
     let external_process_allowed = manifest
         .capabilities
         .iter()
@@ -131,6 +134,7 @@ fn instantiate_module(
         storage_dir: plugin_dir.join("storage"),
         processes: processes.clone(),
         network: network.clone(),
+        files: files.clone(),
     };
     let mut store = Store::new(engine, state);
     // generous one-off budget for instantiation/global-init; steady-state
@@ -146,6 +150,7 @@ fn instantiate_module(
         logs,
         processes,
         network,
+        files,
     })
 }
 

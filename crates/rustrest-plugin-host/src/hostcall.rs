@@ -2,6 +2,7 @@
 //! import, `host_call`, that every guest→host request goes through
 
 use crate::error::PluginError;
+use crate::files::FileTable;
 use crate::network::NetworkTable;
 use crate::process::ProcessTable;
 use crate::state::PluginState;
@@ -57,6 +58,7 @@ pub fn link_host_functions(linker: &mut Linker<PluginState>) -> Result<(), Plugi
             let external_process_allowed = caller.data().external_process_allowed;
             let processes = caller.data().processes.clone();
             let network = caller.data().network.clone();
+            let files = caller.data().files.clone();
             let logs = caller.data().logs.clone();
 
             let response = execute(
@@ -67,6 +69,7 @@ pub fn link_host_functions(linker: &mut Linker<PluginState>) -> Result<(), Plugi
                 external_process_allowed,
                 &processes,
                 &network,
+                &files,
                 &logs,
             );
 
@@ -118,6 +121,7 @@ fn execute(
     external_process_allowed: bool,
     processes: &Arc<Mutex<ProcessTable>>,
     network: &Arc<Mutex<NetworkTable>>,
+    files: &Arc<Mutex<FileTable>>,
     logs: &Arc<Mutex<Vec<String>>>,
 ) -> Vec<u8> {
     macro_rules! decode {
@@ -230,6 +234,11 @@ fn execute(
                 Ok(handle) => encode_ok(&handle),
                 Err(e) => encode_err(&e),
             }
+        }
+        "pick_files" => {
+            require_external_process!();
+            let handle = FileTable::spawn_pick(files);
+            encode_ok(&handle)
         }
         "storage_read" => {
             require_external_process!();

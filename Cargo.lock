@@ -5770,6 +5770,7 @@ version = "0.1.0"
 dependencies = [
  "dirs",
  "reqwest 0.12.28",
+ "rfd",
  "rustrest-plugin-api",
  "serde",
  "serde_json",

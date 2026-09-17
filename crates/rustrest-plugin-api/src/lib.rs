@@ -46,8 +46,8 @@ pub mod _internal {
 mod runtime;
 
 pub use hooks::{
-    CollectionOperation, CollectionSummary, RequestContext, RequestPatch, RequestSummary,
-    ResponseContext, RightPanelAction, RightPanelContext, TestResult,
+    CollectionOperation, CollectionSummary, EnvSummary, RequestContext, RequestPatch,
+    RequestSummary, ResponseContext, RightPanelAction, RightPanelContext, TestResult,
 };
 #[cfg(target_arch = "wasm32")]
 pub use host::log;
@@ -61,9 +61,9 @@ pub use network::{HttpRequestSpec, HttpResponseData};
 pub use plugin::Plugin;
 #[cfg(target_arch = "wasm32")]
 pub use process::Process;
-pub use process::{CommandOutput, ProcessStream};
+pub use process::{CommandOutput, PickFilesResult, PickedFile, ProcessStream};
 #[cfg(target_arch = "wasm32")]
-pub use process::{storage_read, storage_write};
+pub use process::{pick_files, storage_read, storage_write};
 pub use ui::{UiEvent, UiNode};
 
 /// Generates the `rustrest_alloc` / `rustrest_dealloc` / `rustrest_call`

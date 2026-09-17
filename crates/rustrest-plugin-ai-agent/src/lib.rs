@@ -3,10 +3,11 @@
 //! request/response tab.
 
 use rustrest_plugin_api::{
-    CollectionOperation, HttpRequestSpec, HttpResponseData, Plugin, RequestPatch,
-    RightPanelAction, RightPanelContext, UiEvent, UiNode,
+    CollectionOperation, HttpRequestSpec, HttpResponseData, PickFilesResult, PickedFile, Plugin,
+    RequestPatch, RightPanelAction, RightPanelContext, UiEvent, UiNode,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 const CONFIG_FILE: &str = "config.json";
 
@@ -79,6 +80,18 @@ struct AiAgentPlugin {
     /// been pushed and is being appended to live, so `on_http_response`
     /// knows to finalize it rather than push a second one from the whole body.
     streaming: bool,
+    /// ids of the collections the user has opted into sending as extra
+    /// context (beyond the always-included active request/response).
+    selected_collections: HashSet<usize>,
+    /// names of the environments the user has opted into sending as extra
+    /// context - variable *values* included, so this is opt-in per name
+    /// rather than on by default.
+    selected_envs: HashSet<String>,
+    /// files the user attached via the "Attach Files..." button, sent as
+    /// extra context on every request until removed or a new session starts.
+    attached_files: Vec<PickedFile>,
+    /// handle of an in-flight `pick_files` dialog, if one is open.
+    pending_file_pick: Option<u32>,
 }
 
 impl AiAgentPlugin {
@@ -168,6 +181,55 @@ impl AiAgentPlugin {
         ])
     }
 
+    /// inline checkbox list letting the user opt collections/environments
+    /// into the system prompt as extra context, plus the file-attachment
+    /// controls - rendered above the conversation.
+    fn render_context_picker(&self, ctx: &RightPanelContext) -> UiNode {
+        let mut rows = vec![UiNode::Muted("Context".to_string())];
+
+        for col in &ctx.collections {
+            rows.push(UiNode::Checkbox {
+                id: format!("ctx-collection-{}", col.id),
+                label: col.name.clone(),
+                checked: self.selected_collections.contains(&col.id),
+            });
+        }
+
+        if !ctx.environments.is_empty() {
+            for env in &ctx.environments {
+                rows.push(UiNode::Checkbox {
+                    id: format!("ctx-env-{}", env.name),
+                    label: env.name.clone(),
+                    checked: self.selected_envs.contains(&env.name),
+                });
+            }
+            rows.push(UiNode::Muted(
+                "Selected environments' variable values are sent to the configured LLM \
+                 provider."
+                    .to_string(),
+            ));
+        }
+
+        rows.push(UiNode::Button {
+            id: "pick-files".to_string(),
+            label: "Attach Files...".to_string(),
+            primary: false,
+        });
+        for (idx, file) in self.attached_files.iter().enumerate() {
+            rows.push(UiNode::Row(vec![
+                UiNode::Muted(file.name.clone()),
+                UiNode::HorizontalSpacer,
+                UiNode::Button {
+                    id: format!("remove-file-{idx}"),
+                    label: "Remove".to_string(),
+                    primary: false,
+                },
+            ]));
+        }
+
+        UiNode::Column(rows)
+    }
+
     fn render_chat(&self, ctx: &RightPanelContext) -> UiNode {
         let header = UiNode::Row(vec![
             UiNode::Muted(format!("Provider: {}", self.config.provider)),
@@ -239,6 +301,7 @@ impl AiAgentPlugin {
 
         UiNode::Column(vec![
             header,
+            self.render_context_picker(ctx),
             UiNode::AutoScroll(Box::new(UiNode::Column(conversation))),
             input_row,
         ])
@@ -256,7 +319,12 @@ impl AiAgentPlugin {
             return;
         }
 
-        let system_prompt = build_system_prompt(ctx);
+        let system_prompt = build_system_prompt(
+            ctx,
+            &self.selected_collections,
+            &self.selected_envs,
+            &self.attached_files,
+        );
         let spec = match build_request_spec(&self.config, &system_prompt, &instruction) {
             Ok(spec) => spec,
             Err(e) => {
@@ -317,6 +385,13 @@ impl Plugin for AiAgentPlugin {
                     let (base_url, model) = provider_defaults(provider);
                     self.draft_base_url = base_url;
                     self.draft_model = model;
+                } else if let Some(idx) = id
+                    .strip_prefix("remove-file-")
+                    .and_then(|s| s.parse::<usize>().ok())
+                {
+                    if idx < self.attached_files.len() {
+                        self.attached_files.remove(idx);
+                    }
                 } else {
                     match id.as_str() {
                         "toggle-settings" => {
@@ -350,7 +425,18 @@ impl Plugin for AiAgentPlugin {
                             self.pending = None;
                             self.busy = false;
                             self.streaming = false;
+                            self.selected_collections.clear();
+                            self.selected_envs.clear();
+                            self.attached_files.clear();
+                            self.pending_file_pick = None;
                         }
+                        "pick-files" => match rustrest_plugin_api::pick_files() {
+                            Ok(handle) => self.pending_file_pick = Some(handle),
+                            Err(e) => self.messages.push(ChatMessage {
+                                role: "Error".to_string(),
+                                text: format!("couldn't open file picker: {e}"),
+                            }),
+                        },
                         _ => return RightPanelAction::None,
                     }
                 }
@@ -362,7 +448,26 @@ impl Plugin for AiAgentPlugin {
                 "chat-input" => self.draft_input = value,
                 _ => return RightPanelAction::None,
             },
-            UiEvent::Toggled(..) => return RightPanelAction::None,
+            UiEvent::Toggled(id, checked) => {
+                if let Some(col_id) = id
+                    .strip_prefix("ctx-collection-")
+                    .and_then(|s| s.parse::<usize>().ok())
+                {
+                    if checked {
+                        self.selected_collections.insert(col_id);
+                    } else {
+                        self.selected_collections.remove(&col_id);
+                    }
+                } else if let Some(env_name) = id.strip_prefix("ctx-env-") {
+                    if checked {
+                        self.selected_envs.insert(env_name.to_string());
+                    } else {
+                        self.selected_envs.remove(env_name);
+                    }
+                } else {
+                    return RightPanelAction::None;
+                }
+            }
         }
 
         RightPanelAction::UpdateUi(self.render_tree(&ctx))
@@ -388,6 +493,20 @@ impl Plugin for AiAgentPlugin {
         if let Some(last) = self.messages.last_mut() {
             last.text.push_str(&delta);
         }
+    }
+
+    fn on_files_picked(&mut self, handle: u32, result: PickFilesResult) {
+        if self.pending_file_pick != Some(handle) {
+            return;
+        }
+        self.pending_file_pick = None;
+        for skipped in result.skipped {
+            self.messages.push(ChatMessage {
+                role: "Error".to_string(),
+                text: format!("couldn't attach {skipped}"),
+            });
+        }
+        self.attached_files.extend(result.files);
     }
 
     fn on_http_response(&mut self, handle: u32, result: Result<HttpResponseData, String>) {
@@ -449,7 +568,12 @@ impl Plugin for AiAgentPlugin {
     }
 }
 
-fn build_system_prompt(ctx: &RightPanelContext) -> String {
+fn build_system_prompt(
+    ctx: &RightPanelContext,
+    selected_collections: &HashSet<usize>,
+    selected_envs: &HashSet<String>,
+    attached_files: &[PickedFile],
+) -> String {
     let mut prompt = String::from(
         "You are an AI assistant embedded in Rustrest, a REST API client, docked next to \
          whatever request the user has open. You can: answer questions, explain responses \
@@ -470,9 +594,17 @@ fn build_system_prompt(ctx: &RightPanelContext) -> String {
         ));
     }
 
-    if !ctx.collections.is_empty() {
-        prompt.push_str("\n\nExisting collections (reference these by id, not by guessing):");
-        for col in &ctx.collections {
+    let selected: Vec<_> = ctx
+        .collections
+        .iter()
+        .filter(|c| selected_collections.contains(&c.id))
+        .collect();
+    if !selected.is_empty() {
+        prompt.push_str(
+            "\n\nSelected collections (reference these by id, not by guessing; anything not \
+             listed here wasn't selected as context and its ids/paths must not be guessed at):",
+        );
+        for col in selected {
             prompt.push_str(&format!("\n- collection #{} \"{}\"", col.id, col.name));
             for folder in &col.folders {
                 prompt.push_str(&format!("\n    folder: {}", folder.join("/")));
@@ -488,6 +620,28 @@ fn build_system_prompt(ctx: &RightPanelContext) -> String {
                     req.id, req.name, req.method, location
                 ));
             }
+        }
+    }
+
+    let selected_env_list: Vec<_> = ctx
+        .environments
+        .iter()
+        .filter(|e| selected_envs.contains(&e.name))
+        .collect();
+    if !selected_env_list.is_empty() {
+        prompt.push_str("\n\nSelected environments (variable values included as-is):");
+        for env in selected_env_list {
+            prompt.push_str(&format!("\n- environment \"{}\"", env.name));
+            for (key, value) in &env.variables {
+                prompt.push_str(&format!("\n    {key} = {value}"));
+            }
+        }
+    }
+
+    if !attached_files.is_empty() {
+        prompt.push_str("\n\nAttached files:");
+        for file in attached_files {
+            prompt.push_str(&format!("\n\n--- {} ---\n{}", file.name, file.text));
         }
     }
 
