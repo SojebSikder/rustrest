@@ -74,6 +74,11 @@ struct AiAgentPlugin {
     /// rename/delete/duplicate/move) the model proposed instead of a request
     /// patch - at most one of the two is ever set for a given reply.
     pending_collection_op: Option<CollectionOperation>,
+    /// true once the in-flight reply's first text delta has arrived via
+    /// `on_http_response_chunk` - i.e. an "Assistant" message has already
+    /// been pushed and is being appended to live, so `on_http_response`
+    /// knows to finalize it rather than push a second one from the whole body.
+    streaming: bool,
 }
 
 impl AiAgentPlugin {
@@ -168,6 +173,11 @@ impl AiAgentPlugin {
             UiNode::Muted(format!("Provider: {}", self.config.provider)),
             UiNode::HorizontalSpacer,
             UiNode::Button {
+                id: "new-session".to_string(),
+                label: "New Session".to_string(),
+                primary: false,
+            },
+            UiNode::Button {
                 id: "toggle-settings".to_string(),
                 label: "\u{2699}".to_string(), // gear icon
                 primary: false,
@@ -209,7 +219,7 @@ impl AiAgentPlugin {
             ));
         }
 
-        if self.busy {
+        if self.busy && !self.streaming {
             conversation.push(UiNode::Muted("Thinking...".to_string()));
         }
 
@@ -229,7 +239,7 @@ impl AiAgentPlugin {
 
         UiNode::Column(vec![
             header,
-            UiNode::Scrollable(Box::new(UiNode::Column(conversation))),
+            UiNode::AutoScroll(Box::new(UiNode::Column(conversation))),
             input_row,
         ])
     }
@@ -262,6 +272,7 @@ impl AiAgentPlugin {
             Ok(handle) => {
                 self.pending = Some(handle);
                 self.busy = true;
+                self.streaming = false;
                 self.messages.push(ChatMessage {
                     role: "You".to_string(),
                     text: instruction,
@@ -330,6 +341,16 @@ impl Plugin for AiAgentPlugin {
                             let instruction = self.draft_input.clone();
                             self.start_request(instruction, &ctx);
                         }
+                        "new-session" => {
+                            // any in-flight reply is left running on the host
+                            // thread but discarded on arrival, since it's no
+                            // longer this plugin's `pending` handle.
+                            self.messages.clear();
+                            self.draft_input.clear();
+                            self.pending = None;
+                            self.busy = false;
+                            self.streaming = false;
+                        }
                         _ => return RightPanelAction::None,
                     }
                 }
@@ -347,24 +368,65 @@ impl Plugin for AiAgentPlugin {
         RightPanelAction::UpdateUi(self.render_tree(&ctx))
     }
 
+    fn on_http_response_chunk(&mut self, handle: u32, chunk: Vec<u8>) {
+        if self.pending != Some(handle) {
+            return;
+        }
+        let Ok(line) = String::from_utf8(chunk) else {
+            return;
+        };
+        let Some(delta) = extract_stream_delta(&self.config.provider, &line) else {
+            return;
+        };
+        if !self.streaming {
+            self.streaming = true;
+            self.messages.push(ChatMessage {
+                role: "Assistant".to_string(),
+                text: String::new(),
+            });
+        }
+        if let Some(last) = self.messages.last_mut() {
+            last.text.push_str(&delta);
+        }
+    }
+
     fn on_http_response(&mut self, handle: u32, result: Result<HttpResponseData, String>) {
         if self.pending != Some(handle) {
             return;
         }
         self.pending = None;
         self.busy = false;
+        let was_streaming = std::mem::take(&mut self.streaming);
 
         match result {
             Err(e) => self.messages.push(ChatMessage {
                 role: "Error".to_string(),
                 text: e,
             }),
+            // the streamed reply has already been appended to live via
+            // `on_http_response_chunk`, just extract any trailing patch/
+            // collection-action block from the now-complete text.
+            Ok(_) if was_streaming => {
+                let text = self
+                    .messages
+                    .last()
+                    .map(|m| m.text.clone())
+                    .unwrap_or_default();
+                // the model decides for itself, per the system prompt,
+                // whether a reply warrants a patch or a collection-tree
+                // operation - so every reply is checked, regardless of
+                // what was asked. At most one of the two ever applies.
+                if let Some(op) = extract_collection_op(&text) {
+                    self.pending_collection_op = Some(op);
+                } else if let Some(patch) = extract_patch(&text) {
+                    self.pending_patch = Some(patch);
+                }
+            }
+            // nothing streamed - either the provider ignored `stream: true`
+            // and replied in one shot, or (more likely) the request failed
+            // outright and the body is a plain JSON error object.
             Ok(data) => match parse_provider_reply(&self.config.provider, &data.body) {
                 Ok(text) => {
-                    // the model decides for itself, per the system prompt,
-                    // whether a reply warrants a patch or a collection-tree
-                    // operation - so every reply is checked, regardless of
-                    // what was asked. At most one of the two ever applies.
                     if let Some(op) = extract_collection_op(&text) {
                         self.pending_collection_op = Some(op);
                     } else if let Some(patch) = extract_patch(&text) {
@@ -484,22 +546,21 @@ fn build_request_spec(
             } else {
                 "/api/chat"
             };
-            let mut body = serde_json::json!({
+            let body = serde_json::json!({
                 "model": config.model,
+                "stream": true,
                 "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": instruction},
                 ],
             });
-            if config.provider == "ollama" {
-                body["stream"] = serde_json::Value::Bool(false);
-            }
             (format!("{base_url}{endpoint}"), body)
         }
         _ => {
             let body = serde_json::json!({
                 "model": config.model,
                 "max_tokens": 1024,
+                "stream": true,
                 "system": system_prompt,
                 "messages": [{"role": "user", "content": instruction}],
             });
@@ -554,6 +615,50 @@ fn parse_provider_reply(provider: &str, body: &[u8]) -> Result<String, String> {
 
     text.map(str::to_string)
         .ok_or_else(|| format!("unrecognized response shape: {value}"))
+}
+
+/// pulls the incremental text delta (if any) out of one line of a streamed
+/// reply. Anthropic and OpenAI stream Server-Sent Events (`data: {...}`
+/// lines, each one full JSON event); Ollama streams newline-delimited plain
+/// JSON objects with no `data:` prefix. Lines that aren't a text delta (SSE
+/// `event:`/blank framing lines, other event types, `data: [DONE]`, ...)
+/// return `None`.
+fn extract_stream_delta(provider: &str, line: &str) -> Option<String> {
+    let line = line.trim();
+    if line.is_empty() {
+        return None;
+    }
+    match provider {
+        "openai" => {
+            let data = line.strip_prefix("data:")?.trim();
+            if data == "[DONE]" {
+                return None;
+            }
+            let value: serde_json::Value = serde_json::from_str(data).ok()?;
+            value
+                .pointer("/choices/0/delta/content")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+        }
+        "ollama" => {
+            let value: serde_json::Value = serde_json::from_str(line).ok()?;
+            value
+                .pointer("/message/content")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+        }
+        _ => {
+            let data = line.strip_prefix("data:")?.trim();
+            let value: serde_json::Value = serde_json::from_str(data).ok()?;
+            if value.get("type").and_then(|t| t.as_str()) != Some("content_block_delta") {
+                return None;
+            }
+            value
+                .pointer("/delta/text")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+        }
+    }
 }
 
 /// pulls a fenced ```json ... ``` block out of `text` and decodes it as a

@@ -117,6 +117,10 @@ fn route<T: Plugin>(plugin: &mut T, input: &[u8]) -> Vec<u8> {
                 Err(bytes) => bytes,
             }
         }
+        "on_http_response_chunk" => match decode_payload::<(u32, Vec<u8>)>(envelope.payload) {
+            Ok((handle, chunk)) => encode_ok(&plugin.on_http_response_chunk(handle, chunk)),
+            Err(bytes) => bytes,
+        },
         other => encode_err(&format!("unknown plugin call: {other}")),
     }
 }

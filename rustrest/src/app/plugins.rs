@@ -10,6 +10,7 @@ use crate::message::Message;
 use crate::plugin_gallery::GalleryEntry;
 use crate::ui::confirm_dialog::ConfirmDialogState;
 use crate::ui::plugin_manager::{PluginManagerAction, PluginManagerView};
+use crate::ui::plugin_panel::{autoscroll_id, contains_autoscroll};
 use crate::ui::toast::toast::ToastStatus;
 use iced::Task;
 use rustrest_plugin_host::{
@@ -169,24 +170,40 @@ fn parse_http_method(s: &str) -> crate::http_client::HttpMethod {
 pub fn handle_right_panel_action(app: &mut Rustrest, action: RightPanelAction) -> Task<Message> {
     match action {
         RightPanelAction::None => Task::none(),
-        RightPanelAction::UpdateUi(tree) => {
-            app.plugins.right_panel_tree = Some(tree);
-            Task::none()
-        }
+        RightPanelAction::UpdateUi(tree) => set_right_panel_tree(app, tree),
         RightPanelAction::ApplyPatch(patch) => {
             apply_request_patch_to_active_tab(app, patch);
             Task::none()
         }
         RightPanelAction::UpdateUiAndApplyPatch(tree, patch) => {
-            app.plugins.right_panel_tree = Some(tree);
+            let scroll_task = set_right_panel_tree(app, tree);
             apply_request_patch_to_active_tab(app, patch);
-            Task::none()
+            scroll_task
         }
         RightPanelAction::UpdateUiAndProposeCollectionOp(tree, op) => {
-            app.plugins.right_panel_tree = Some(tree);
-            propose_collection_op(app, op)
+            let scroll_task = set_right_panel_tree(app, tree);
+            Task::batch([scroll_task, propose_collection_op(app, op)])
         }
     }
+}
+
+/// stores `tree` as the open right panel's rendered UI and, if it contains
+/// a `UiNode::AutoScroll`, snaps that region to the bottom - so a chat-style
+/// panel's feed always shows its newest content without the user having to
+/// scroll down themselves.
+fn set_right_panel_tree(app: &mut Rustrest, tree: UiNode) -> Task<Message> {
+    let scroll_task = if contains_autoscroll(&tree) {
+        match app.plugins.right_panel_open.as_ref() {
+            Some((plugin_id, panel_id)) => {
+                iced::widget::operation::snap_to_end(autoscroll_id(plugin_id, panel_id))
+            }
+            None => Task::none(),
+        }
+    } else {
+        Task::none()
+    };
+    app.plugins.right_panel_tree = Some(tree);
+    scroll_task
 }
 
 /// either applies a plugin-proposed `CollectionOperation` immediately (for

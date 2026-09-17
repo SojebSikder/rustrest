@@ -2,9 +2,30 @@
 
 use crate::message::Message;
 use crate::ui::context_menu::with_context_menu;
-use iced::widget::{Space, button, checkbox, column, row, scrollable, text, text_input};
+use iced::widget::{Id, Space, button, checkbox, column, row, scrollable, text, text_input};
 use iced::{Element, Length};
 use rustrest_plugin_host::{UiEvent, UiNode};
+
+/// id of a plugin panel's `UiNode::AutoScroll` region (there's at most one
+/// per panel today), used to snap it to the bottom whenever the panel's
+/// tree is replaced with one that still contains an `AutoScroll` node.
+pub fn autoscroll_id(plugin_id: &str, panel_id: &str) -> Id {
+    Id::from(format!("plugin-autoscroll-{plugin_id}-{panel_id}"))
+}
+
+/// true if `node` contains a `UiNode::AutoScroll` anywhere in its tree -
+/// checked after a panel's tree is replaced to decide whether to snap
+/// `autoscroll_id` to the bottom.
+pub fn contains_autoscroll(node: &UiNode) -> bool {
+    match node {
+        UiNode::AutoScroll(_) => true,
+        UiNode::Row(children) | UiNode::Column(children) => {
+            children.iter().any(contains_autoscroll)
+        }
+        UiNode::Scrollable(inner) => contains_autoscroll(inner),
+        _ => false,
+    }
+}
 
 pub fn render_plugin_panel<'a>(
     plugin_id: &str,
@@ -52,10 +73,11 @@ pub(crate) fn render_root<'a>(
     }
 }
 
-/// true if `node` contains a `UiNode::Scrollable` anywhere in its tree.
+/// true if `node` contains a `UiNode::Scrollable`/`UiNode::AutoScroll`
+/// anywhere in its tree.
 fn contains_scrollable(node: &UiNode) -> bool {
     match node {
-        UiNode::Scrollable(_) => true,
+        UiNode::Scrollable(_) | UiNode::AutoScroll(_) => true,
         UiNode::Row(children) | UiNode::Column(children) => {
             children.iter().any(contains_scrollable)
         }
@@ -177,5 +199,11 @@ pub(crate) fn render_node<'a>(
                 .height(Length::Fill)
                 .into()
         }
+
+        UiNode::AutoScroll(inner) => scrollable(render_node(&plugin_id, &panel_id, inner, to_message))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .id(autoscroll_id(&plugin_id, &panel_id))
+            .into(),
     }
 }

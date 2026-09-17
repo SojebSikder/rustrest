@@ -85,4 +85,11 @@ pub trait Plugin: Default + Send + 'static {
     /// delivered when a request started via `network::http_request` completes
     /// (or fails). Requires `Capability::ExternalProcess`.
     fn on_http_response(&mut self, _handle: u32, _result: Result<HttpResponseData, String>) {}
+
+    /// delivered for each line of a response body as it's read off the
+    /// socket, before the terminal `on_http_response` call with the
+    /// complete body - lets a plugin render a streamed reply (SSE/NDJSON)
+    /// incrementally. Default no-op, for plugins that only need the final
+    /// result. Requires `Capability::ExternalProcess`.
+    fn on_http_response_chunk(&mut self, _handle: u32, _chunk: Vec<u8>) {}
 }

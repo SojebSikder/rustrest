@@ -322,12 +322,18 @@ impl PluginManager {
             }
             touched.push(plugin_id);
             for event in events {
-                let NetworkEvent::Response(handle, result) = event;
-                let call_result = runtime.handles.call_json::<_, ()>(
-                    &mut runtime.store,
-                    "on_http_response",
-                    (handle, result),
-                );
+                let call_result = match event {
+                    NetworkEvent::Chunk(handle, chunk) => runtime.handles.call_json::<_, ()>(
+                        &mut runtime.store,
+                        "on_http_response_chunk",
+                        (handle, chunk),
+                    ),
+                    NetworkEvent::Response(handle, result) => runtime.handles.call_json::<_, ()>(
+                        &mut runtime.store,
+                        "on_http_response",
+                        (handle, result),
+                    ),
+                };
                 if let Err(e) = call_result {
                     log_hook_error(runtime, &dir_name, "http-response", &e);
                 }

@@ -51,6 +51,11 @@ pub enum UiNode {
     /// footer (e.g. a settings button, a send box) pinned in place while
     /// just the middle section scrolls.
     Scrollable(Box<UiNode>),
+    /// like `Scrollable`, but the host snaps it to the bottom every time
+    /// this panel is re-rendered - for a chat-style feed where new content
+    /// (a sent message, a streamed reply) should always be immediately
+    /// visible without the user having to scroll down themselves.
+    AutoScroll(Box<UiNode>),
 }
 
 /// A user interaction with a previously rendered `UiNode` tree, identified by

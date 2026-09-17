@@ -2,6 +2,7 @@
 //! `ExternalProcess` capability's `http_request` host call.
 
 use rustrest_plugin_api::HttpResponseData;
+use std::io::{BufRead, BufReader};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -9,6 +10,11 @@ const MAX_RESPONSE_BYTES: u64 = 20 * 1024 * 1024; // 20 MB
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub enum NetworkEvent {
+    /// one line of the response body, delivered as soon as it's read off
+    /// the socket (before the response is complete) - lets a plugin render
+    /// a streamed reply (e.g. an SSE/NDJSON chat completion) incrementally
+    /// instead of waiting for the whole body.
+    Chunk(u32, Vec<u8>),
     Response(u32, Result<HttpResponseData, String>),
 }
 
@@ -40,7 +46,7 @@ impl NetworkTable {
 
         let shared = shared.clone();
         std::thread::spawn(move || {
-            let result = run_request(&method, &url, &headers, body.as_deref());
+            let result = run_request(handle, &shared, &method, &url, &headers, body.as_deref());
             let mut table = shared.lock().expect("network table poisoned");
             table.events.push(NetworkEvent::Response(handle, result));
         });
@@ -56,6 +62,8 @@ impl NetworkTable {
 }
 
 fn run_request(
+    handle: u32,
+    shared: &Arc<Mutex<NetworkTable>>,
     method: &str,
     url: &str,
     headers: &[(String, String)],
@@ -94,14 +102,34 @@ fn run_request(
     {
         return Err("response exceeds maximum allowed size".to_string());
     }
-    let body = response.bytes().map_err(|e| e.to_string())?;
-    if body.len() as u64 > MAX_RESPONSE_BYTES {
-        return Err("response exceeds maximum allowed size".to_string());
+
+    // read line-by-line rather than all at once - a streamed reply (SSE or
+    // NDJSON, as chat-completion APIs use) flushes one line per event, so
+    // this lets the caller push a `Chunk` per line as it arrives instead of
+    // blocking until the whole body has been received. Harmless for a
+    // non-streamed body: it just reads out as one final "line".
+    let mut reader = BufReader::new(response);
+    let mut full_body = Vec::new();
+    let mut line = Vec::new();
+    loop {
+        line.clear();
+        let n = reader
+            .read_until(b'\n', &mut line)
+            .map_err(|e| e.to_string())?;
+        if n == 0 {
+            break;
+        }
+        full_body.extend_from_slice(&line);
+        if full_body.len() as u64 > MAX_RESPONSE_BYTES {
+            return Err("response exceeds maximum allowed size".to_string());
+        }
+        let mut table = shared.lock().expect("network table poisoned");
+        table.events.push(NetworkEvent::Chunk(handle, line.clone()));
     }
 
     Ok(HttpResponseData {
         status,
         headers: response_headers,
-        body: body.to_vec(),
+        body: full_body,
     })
 }
