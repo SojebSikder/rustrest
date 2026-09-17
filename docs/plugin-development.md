@@ -12,6 +12,7 @@ This guide covers basic fundamendal of Rustrest plugin development.
 - [`plugin.toml` reference](#plugintoml-reference)
 - [The `Plugin` trait](#the-plugin-trait)
 - [Sidebar panel UI](#sidebar-panel-ui)
+- [Right panel (ambient-context) capability](#right-panel-ambient-context-capability)
 - [The `ExternalProcess` capability](#the-externalprocess-capability)
 - [Logging and debugging](#logging-and-debugging)
 - [Publishing to the plugin gallery](#publishing-to-the-plugin-gallery)
@@ -62,12 +63,13 @@ example/
 
 The directory name **must** match the `id` field in `plugin.toml` - this is enforced on load; a mismatch is reported as a load error in the Manage Plugins tab rather than silently ignored.
 
-Two real plugins ship in this repo as references:
+Three real plugins ship in this repo as references:
 
 - [`crates/rustrest-plugin-example`](../crates/rustrest-plugin-example) - a template touching every capability, including spawning a persistent external process.
 - [`crates/rustrest-plugin-insomnia`](../crates/rustrest-plugin-insomnia) - a real import/export plugin for Insomnia v4/v5 collections.
+- [`crates/rustrest-plugin-ai-agent`](../crates/rustrest-plugin-ai-agent) - an AI agent docked in the right panel: chat about the active request/response, generate a test script, or edit the request from natural language, backed by a user-configured Anthropic/OpenAI/Ollama-compatible endpoint. The full reference for the `right_panel`/outbound-HTTP/storage capabilities it uses.
 
-Both are deliberately excluded from the root Cargo workspace (see their own `Cargo.toml`/`.cargo/config.toml`) so a normal `cargo build` of Rustrest itself doesn't require the `wasm32-unknown-unknown` target.
+All three are deliberately excluded from the root Cargo workspace (see their own `Cargo.toml`/`.cargo/config.toml`) so a normal `cargo build` of Rustrest itself doesn't require the `wasm32-unknown-unknown` target.
 
 ## Building your first plugin
 
@@ -208,6 +210,14 @@ command_id = "say-hello"    # dispatched the same way as a command-palette entry
 id = "main"
 title = "Example"
 
+[capabilities.right_panel]  # a single right-hand docked panel, routed to
+                             # render_right_panel/on_right_panel_event - unlike
+                             # sidebar_panel, gets ambient RightPanelContext
+                             # (the active request/response) and can hand back
+                             # a RequestPatch the host applies to the active tab
+id = "chat"
+title = "AI Agent"
+
 [[capabilities.import_formats]]  # collection import, routed to `import`
 id = "insomnia"
 title = "Insomnia (v4 JSON / v5.1 YAML)"
@@ -223,17 +233,20 @@ Every table under `[capabilities]` is optional - only declare what you use. The 
 
 ## The `Plugin` trait
 
-| Method                                                     | Capability needed       | Purpose                                                                        |
-| ---------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------ |
-| `on_pre_request(ctx) -> ctx`                               | `request_hooks`         | Mutate method/url/headers/body/variables before a request is sent.             |
-| `on_post_response(ctx) -> ctx`                             | `request_hooks`         | Inspect/mutate status/headers/body/variables/test results after a response.    |
-| `on_command(id) -> Result<Option<String>, String>`         | `commands`/`menu_items` | Handle a command-palette or menu action; the returned string shows as a toast. |
-| `render_panel(panel_id) -> UiNode`                         | `sidebar_panel`         | Render (or re-render) your panel's declarative widget tree.                    |
-| `on_panel_event(panel_id, event) -> Option<UiNode>`        | `sidebar_panel`         | Handle a widget interaction; return `Some(tree)` to update the panel.          |
-| `import(format_id, bytes) -> Result<Value, String>`        | `import_formats`        | Decode into Rustrest's own collection JSON (Postman v2.1-shaped).              |
-| `export(format_id, collection) -> Result<Vec<u8>, String>` | `export_formats`        | Encode Rustrest's collection JSON into your format.                            |
-| `on_process_output(handle, stream, chunk)`                 | `external_process`      | New stdout/stderr from a process you spawned via `Process::spawn`.             |
-| `on_process_exit(handle, code)`                            | `external_process`      | A spawned process exited.                                                      |
+| Method                                                           | Capability needed       | Purpose                                                                        |
+| ---------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------ |
+| `on_pre_request(ctx) -> ctx`                                     | `request_hooks`         | Mutate method/url/headers/body/variables before a request is sent.             |
+| `on_post_response(ctx) -> ctx`                                   | `request_hooks`         | Inspect/mutate status/headers/body/variables/test results after a response.    |
+| `on_command(id) -> Result<Option<String>, String>`               | `commands`/`menu_items` | Handle a command-palette or menu action; the returned string shows as a toast. |
+| `render_panel(panel_id) -> UiNode`                               | `sidebar_panel`         | Render (or re-render) your panel's declarative widget tree.                    |
+| `on_panel_event(panel_id, event) -> Option<UiNode>`              | `sidebar_panel`         | Handle a widget interaction; return `Some(tree)` to update the panel.          |
+| `import(format_id, bytes) -> Result<Value, String>`              | `import_formats`        | Decode into Rustrest's own collection JSON (Postman v2.1-shaped).              |
+| `export(format_id, collection) -> Result<Vec<u8>, String>`       | `export_formats`        | Encode Rustrest's collection JSON into your format.                            |
+| `on_process_output(handle, stream, chunk)`                       | `external_process`      | New stdout/stderr from a process you spawned via `Process::spawn`.             |
+| `on_process_exit(handle, code)`                                  | `external_process`      | A spawned process exited.                                                      |
+| `render_right_panel(panel_id, ctx) -> RightPanelAction`          | `right_panel`           | Render (or re-render) the right panel; `ctx` is the active request/response.   |
+| `on_right_panel_event(panel_id, ctx, event) -> RightPanelAction` | `right_panel`           | Handle a widget interaction in the right panel.                                |
+| `on_http_response(handle, result)`                               | `external_process`      | An outbound request started via `network::http_request` completed.             |
 
 `RequestContext`/`ResponseContext` mirror the shape of Rustrest's built-in `pm.*` pre-request/test scripting context, so behavior is consistent between the two mechanisms.
 
@@ -263,6 +276,41 @@ enum UiEvent {
 
 `on_panel_event` gets called with the `id` of whichever widget the user interacted with; return the updated tree from `Some(...)` (or `None` to leave the currently-rendered tree as-is).
 
+## Right panel (ambient-context) capability
+
+`sidebar_panel` opens as a tab and gets no context about what the user is working on. `right_panel` is different: it's docked in a panel on the right of the window (toggled from a button in the top bar), reuses the same `UiNode`/`UiEvent` tree from above, and every `render_right_panel`/`on_right_panel_event` call is handed a `RightPanelContext` snapshot of the active tab:
+
+```rust
+use rustrest_plugin_api::{RequestContext, ResponseContext, RequestPatch, RightPanelAction, RightPanelContext};
+
+struct RightPanelContext {
+    active_request: Option<RequestContext>,   // None if the active tab isn't an HTTP request
+    active_response: Option<ResponseContext>, // None if it hasn't been sent yet
+}
+```
+
+Both hooks return a `RightPanelAction` rather than a plain tree, so a plugin can also ask the host to edit the active request - the mechanism an AI-assistant-style plugin uses to turn a natural-language instruction into request changes or a generated test script:
+
+```rust
+enum RightPanelAction {
+    None,
+    UpdateUi(UiNode),                        // re-render the panel only
+    ApplyPatch(RequestPatch),                // edit the active tab only
+    UpdateUiAndApplyPatch(UiNode, RequestPatch), // both
+}
+
+struct RequestPatch {
+    method: Option<String>,
+    url: Option<String>,
+    headers: Option<Vec<(String, String)>>,
+    body: Option<String>,
+    pre_request_script: Option<String>,
+    post_response_script: Option<String>,
+}
+```
+
+Every `RequestPatch` field is optional - only set the ones you want changed. Since `on_http_response` (see below) has no return value the host acts on, a common pattern for an async flow (e.g. "wait for the LLM's reply, then apply it") is to stash the patch on `self` from `on_http_response` and flush it as `UpdateUiAndApplyPatch` the next time `render_right_panel` is called - see `rustrest-plugin-ai-agent`'s `pending_patch` field for a working example.
+
 ## The `ExternalProcess` capability
 
 Declare `external_process = true` in `plugin.toml` to unlock `rustrest_plugin_api::process`:
@@ -280,6 +328,46 @@ make_executable(&path)?;
 
 // run something to completion (spawn, wait, capture output, host-enforced timeout)
 let output = run_command(&path, &["--version"], None, Some(5_000))?;
+```
+
+The same capability also unlocks persisting small bits of state (settings, a cached token, ...) in the plugin's private storage directory - there's no direct filesystem access from a wasm guest, so this goes through the host too:
+
+```rust
+use rustrest_plugin_api::{storage_read, storage_write};
+
+storage_write("config.json", b"{...}")?;
+let bytes: Option<Vec<u8>> = storage_read("config.json")?; // None if it doesn't exist yet
+```
+
+And outbound HTTP requests, for anything that needs to talk to a real API (an LLM provider, a webhook, ...) rather than download a file. Unlike everything else in `Plugin`, this call never blocks the plugin call path - it starts the request on a host-owned background thread and returns a handle immediately, with the result delivered later via `on_http_response`:
+
+```rust
+use rustrest_plugin_api::{HttpRequestSpec, HttpResponseData, Plugin, http_request};
+
+#[derive(Default)]
+struct MyPlugin { pending_handle: Option<u32> }
+
+impl Plugin for MyPlugin {
+    fn on_command(&mut self, command_id: &str) -> Result<Option<String>, String> {
+        if command_id == "ping" {
+            let spec = HttpRequestSpec {
+                method: "GET".to_string(),
+                url: "https://example.com/api/ping".to_string(), // https:// only
+                headers: vec![],
+                body: None,
+            };
+            self.pending_handle = Some(http_request(spec)?);
+        }
+        Ok(None)
+    }
+
+    fn on_http_response(&mut self, _handle: u32, result: Result<HttpResponseData, String>) {
+        // result.body/status/headers, or an error string - inspect and act on it here.
+        // there's no return value the host acts on, so if this needs to change what
+        // render_panel/render_right_panel shows, stash it on `self` and read it back
+        // from there on the next render call.
+    }
+}
 ```
 
 For anything long-lived - the actual "download and drive `rust-analyzer`" case - use `Process`:

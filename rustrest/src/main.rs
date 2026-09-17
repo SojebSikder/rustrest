@@ -35,7 +35,7 @@ use app::Rustrest;
 use iced::futures::{SinkExt, StreamExt, stream::BoxStream};
 use iced::keyboard::Key;
 use iced::keyboard::key::Named;
-use iced::widget::{column, container, row, stack};
+use iced::widget::{Space, button, column, container, row, stack, text};
 use iced::window;
 use iced::{Alignment, Element, Length, Padding};
 use iced::{Event, Subscription, event};
@@ -467,14 +467,31 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
     let menu_strip = render_menu_bar(&menu_structure).map(Message::MenuInteraction);
 
     let workspace_selector = ui::sidebar::render_workspace_selector(app);
-    let top_bar = container(row![workspace_selector].align_y(Alignment::Center))
+    let mut top_bar_row = row![workspace_selector, Space::new().width(Length::Fill)]
         .width(Length::Fill)
-        .padding(Padding {
-            top: 0.0,
-            left: 0.0,
-            right: 0.0,
-            bottom: 10.0,
-        });
+        .align_y(Alignment::Center);
+    // only shown once at least one enabled plugin declares `RightPanel`
+    if let Some((plugin_id, panel)) = app.plugin_manager.right_panels().into_iter().next() {
+        let is_open = app
+            .right_panel_open
+            .as_ref()
+            .is_some_and(|(p, _)| *p == plugin_id);
+        top_bar_row = top_bar_row.push(
+            button(text(format!("\u{2728} {}", panel.title)))
+                .on_press(Message::ToggleRightPanel(plugin_id, panel.id))
+                .style(if is_open {
+                    button::primary
+                } else {
+                    button::secondary
+                }),
+        );
+    }
+    let top_bar = container(top_bar_row).width(Length::Fill).padding(Padding {
+        top: 0.0,
+        left: 0.0,
+        right: 0.0,
+        bottom: 10.0,
+    });
 
     let sidebar = ui::sidebar::render_sidebar(app);
     let sidebar_resize_handle = resize_handle(
@@ -512,10 +529,30 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
             .push(console_content);
     }
 
-    let content_row = row![sidebar, sidebar_resize_handle, workbench_column]
+    let mut content_row = row![sidebar, sidebar_resize_handle, workbench_column]
         .spacing(10)
         .width(Length::Fill)
         .height(Length::Fill);
+
+    if let Some((plugin_id, panel_id)) = &app.right_panel_open {
+        let right_panel_resize_handle = resize_handle(
+            DividerOrientation::Vertical,
+            Message::ResizeDragStarted(ResizeKind::RightPanel),
+        );
+        let right_panel_content = container(ui::right_panel::render_right_panel(
+            plugin_id,
+            panel_id,
+            app.right_panel_tree.as_ref(),
+        ))
+        .width(Length::Fixed(app.right_panel_width))
+        .height(Length::Fill)
+        .padding(10)
+        .style(container::bordered_box);
+
+        content_row = content_row
+            .push(right_panel_resize_handle)
+            .push(right_panel_content);
+    }
 
     let base_layout = column![top_bar, content_row]
         .padding(Padding {

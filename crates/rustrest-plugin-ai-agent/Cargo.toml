@@ -1,0 +1,22 @@
+[workspace]
+
+[package]
+name = "rustrest-plugin-ai-agent"
+version = "0.1.0"
+edition = "2024"
+description = "AI agent panel plugin: chat, edit-request, and test-generation assistant docked in Rustrest's right panel"
+publish = false
+
+[lib]
+name = "rustrest_plugin_ai_agent"
+crate-type = ["cdylib"]
+
+[dependencies]
+rustrest-plugin-api = { path = "../rustrest-plugin-api" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[profile.release]
+panic = "abort"
+strip = true
+opt-level = "s"

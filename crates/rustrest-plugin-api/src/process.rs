@@ -42,6 +42,22 @@ pub fn storage_dir() -> Result<String, String> {
     hostcall::call("storage_dir", ())
 }
 
+/// reads a file previously written via [`storage_write`] from this plugin's
+/// private storage directory. `filename` must be a bare filename (no path
+/// separators). Returns `Ok(None)` if the file doesn't exist.
+#[cfg(target_arch = "wasm32")]
+pub fn storage_read(filename: &str) -> Result<Option<Vec<u8>>, String> {
+    hostcall::call("storage_read", filename)
+}
+
+/// writes `bytes` to a file in this plugin's private storage directory,
+/// creating or overwriting it. `filename` must be a bare filename (no path
+/// separators).
+#[cfg(target_arch = "wasm32")]
+pub fn storage_write(filename: &str, bytes: &[u8]) -> Result<(), String> {
+    hostcall::call("storage_write", (filename, bytes))
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommandOutput {
     pub status: i32,

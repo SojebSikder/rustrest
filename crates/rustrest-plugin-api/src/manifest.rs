@@ -47,6 +47,11 @@ pub enum Capability {
     Commands(Vec<CommandDef>),
     MenuItems(Vec<MenuItemDef>),
     SidebarPanel(PanelDef),
+    /// a panel docked in the app's right-hand panel (distinct from
+    /// `SidebarPanel`, which opens as a tab): rendered with ambient
+    /// `RightPanelContext` (the active request/response, if any) and able to
+    /// hand back a `RequestPatch` the host applies to the active tab.
+    RightPanel(PanelDef),
     ImportFormat(FormatDef),
     ExportFormat(FormatDef),
     /// unlocks the `which` / `download_file` / `make_executable` /

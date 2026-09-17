@@ -19,6 +19,7 @@ pub enum ResizeKind {
     Sidebar,
     RequestPane,
     ConsolePanel,
+    RightPanel,
 }
 
 /// identifies the sidebar item currently being dragged.
@@ -520,8 +521,15 @@ pub enum Message {
     ),
     /// driven by a timer; drains buffered output from any process a plugin
     /// spawned via the `ExternalProcess` capability and delivers it into the
-    /// owning plugin.
+    /// owning plugin. Also drains any outbound HTTP requests started via
+    /// `http_request` (same capability).
     PluginProcessTick,
+    /// opens the given plugin's right panel, or closes it if it's already
+    /// the one open (a single generic toggle, not specific to any plugin).
+    ToggleRightPanel(String, String),
+    /// plugin_id, panel_id, event - a widget interaction inside the open
+    /// right panel.
+    RightPanelEvent(String, String, rustrest_plugin_host::UiEvent),
     /// plugin_id - shows a confirmation dialog before uninstalling.
     UninstallPluginPressed(String),
     /// plugin_id - the uninstall confirmation was accepted.

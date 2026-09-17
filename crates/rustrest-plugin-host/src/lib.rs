@@ -7,6 +7,7 @@ mod hostcall;
 mod instance;
 mod manager;
 mod manifest_toml;
+mod network;
 mod process;
 mod state;
 
@@ -17,6 +18,7 @@ pub use manager::PluginManager;
 pub use wasmtime::{Engine, Module};
 
 pub use rustrest_plugin_api::{
-    Capability, CommandDef, FormatDef, MenuItemDef, PanelDef, PluginManifest, ProcessStream,
-    RequestContext, ResponseContext, UiEvent, UiNode,
+    Capability, CommandDef, FormatDef, HttpResponseData, MenuItemDef, PanelDef, PluginManifest,
+    ProcessStream, RequestContext, RequestPatch, ResponseContext, RightPanelAction,
+    RightPanelContext, UiEvent, UiNode,
 };

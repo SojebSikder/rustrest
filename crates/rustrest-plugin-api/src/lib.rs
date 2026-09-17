@@ -29,6 +29,7 @@ mod host;
 #[cfg(target_arch = "wasm32")]
 mod hostcall;
 mod manifest;
+pub mod network;
 mod plugin;
 pub mod process;
 mod ui;
@@ -44,17 +45,24 @@ pub mod _internal {
 #[cfg(target_arch = "wasm32")]
 mod runtime;
 
-pub use hooks::{RequestContext, ResponseContext, TestResult};
+pub use hooks::{
+    RequestContext, RequestPatch, ResponseContext, RightPanelAction, RightPanelContext, TestResult,
+};
 #[cfg(target_arch = "wasm32")]
 pub use host::log;
 pub use manifest::{
     CURRENT_SCHEMA_VERSION, Capability, CommandDef, FormatDef, MenuItemDef, PanelDef,
     PluginManifest,
 };
+#[cfg(target_arch = "wasm32")]
+pub use network::http_request;
+pub use network::{HttpRequestSpec, HttpResponseData};
 pub use plugin::Plugin;
 #[cfg(target_arch = "wasm32")]
 pub use process::Process;
 pub use process::{CommandOutput, ProcessStream};
+#[cfg(target_arch = "wasm32")]
+pub use process::{storage_read, storage_write};
 pub use ui::{UiEvent, UiNode};
 
 /// Generates the `rustrest_alloc` / `rustrest_dealloc` / `rustrest_call`

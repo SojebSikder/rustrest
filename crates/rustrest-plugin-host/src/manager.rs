@@ -1,10 +1,11 @@
 use crate::error::PluginError;
 use crate::instance::{LoadedPlugin, compile, load_from_module, load_plugin};
 use crate::manifest_toml::{self, MANIFEST_FILE_NAME, WASM_FILE_NAME};
+use crate::network::{NetworkEvent, NetworkTable};
 use crate::process::{ProcessEvent, ProcessTable};
 use rustrest_plugin_api::{
     Capability, CommandDef, FormatDef, MenuItemDef, PanelDef, PluginManifest, RequestContext,
-    ResponseContext, UiEvent, UiNode,
+    ResponseContext, RightPanelAction, RightPanelContext, UiEvent, UiNode,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -305,6 +306,36 @@ impl PluginManager {
         touched
     }
 
+    /// mirror of `pump_processes` for outbound HTTP requests started via
+    /// `http_request`: drains buffered `NetworkEvent`s and delivers each into
+    /// the owning plugin's `on_http_response`, returning which plugin ids had
+    /// activity so the caller can re-render an open panel for one of them.
+    pub fn pump_network(&mut self) -> Vec<String> {
+        let mut touched = Vec::new();
+        for plugin in self.plugins.iter_mut().filter(|p| p.is_active()) {
+            let plugin_id = plugin.id().to_string();
+            let dir_name = plugin.dir_name.clone();
+            let runtime = plugin.runtime.as_mut().expect("checked active");
+            let events = NetworkTable::drain_events(&runtime.network);
+            if events.is_empty() {
+                continue;
+            }
+            touched.push(plugin_id);
+            for event in events {
+                let NetworkEvent::Response(handle, result) = event;
+                let call_result = runtime.handles.call_json::<_, ()>(
+                    &mut runtime.store,
+                    "on_http_response",
+                    (handle, result),
+                );
+                if let Err(e) = call_result {
+                    log_hook_error(runtime, &dir_name, "http-response", &e);
+                }
+            }
+        }
+        touched
+    }
+
     pub fn commands(&self) -> Vec<(String, CommandDef)> {
         let mut out = Vec::new();
         for plugin in self.plugins.iter().filter(|p| p.is_active()) {
@@ -343,6 +374,21 @@ impl PluginManager {
             };
             for cap in &manifest.capabilities {
                 if let Capability::SidebarPanel(panel) = cap {
+                    out.push((plugin.id().to_string(), panel.clone()));
+                }
+            }
+        }
+        out
+    }
+
+    pub fn right_panels(&self) -> Vec<(String, PanelDef)> {
+        let mut out = Vec::new();
+        for plugin in self.plugins.iter().filter(|p| p.is_active()) {
+            let Some(manifest) = &plugin.manifest else {
+                continue;
+            };
+            for cap in &manifest.capabilities {
+                if let Capability::RightPanel(panel) = cap {
                     out.push((plugin.id().to_string(), panel.clone()));
                 }
             }
@@ -411,6 +457,35 @@ impl PluginManager {
         runtime
             .handles
             .call_json(&mut runtime.store, "on_panel_event", (panel_id, event))
+    }
+
+    pub fn render_right_panel(
+        &mut self,
+        plugin_id: &str,
+        panel_id: &str,
+        ctx: RightPanelContext,
+    ) -> Result<RightPanelAction, PluginError> {
+        let plugin = self.find_active(plugin_id)?;
+        let runtime = plugin.runtime.as_mut().expect("checked active");
+        runtime
+            .handles
+            .call_json(&mut runtime.store, "render_right_panel", (panel_id, ctx))
+    }
+
+    pub fn right_panel_event(
+        &mut self,
+        plugin_id: &str,
+        panel_id: &str,
+        ctx: RightPanelContext,
+        event: UiEvent,
+    ) -> Result<RightPanelAction, PluginError> {
+        let plugin = self.find_active(plugin_id)?;
+        let runtime = plugin.runtime.as_mut().expect("checked active");
+        runtime.handles.call_json(
+            &mut runtime.store,
+            "on_right_panel_event",
+            (panel_id, ctx, event),
+        )
     }
 
     pub fn import(

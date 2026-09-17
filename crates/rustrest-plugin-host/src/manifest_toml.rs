@@ -38,6 +38,8 @@ struct TomlCapabilities {
     #[serde(default)]
     sidebar_panel: Option<PanelDef>,
     #[serde(default)]
+    right_panel: Option<PanelDef>,
+    #[serde(default)]
     import_formats: Vec<FormatDef>,
     #[serde(default)]
     export_formats: Vec<FormatDef>,
@@ -71,6 +73,9 @@ pub fn parse(toml_source: &str) -> Result<PluginManifest, PluginError> {
     }
     if let Some(panel) = raw.capabilities.sidebar_panel {
         capabilities.push(Capability::SidebarPanel(panel));
+    }
+    if let Some(panel) = raw.capabilities.right_panel {
+        capabilities.push(Capability::RightPanel(panel));
     }
     for format in raw.capabilities.import_formats {
         capabilities.push(Capability::ImportFormat(format));

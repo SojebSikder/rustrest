@@ -2,9 +2,10 @@
 //! import, `host_call`, that every guest→host request goes through
 
 use crate::error::PluginError;
+use crate::network::NetworkTable;
 use crate::process::ProcessTable;
 use crate::state::PluginState;
-use rustrest_plugin_api::CommandOutput;
+use rustrest_plugin_api::{CommandOutput, HttpRequestSpec};
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -55,6 +56,7 @@ pub fn link_host_functions(linker: &mut Linker<PluginState>) -> Result<(), Plugi
             let storage_dir = caller.data().storage_dir.clone();
             let external_process_allowed = caller.data().external_process_allowed;
             let processes = caller.data().processes.clone();
+            let network = caller.data().network.clone();
             let logs = caller.data().logs.clone();
 
             let response = execute(
@@ -64,6 +66,7 @@ pub fn link_host_functions(linker: &mut Linker<PluginState>) -> Result<(), Plugi
                 &storage_dir,
                 external_process_allowed,
                 &processes,
+                &network,
                 &logs,
             );
 
@@ -114,6 +117,7 @@ fn execute(
     storage_dir: &Path,
     external_process_allowed: bool,
     processes: &Arc<Mutex<ProcessTable>>,
+    network: &Arc<Mutex<NetworkTable>>,
     logs: &Arc<Mutex<Vec<String>>>,
 ) -> Vec<u8> {
     macro_rules! decode {
@@ -213,6 +217,36 @@ fn execute(
                 Err(e) => encode_err(&e),
             }
         }
+        "http_request" => {
+            require_external_process!();
+            let spec: HttpRequestSpec = decode!();
+            match NetworkTable::spawn_request(
+                network,
+                spec.method,
+                spec.url,
+                spec.headers,
+                spec.body,
+            ) {
+                Ok(handle) => encode_ok(&handle),
+                Err(e) => encode_err(&e),
+            }
+        }
+        "storage_read" => {
+            require_external_process!();
+            let filename: String = decode!();
+            match storage_read(storage_dir, &filename) {
+                Ok(bytes) => encode_ok(&bytes),
+                Err(e) => encode_err(&e),
+            }
+        }
+        "storage_write" => {
+            require_external_process!();
+            let (filename, bytes): (String, Vec<u8>) = decode!();
+            match storage_write(storage_dir, &filename, &bytes) {
+                Ok(()) => encode_ok(&()),
+                Err(e) => encode_err(&e),
+            }
+        }
         other => encode_err(&format!("unknown host call: {other}")),
     }
 }
@@ -283,6 +317,29 @@ fn download_file(storage_dir: &Path, url: &str, filename: &str) -> Result<String
     }
 
     Ok(dest.to_string_lossy().to_string())
+}
+
+fn safe_storage_path(storage_dir: &Path, filename: &str) -> Result<PathBuf, String> {
+    let safe_name: PathBuf = Path::new(filename)
+        .file_name()
+        .ok_or_else(|| "invalid filename".to_string())?
+        .into();
+    std::fs::create_dir_all(storage_dir).map_err(|e| e.to_string())?;
+    Ok(storage_dir.join(safe_name))
+}
+
+fn storage_read(storage_dir: &Path, filename: &str) -> Result<Option<Vec<u8>>, String> {
+    let path = safe_storage_path(storage_dir, filename)?;
+    match std::fs::read(&path) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+fn storage_write(storage_dir: &Path, filename: &str, bytes: &[u8]) -> Result<(), String> {
+    let path = safe_storage_path(storage_dir, filename)?;
+    std::fs::write(&path, bytes).map_err(|e| e.to_string())
 }
 
 fn make_executable(path: &str) -> Result<(), String> {

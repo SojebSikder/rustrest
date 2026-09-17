@@ -1,8 +1,4 @@
-//! Renders a plugin's declarative `UiNode` tree (see `rustrest-plugin-api`)
-//! as real `iced` widgets, and maps interaction back into
-//! `Message::PluginPanelEvent`. Plugins run sandboxed in wasm and have no
-//! access to `iced::Element`, so this translation layer is the only way a
-//! plugin's sidebar panel gets rendered.
+//! Renders a plugin's declarative `UiNode` tree
 
 use crate::message::Message;
 use iced::Element;
@@ -15,15 +11,26 @@ pub fn render_plugin_panel<'a>(
     tree: Option<&'a UiNode>,
 ) -> Element<'a, Message> {
     match tree {
-        Some(node) => scrollable(render_node(plugin_id, panel_id, node))
-            .width(iced::Length::Fill)
-            .height(iced::Length::Fill)
-            .into(),
+        Some(node) => scrollable(render_node(
+            plugin_id,
+            panel_id,
+            node,
+            Message::PluginPanelEvent,
+        ))
+        .width(iced::Length::Fill)
+        .height(iced::Length::Fill)
+        .into(),
         None => text("(plugin panel unavailable)").into(),
     }
 }
 
-fn render_node<'a>(plugin_id: &str, panel_id: &str, node: &'a UiNode) -> Element<'a, Message> {
+/// translates a `UiNode` tree into real widgets
+pub(crate) fn render_node<'a>(
+    plugin_id: &str,
+    panel_id: &str,
+    node: &'a UiNode,
+    to_message: fn(String, String, UiEvent) -> Message,
+) -> Element<'a, Message> {
     let plugin_id = plugin_id.to_string();
     let panel_id = panel_id.to_string();
 
@@ -31,7 +38,7 @@ fn render_node<'a>(plugin_id: &str, panel_id: &str, node: &'a UiNode) -> Element
         UiNode::Label(label) => text(label.clone()).into(),
 
         UiNode::Button { id, label } => button(text(label.clone()))
-            .on_press(Message::PluginPanelEvent(
+            .on_press(to_message(
                 plugin_id,
                 panel_id,
                 UiEvent::Clicked(id.clone()),
@@ -46,7 +53,7 @@ fn render_node<'a>(plugin_id: &str, panel_id: &str, node: &'a UiNode) -> Element
             let id = id.clone();
             text_input(placeholder, value)
                 .on_input(move |new_value| {
-                    Message::PluginPanelEvent(
+                    to_message(
                         plugin_id.clone(),
                         panel_id.clone(),
                         UiEvent::Changed(id.clone(), new_value),
@@ -60,7 +67,7 @@ fn render_node<'a>(plugin_id: &str, panel_id: &str, node: &'a UiNode) -> Element
             checkbox(*checked)
                 .label(label.clone())
                 .on_toggle(move |new_value| {
-                    Message::PluginPanelEvent(
+                    to_message(
                         plugin_id.clone(),
                         panel_id.clone(),
                         UiEvent::Toggled(id.clone(), new_value),
@@ -80,7 +87,7 @@ fn render_node<'a>(plugin_id: &str, panel_id: &str, node: &'a UiNode) -> Element
         UiNode::Row(children) => {
             let mut r = row![].spacing(8);
             for child in children {
-                r = r.push(render_node(&plugin_id, &panel_id, child));
+                r = r.push(render_node(&plugin_id, &panel_id, child, to_message));
             }
             r.into()
         }
@@ -88,7 +95,7 @@ fn render_node<'a>(plugin_id: &str, panel_id: &str, node: &'a UiNode) -> Element
         UiNode::Column(children) => {
             let mut c = column![].spacing(8);
             for child in children {
-                c = c.push(render_node(&plugin_id, &panel_id, child));
+                c = c.push(render_node(&plugin_id, &panel_id, child, to_message));
             }
             c.into()
         }

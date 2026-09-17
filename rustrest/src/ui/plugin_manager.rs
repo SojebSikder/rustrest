@@ -47,6 +47,7 @@ fn capability_label(capability: &Capability) -> &'static str {
         Capability::Commands(_) => "Commands",
         Capability::MenuItems(_) => "Menu Items",
         Capability::SidebarPanel(_) => "Sidebar Panel",
+        Capability::RightPanel(_) => "Right Panel",
         Capability::ImportFormat(_) => "Import Format",
         Capability::ExportFormat(_) => "Export Format",
         Capability::ExternalProcess => "External Process",
