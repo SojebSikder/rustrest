@@ -31,11 +31,12 @@ use crate::ui::resize_handle::{DividerOrientation, resize_handle};
 use crate::ui::response_timing_modal::view_response_timing_modal;
 use crate::ui::save_request_model::save_request_model::view_save_request_modal;
 use crate::ui::settings::view_settings_modal;
+use crate::ui::tooltip::with_tooltip;
 use app::Rustrest;
 use iced::futures::{SinkExt, StreamExt, stream::BoxStream};
 use iced::keyboard::Key;
 use iced::keyboard::key::Named;
-use iced::widget::{Space, button, column, container, row, stack, text};
+use iced::widget::{Space, button, column, container, row, stack, text, tooltip};
 use iced::window;
 use iced::{Alignment, Element, Length, Padding};
 use iced::{Event, Subscription, event};
@@ -698,17 +699,21 @@ fn render_right_panel_rail(
             .map(|c| c.to_uppercase().to_string())
             .unwrap_or_else(|| "?".to_string());
 
-        rail = rail.push(
-            button(text(initial).size(14))
-                .width(Length::Fixed(32.0))
-                .height(Length::Fixed(32.0))
-                .on_press(Message::ToggleRightPanel(plugin_id, panel.id))
-                .style(if is_open {
-                    button::primary
-                } else {
-                    button::secondary
-                }),
-        );
+        let icon_button = button(text(initial).size(14))
+            .width(Length::Fixed(32.0))
+            .height(Length::Fixed(32.0))
+            .on_press(Message::ToggleRightPanel(plugin_id, panel.id))
+            .style(if is_open {
+                button::primary
+            } else {
+                button::secondary
+            });
+
+        rail = rail.push(with_tooltip(
+            icon_button,
+            panel.title,
+            tooltip::Position::Left,
+        ));
     }
 
     container(rail).padding(Padding::from([8.0, 0.0])).into()

@@ -23,5 +23,6 @@ pub mod spinner;
 pub mod tab;
 pub mod terminal_view;
 pub mod toast;
+pub mod tooltip;
 pub mod unsaved;
 pub mod workspace;
