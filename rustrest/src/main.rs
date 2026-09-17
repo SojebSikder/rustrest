@@ -45,8 +45,8 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::sync::mpsc::UnboundedReceiver;
 
-#[global_allocator]
-static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+// #[global_allocator]
+// static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 const APP_NAME: &str = "Rustrest";
 const APP_VERSION: &str = "0.1.12";
