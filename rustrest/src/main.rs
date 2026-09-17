@@ -39,7 +39,7 @@ use iced::widget::{Space, button, column, container, row, stack, text};
 use iced::window;
 use iced::{Alignment, Element, Length, Padding};
 use iced::{Event, Subscription, event};
-use message::{Message, ResizeKind};
+use message::{Message, MultilineFieldKind, ResizeKind};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -467,26 +467,9 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
     let menu_strip = render_menu_bar(&menu_structure).map(Message::MenuInteraction);
 
     let workspace_selector = ui::sidebar::render_workspace_selector(app);
-    let mut top_bar_row = row![workspace_selector, Space::new().width(Length::Fill)]
+    let top_bar_row = row![workspace_selector, Space::new().width(Length::Fill)]
         .width(Length::Fill)
         .align_y(Alignment::Center);
-    // only shown once at least one enabled plugin declares `RightPanel`
-    if let Some((plugin_id, panel)) = app.plugins.plugin_manager.right_panels().into_iter().next() {
-        let is_open = app
-            .plugins
-            .right_panel_open
-            .as_ref()
-            .is_some_and(|(p, _)| *p == plugin_id);
-        top_bar_row = top_bar_row.push(
-            button(text(format!("\u{2728} {}", panel.title)))
-                .on_press(Message::ToggleRightPanel(plugin_id, panel.id))
-                .style(if is_open {
-                    button::primary
-                } else {
-                    button::secondary
-                }),
-        );
-    }
     let top_bar = container(top_bar_row).width(Length::Fill).padding(Padding {
         top: 0.0,
         left: 0.0,
@@ -555,6 +538,11 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
             .push(right_panel_content);
     }
 
+    let right_panels = app.plugins.plugin_manager.right_panels();
+    if !right_panels.is_empty() {
+        content_row = content_row.push(render_right_panel_rail(app, right_panels));
+    }
+
     let base_layout = column![top_bar, content_row]
         .padding(Padding {
             top: 44.0,
@@ -590,11 +578,19 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
 
     // commit-changes modal overlay
     if let Some(commit_modal) = app.git.commit_modal.as_ref() {
-        let commit_overlay = container(view_commit_modal(commit_modal, app.spinner_tick))
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_x(Alignment::Center)
-            .align_y(Alignment::Center);
+        let commit_overlay = container(view_commit_modal(
+            commit_modal,
+            app.spinner_tick,
+            app.layout
+                .multiline_height(MultilineFieldKind::CommitMessage),
+            Message::ResizeDragStarted(ResizeKind::MultilineField(
+                MultilineFieldKind::CommitMessage,
+            )),
+        ))
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_x(Alignment::Center)
+        .align_y(Alignment::Center);
         main_interface_stack = main_interface_stack.push(commit_overlay);
     }
 
@@ -684,4 +680,36 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
     }
 
     stack![main_interface_stack, toast_layer].into()
+}
+
+fn render_right_panel_rail(
+    app: &Rustrest,
+    panels: Vec<(String, rustrest_plugin_host::PanelDef)>,
+) -> Element<'_, Message> {
+    let mut rail = column![].spacing(6).width(Length::Shrink);
+
+    for (plugin_id, panel) in panels {
+        let is_open =
+            app.plugins.right_panel_open.as_ref() == Some(&(plugin_id.clone(), panel.id.clone()));
+        let initial = panel
+            .title
+            .chars()
+            .next()
+            .map(|c| c.to_uppercase().to_string())
+            .unwrap_or_else(|| "?".to_string());
+
+        rail = rail.push(
+            button(text(initial).size(14))
+                .width(Length::Fixed(32.0))
+                .height(Length::Fixed(32.0))
+                .on_press(Message::ToggleRightPanel(plugin_id, panel.id))
+                .style(if is_open {
+                    button::primary
+                } else {
+                    button::secondary
+                }),
+        );
+    }
+
+    container(rail).padding(Padding::from([8.0, 0.0])).into()
 }

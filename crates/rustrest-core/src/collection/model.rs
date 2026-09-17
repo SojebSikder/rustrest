@@ -262,6 +262,8 @@ pub struct PostmanRequestDetails {
     pub url: Option<PostmanUrl>,
     pub header: Option<Vec<PostmanHeader>>,
     pub body: Option<PostmanBody>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -19,7 +19,12 @@ pub struct CommitModalState {
     pub committing: bool,
 }
 
-pub fn view_commit_modal(state: &CommitModalState, spinner_tick: u64) -> Element<'_, Message> {
+pub fn view_commit_modal(
+    state: &CommitModalState,
+    spinner_tick: u64,
+    message_height: f32,
+    on_message_resize_start: Message,
+) -> Element<'_, Message> {
     let title = text(format!("Commit changes - {}", state.collection_name))
         .size(18)
         .font(Font {
@@ -57,9 +62,10 @@ pub fn view_commit_modal(state: &CommitModalState, spinner_tick: u64) -> Element
         "e.g. Update login request",
         &state.message,
         10,
-        200.0,
+        message_height,
         Message::CommitMessageChanged,
         Message::ShowTextFieldContextMenu(FieldTarget::CommitMessage, state.message.text()),
+        on_message_resize_start,
     );
 
     let footer = if state.committing {

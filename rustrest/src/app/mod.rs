@@ -439,6 +439,7 @@ pub fn init() -> (Rustrest, Task<Message>) {
             console_logs: Vec::new(),
             console_collapsed: true,
             console_panel_height: 220.0,
+            multiline_heights: std::collections::HashMap::new(),
         },
         git: git::GitState {
             git_status_cache: std::collections::HashMap::new(),
@@ -791,6 +792,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
 
         // simple inline disk overwrite action
         Message::SaveCollectionPressed(col_id) => collections::save_pressed(app, col_id),
+        Message::CollectionFirstSaved(col_id, path) => collections::first_saved(app, col_id, path),
 
         // git
         // Point an existing (or new) collection at a git-friendly folder on disk.

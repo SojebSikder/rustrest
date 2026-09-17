@@ -7,6 +7,7 @@ use crate::collection::collection::{PostmanRequestDetails, PostmanRequestNode, P
 use crate::collection::env::Environment;
 use crate::collection_adapter::{RequestNodeTabExt, sync_body_from_tab};
 use crate::http_client::{HttpMethod, HttpResponse};
+use crate::message::MultilineFieldKind;
 use crate::ui::resize_handle::{DividerOrientation, resize_handle};
 use crate::ui::tab::types::ScriptTab;
 use crate::ui::tab::views;
@@ -115,18 +116,26 @@ impl Tab {
         }
     }
 
-    pub fn view<Message>(
-        &self,
+    #[allow(clippy::too_many_arguments)]
+    pub fn view<'a, Message>(
+        &'a self,
         wrap_msg: impl Fn(TabMessage) -> Message + Copy + 'static,
         on_send: Message,
         request_pane_height: f32,
         on_resize_start: Message,
-    ) -> Element<'_, Message>
+        multiline_height: impl Fn(MultilineFieldKind) -> f32 + Copy + 'a,
+        on_multiline_resize_start: impl Fn(MultilineFieldKind) -> Message + Copy + 'a,
+    ) -> Element<'a, Message>
     where
         Message: Clone + 'static,
     {
         let request_bar = views::request::render_request_bar(self, wrap_msg, on_send);
-        let configuration_pane = views::request::render_configuration_pane(self, wrap_msg);
+        let configuration_pane = views::request::render_configuration_pane(
+            self,
+            wrap_msg,
+            multiline_height,
+            on_multiline_resize_start,
+        );
         let response_content = views::response::render_response_pane(self, wrap_msg);
 
         column![
@@ -154,6 +163,7 @@ impl Tab {
                 url: Some(PostmanUrl::String(self.url.clone())),
                 header: None,
                 body: None,
+                auth: None,
             },
             event: None,
             unsaved: false,

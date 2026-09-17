@@ -1,7 +1,7 @@
 use crate::APP_NAME;
 use crate::app::{Rustrest, WorkspaceContent};
 use crate::http_client::HttpMethod;
-use crate::message::{Message, ResizeKind};
+use crate::message::{Message, MultilineFieldKind, ResizeKind};
 use crate::ui::context_menu::{FieldTarget, with_context_menu};
 use crate::ui::unsaved::{tab_is_unsaved, unsaved_dot};
 use iced::widget::{
@@ -173,6 +173,10 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
             Message::SendPressed,
             app.layout.request_pane_height,
             Message::ResizeDragStarted(ResizeKind::RequestPane),
+            move |kind: MultilineFieldKind| app.layout.multiline_height(kind),
+            move |kind: MultilineFieldKind| {
+                Message::ResizeDragStarted(ResizeKind::MultilineField(kind))
+            },
         ),
 
         WorkspaceContent::CollectionRoot {

@@ -1,6 +1,6 @@
 //! Template/example native Rustrest plugin. Demonstrates the capabilities
-//! most plugins will use: a request hook, a command, a sidebar panel, and
-//! (via the `ExternalProcess` capability) spawning and driving a persistent
+//! most plugins will use: a request hook, a command, a sidebar panel, a right
+//! panel, and (via the `ExternalProcess` capability) spawning and driving a persistent
 //! external process - the same shape a plugin would use to download and run
 //! something LSP-like (e.g. `rust-analyzer`), just with a network-free stand-in
 //! so this demo works offline. Build with:
@@ -14,7 +14,10 @@
 //! and `plugin.toml` into `<plugins-dir>/example/` (the containing directory
 //! name must match the `id` declared in `plugin.toml`, here `"example"`).
 
-use rustrest_plugin_api::{Plugin, Process, ProcessStream, RequestContext, UiEvent, UiNode};
+use rustrest_plugin_api::{
+    Plugin, Process, ProcessStream, RequestContext, RightPanelAction, RightPanelContext, UiEvent,
+    UiNode,
+};
 
 #[derive(Default)]
 struct ExamplePlugin {
@@ -22,6 +25,7 @@ struct ExamplePlugin {
     echo_process: Option<Process>,
     input_value: String,
     output_log: Vec<String>,
+    right_panel_clicks: u32,
 }
 
 /// picks the external command this demo spawns and talks to over
@@ -151,6 +155,49 @@ impl Plugin for ExamplePlugin {
     fn on_process_exit(&mut self, _handle: u32, code: Option<i32>) {
         self.output_log.push(format!("process exited: {code:?}"));
         self.echo_process = None;
+    }
+
+    fn render_right_panel(&mut self, _panel_id: &str, ctx: RightPanelContext) -> RightPanelAction {
+        RightPanelAction::UpdateUi(self.render_right_panel_tree(&ctx))
+    }
+
+    fn on_right_panel_event(
+        &mut self,
+        _panel_id: &str,
+        ctx: RightPanelContext,
+        event: UiEvent,
+    ) -> RightPanelAction {
+        if let UiEvent::Clicked(id) = event
+            && id == "right-panel-clicked"
+        {
+            self.right_panel_clicks += 1;
+        }
+        RightPanelAction::UpdateUi(self.render_right_panel_tree(&ctx))
+    }
+}
+
+impl ExamplePlugin {
+    /// demonstrates `Capability::RightPanel`: a panel docked in the app's
+    /// right-hand column (unlike `render_panel`'s sidebar tab), rendered with
+    /// ambient access to whatever request/response tab is currently active.
+    fn render_right_panel_tree(&self, ctx: &RightPanelContext) -> UiNode {
+        let mut children = vec![
+            UiNode::Label("Example right panel".to_string()),
+            UiNode::Label(format!("Button clicked {} time(s)", self.right_panel_clicks)),
+            UiNode::Button {
+                id: "right-panel-clicked".to_string(),
+                label: "Click me".to_string(),
+            },
+        ];
+
+        if let Some(req) = &ctx.active_request {
+            children.push(UiNode::Label(format!("Active: {} {}", req.method, req.url)));
+        }
+        if let Some(resp) = &ctx.active_response {
+            children.push(UiNode::Label(format!("Last response: {}", resp.status)));
+        }
+
+        UiNode::Column(children)
     }
 }
 

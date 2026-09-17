@@ -1,5 +1,5 @@
 use crate::app::Rustrest;
-use crate::message::Message;
+use crate::message::{Message, MultilineFieldKind, ResizeKind};
 use crate::ui::context_menu::{FieldTarget, with_context_menu};
 use crate::ui::modal::card;
 use crate::ui::multiline_input::multiline_input;
@@ -92,7 +92,8 @@ pub fn render_env_editor(app: &Rustrest) -> Option<Element<'_, Message>> {
                 "Value...",
                 value_content,
                 4,
-                80.0,
+                app.layout
+                    .multiline_height(MultilineFieldKind::EnvVarValue { env_idx, var_idx }),
                 move |action| Message::EnvVariableValueEditorAction {
                     env_idx,
                     var_idx,
@@ -102,6 +103,9 @@ pub fn render_env_editor(app: &Rustrest) -> Option<Element<'_, Message>> {
                     FieldTarget::EnvVarValue { env_idx, var_idx },
                     var.value.clone(),
                 ),
+                Message::ResizeDragStarted(ResizeKind::MultilineField(
+                    MultilineFieldKind::EnvVarValue { env_idx, var_idx },
+                )),
             ),
             None => text("").into(),
         };

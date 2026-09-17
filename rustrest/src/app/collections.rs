@@ -166,13 +166,22 @@ pub fn save_pressed(app: &mut Rustrest, col_id: usize) -> Task<Message> {
         .unwrap_or(false);
 
     if !has_known_location {
-        // never been saved anywhere, behave like export (first-time save)
-        return iced::Task::done(Message::ExportCollectionPressed(col_id));
+        // never been saved anywhere: pick a file to save to and remember it,
+        // so the collection stops showing as unsaved once it's written.
+        return first_save_pressed(app, col_id);
     }
 
     if let Some(col) = app.collections.iter_mut().find(|c| c.id == col_id) {
         col.clear_unsaved();
     }
+    clear_tab_dirty_for_collection(app, col_id);
+
+    persist_if_known_location(app, col_id, "Collection saved successfully".to_string())
+}
+
+/// clears the dirty flag on every open tab (request or collection root)
+/// belonging to `col_id`, once its contents have just been persisted.
+fn clear_tab_dirty_for_collection(app: &mut Rustrest, col_id: usize) {
     for tab_state in &mut app.tabs {
         let belongs = match &tab_state.content {
             WorkspaceContent::HttpRequest => tab_state.tab.collection_id == Some(col_id),
@@ -186,8 +195,58 @@ pub fn save_pressed(app: &mut Rustrest, col_id: usize) -> Task<Message> {
             tab_state.tab.dirty = false;
         }
     }
+}
 
-    persist_if_known_location(app, col_id, "Collection saved successfully".to_string())
+/// the first save of a collection that has never been persisted anywhere:
+/// prompts for a file, writes it, and (unlike a plain "Export As...", which
+/// just makes a copy) remembers the chosen path on the collection so it's no
+/// longer flagged unsaved.
+fn first_save_pressed(app: &mut Rustrest, col_id: usize) -> Task<Message> {
+    let Some(collection) = app.collections.iter().find(|c| c.id == col_id) else {
+        return iced::Task::none();
+    };
+    match collection.to_postman_json() {
+        Ok(json_content) => {
+            let default_name = format!("{}.postman_collection.json", collection.info.name);
+            iced::Task::perform(
+                async move {
+                    let file_handle = rfd::AsyncFileDialog::new()
+                        .set_title("Save Collection")
+                        .set_file_name(&default_name)
+                        .add_filter("Postman Collection (*.json)", &["json"])
+                        .save_file()
+                        .await?;
+
+                    let path = file_handle.path().to_path_buf();
+                    tokio::fs::write(&path, json_content).await.ok()?;
+                    Some(path)
+                },
+                move |result| match result {
+                    Some(path) => Message::CollectionFirstSaved(col_id, path),
+                    None => Message::None,
+                },
+            )
+        }
+        Err(err_msg) => iced::Task::done(Message::ShowToast(
+            format!("Save failed: {}", err_msg),
+            ToastStatus::Error,
+        )),
+    }
+}
+
+/// completes `first_save_pressed`: remembers the chosen path on the
+/// collection and clears every unsaved marker now that it's on disk.
+pub fn first_saved(app: &mut Rustrest, col_id: usize, path: std::path::PathBuf) -> Task<Message> {
+    if let Some(col) = app.collections.iter_mut().find(|c| c.id == col_id) {
+        col.file_path = Some(path);
+        col.clear_unsaved();
+    }
+    clear_tab_dirty_for_collection(app, col_id);
+
+    Task::done(Message::ShowToast(
+        "Collection saved successfully".to_string(),
+        ToastStatus::Success,
+    ))
 }
 
 pub fn export_pressed(app: &mut Rustrest, col_id: usize) -> Task<Message> {
@@ -426,6 +485,7 @@ pub fn add_request_pressed(
                 url: Some(PostmanUrl::String(String::new())),
                 header: None,
                 body: None,
+                auth: None,
             },
             event: None,
             unsaved: true,

@@ -20,6 +20,35 @@ pub enum ResizeKind {
     RequestPane,
     ConsolePanel,
     RightPanel,
+    MultilineField(MultilineFieldKind),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MultilineFieldKind {
+    Auth(usize),    // tab id
+    RawBody(usize), // tab id
+    CommitMessage,
+    EnvVarValue {
+        env_idx: usize,
+        var_idx: usize,
+    },
+    KvValue {
+        tab_id: usize,
+        field: KvValueField,
+        row: usize,
+    },
+    FormDataValue {
+        tab_id: usize,
+        row: usize,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum KvValueField {
+    Param,
+    Header,
+    Cookie,
+    Urlencoded,
 }
 
 /// identifies the sidebar item currently being dragged.
@@ -144,6 +173,7 @@ pub enum Message {
 
     CollectionLoaded(Option<std::path::PathBuf>, String),
     SaveCollectionPressed(usize),
+    CollectionFirstSaved(usize, std::path::PathBuf),
 
     SidebarRequestClicked {
         req_node: PostmanRequestNode,

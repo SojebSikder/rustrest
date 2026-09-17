@@ -2,13 +2,28 @@
 //! resize drag, and the bottom console panel's own logs/collapsed state.
 
 use super::Rustrest;
-use crate::message::{Message, ResizeKind};
+use crate::message::{Message, MultilineFieldKind, ResizeKind};
 use iced::Task;
+use std::collections::HashMap;
 
 pub const SIDEBAR_WIDTH_RANGE: (f32, f32) = (180.0, 520.0);
 pub const REQUEST_PANE_HEIGHT_RANGE: (f32, f32) = (120.0, 700.0);
 pub const CONSOLE_PANEL_HEIGHT_RANGE: (f32, f32) = (120.0, 500.0);
 pub const RIGHT_PANEL_WIDTH_RANGE: (f32, f32) = (260.0, 560.0);
+pub const MULTILINE_FIELD_HEIGHT_RANGE: (f32, f32) = (40.0, 600.0);
+
+/// the height a `multiline_input` of a given kind opens at before the user
+/// has ever dragged it to a different size.
+pub fn default_multiline_height(kind: MultilineFieldKind) -> f32 {
+    match kind {
+        MultilineFieldKind::Auth(_) => 40.0,
+        MultilineFieldKind::RawBody(_) => 200.0,
+        MultilineFieldKind::CommitMessage => 200.0,
+        MultilineFieldKind::EnvVarValue { .. } => 40.0,
+        MultilineFieldKind::KvValue { .. } => 40.0,
+        MultilineFieldKind::FormDataValue { .. } => 40.0,
+    }
+}
 
 pub struct ResizeDrag {
     pub kind: ResizeKind,
@@ -24,6 +39,16 @@ pub struct LayoutState {
     pub console_logs: Vec<String>,
     pub console_collapsed: bool,
     pub console_panel_height: f32,
+    pub multiline_heights: HashMap<MultilineFieldKind, f32>,
+}
+
+impl LayoutState {
+    pub fn multiline_height(&self, kind: MultilineFieldKind) -> f32 {
+        self.multiline_heights
+            .get(&kind)
+            .copied()
+            .unwrap_or_else(|| default_multiline_height(kind))
+    }
 }
 
 pub fn cursor_moved(app: &mut Rustrest, position: iced::Point) -> Task<Message> {
@@ -49,6 +74,14 @@ pub fn cursor_moved(app: &mut Rustrest, position: iced::Point) -> Task<Message> 
                 app.plugins.right_panel_width = (drag.start_size + delta)
                     .clamp(RIGHT_PANEL_WIDTH_RANGE.0, RIGHT_PANEL_WIDTH_RANGE.1);
             }
+            ResizeKind::MultilineField(kind) => {
+                let delta = position.y - drag.start_cursor.y;
+                let height = (drag.start_size + delta).clamp(
+                    MULTILINE_FIELD_HEIGHT_RANGE.0,
+                    MULTILINE_FIELD_HEIGHT_RANGE.1,
+                );
+                app.layout.multiline_heights.insert(kind, height);
+            }
         }
     }
     app.cursor_position = position;
@@ -61,6 +94,7 @@ pub fn resize_drag_started(app: &mut Rustrest, kind: ResizeKind) -> Task<Message
         ResizeKind::RequestPane => app.layout.request_pane_height,
         ResizeKind::ConsolePanel => app.layout.console_panel_height,
         ResizeKind::RightPanel => app.plugins.right_panel_width,
+        ResizeKind::MultilineField(field_kind) => app.layout.multiline_height(field_kind),
     };
     app.layout.resize_drag = Some(ResizeDrag {
         kind,

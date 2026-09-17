@@ -3,6 +3,7 @@ use super::super::components::kv_editor_pane;
 use super::super::messages::{TabMessage, ValueField};
 use super::super::types::{BodyType, RawType, RequestSubTab, ScriptTab};
 use crate::http_client::HttpMethod;
+use crate::message::{KvValueField, MultilineFieldKind};
 use crate::ui::context_menu::{TabFieldTarget, with_context_menu};
 use crate::ui::multiline_input::multiline_input;
 use iced::widget::{
@@ -101,13 +102,17 @@ where
     request_row.push(url_input).push(send_btn).into()
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn render_configuration_pane<'a, Message>(
     tab: &'a Tab,
     wrap_msg: impl Fn(TabMessage) -> Message + Copy + 'static,
+    multiline_height: impl Fn(MultilineFieldKind) -> f32 + Copy + 'a,
+    on_multiline_resize_start: impl Fn(MultilineFieldKind) -> Message + Copy + 'a,
 ) -> Element<'a, Message>
 where
     Message: Clone + 'static,
 {
+    let tab_id = tab.id;
     let mut sub_tab_bar = row![].spacing(10);
     for variant in RequestSubTab::ALL.iter() {
         let is_sub_active = tab.active_sub_tab == *variant;
@@ -145,6 +150,10 @@ where
                     v,
                 ))
             },
+            tab_id,
+            KvValueField::Param,
+            multiline_height,
+            on_multiline_resize_start,
         ),
         RequestSubTab::Headers => kv_editor_pane(
             &tab.request_headers,
@@ -166,6 +175,10 @@ where
                     v,
                 ))
             },
+            tab_id,
+            KvValueField::Header,
+            multiline_height,
+            on_multiline_resize_start,
         ),
         RequestSubTab::Cookies => kv_editor_pane(
             &tab.request_cookies,
@@ -187,17 +200,22 @@ where
                     v,
                 ))
             },
+            tab_id,
+            KvValueField::Cookie,
+            multiline_height,
+            on_multiline_resize_start,
         ),
         RequestSubTab::Auth => multiline_input(
             "Authorization Headers...",
             &tab.request_auth,
             10,
-            200.0,
+            multiline_height(MultilineFieldKind::Auth(tab_id)),
             move |action| wrap_msg(TabMessage::AuthChanged(action)),
             wrap_msg(TabMessage::ShowFieldContextMenu(
                 TabFieldTarget::Auth,
                 tab.request_auth.text(),
             )),
+            on_multiline_resize_start(MultilineFieldKind::Auth(tab_id)),
         ),
 
         RequestSubTab::Body => {
@@ -241,6 +259,9 @@ where
                             v,
                         ))
                     },
+                    tab_id,
+                    multiline_height,
+                    on_multiline_resize_start,
                 ),
 
                 BodyType::XWwwFormUrlencoded => kv_editor_pane(
@@ -269,6 +290,10 @@ where
                             v,
                         ))
                     },
+                    tab_id,
+                    KvValueField::Urlencoded,
+                    multiline_height,
+                    on_multiline_resize_start,
                 ),
 
                 BodyType::Raw => {
@@ -277,24 +302,24 @@ where
                     })
                     .padding(5);
 
-                    let editor = with_context_menu(
-                        text_editor(&tab.request_body)
-                            .on_action(move |action| wrap_msg(TabMessage::BodyChanged(action)))
-                            .height(Length::Fixed(300.0))
-                            .padding(10),
+                    let editor = multiline_input(
+                        "",
+                        &tab.request_body,
+                        10,
+                        multiline_height(MultilineFieldKind::RawBody(tab_id)),
+                        move |action| wrap_msg(TabMessage::BodyChanged(action)),
                         wrap_msg(TabMessage::ShowFieldContextMenu(
                             TabFieldTarget::BodyEditor,
                             tab.request_body
                                 .selection()
                                 .unwrap_or_else(|| tab.request_body.text()),
                         )),
+                        on_multiline_resize_start(MultilineFieldKind::RawBody(tab_id)),
                     );
 
                     column![
                         raw_dropdown,
-                        container(editor)
-                            .height(Length::Fixed(150.0))
-                            .style(container::bordered_box)
+                        container(editor).style(container::bordered_box)
                     ]
                     .spacing(10)
                     .into()

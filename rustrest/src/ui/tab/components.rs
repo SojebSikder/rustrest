@@ -1,4 +1,5 @@
 use super::types::{FormDataRow, FormDataType, KeyValuePair};
+use crate::message::{KvValueField, MultilineFieldKind};
 use crate::ui::context_menu::with_context_menu;
 use crate::ui::multiline_input::multiline_input;
 use iced::widget::{
@@ -18,6 +19,10 @@ pub fn kv_editor_pane<'a, Message>(
     on_remove: impl Fn(usize) -> Message + Copy + 'a,
     on_show_key_menu: impl Fn(usize, String) -> Message + Copy + 'a,
     on_show_value_menu: impl Fn(usize, String) -> Message + Copy + 'a,
+    tab_id: usize,
+    field: KvValueField,
+    get_height: impl Fn(MultilineFieldKind) -> f32 + Copy + 'a,
+    on_resize_start: impl Fn(MultilineFieldKind) -> Message + Copy + 'a,
 ) -> Element<'a, Message>
 where
     Message: Clone + 'a,
@@ -30,14 +35,22 @@ where
         let val_clone = item.value.clone();
 
         let value_field = match value_contents.get(idx) {
-            Some(value_content) => multiline_input(
-                "Value",
-                value_content,
-                8,
-                90.0,
-                move |action| on_value_action(idx, action),
-                on_show_value_menu(idx, item.value.clone()),
-            ),
+            Some(value_content) => {
+                let key = MultilineFieldKind::KvValue {
+                    tab_id,
+                    field,
+                    row: idx,
+                };
+                multiline_input(
+                    "Value",
+                    value_content,
+                    8,
+                    get_height(key),
+                    move |action| on_value_action(idx, action),
+                    on_show_value_menu(idx, item.value.clone()),
+                    on_resize_start(key),
+                )
+            }
             None => text_input("Value", &item.value).padding(8).into(),
         };
 
@@ -99,6 +112,9 @@ pub fn form_data_editor_pane<'a, Message>(
     on_remove: impl Fn(usize) -> Message + Copy + 'a,
     on_show_key_menu: impl Fn(usize, String) -> Message + Copy + 'a,
     on_show_value_menu: impl Fn(usize, String) -> Message + Copy + 'a,
+    tab_id: usize,
+    get_height: impl Fn(MultilineFieldKind) -> f32 + Copy + 'a,
+    on_resize_start: impl Fn(MultilineFieldKind) -> Message + Copy + 'a,
 ) -> Element<'a, Message>
 where
     Message: Clone + 'a,
@@ -115,14 +131,18 @@ where
         // dynamically toggle value input field based on selected type
         let value_field: Element<'a, Message> = match item.field_type {
             FormDataType::Text => match value_contents.get(idx) {
-                Some(value_content) => multiline_input(
-                    "Value",
-                    value_content,
-                    8,
-                    90.0,
-                    move |action| on_value_action(idx, action),
-                    on_show_value_menu(idx, item.value.clone()),
-                ),
+                Some(value_content) => {
+                    let key = MultilineFieldKind::FormDataValue { tab_id, row: idx };
+                    multiline_input(
+                        "Value",
+                        value_content,
+                        8,
+                        get_height(key),
+                        move |action| on_value_action(idx, action),
+                        on_show_value_menu(idx, item.value.clone()),
+                        on_resize_start(key),
+                    )
+                }
                 None => text_input("Value", &item.value).padding(8).into(),
             },
             FormDataType::File => {
