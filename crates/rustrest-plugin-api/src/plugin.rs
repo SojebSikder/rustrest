@@ -1,4 +1,5 @@
-use crate::hooks::{RequestContext, ResponseContext};
+use crate::hooks::{RequestContext, ResponseContext, RightPanelAction, RightPanelContext};
+use crate::network::HttpResponseData;
 use crate::process::ProcessStream;
 use crate::ui::{UiEvent, UiNode};
 
@@ -57,4 +58,31 @@ pub trait Plugin: Default + Send + 'static {
     /// `code` is `None` if it was killed by a signal. Requires
     /// `Capability::ExternalProcess`.
     fn on_process_exit(&mut self, _handle: u32, _code: Option<i32>) {}
+
+    /// `panel_id` is one this plugin declared via `Capability::RightPanel`.
+    /// `ctx` is a snapshot of the active request tab, if any. Returns a
+    /// `RightPanelAction` rather than a plain `UiNode` (unlike
+    /// `render_panel`) so a plugin can flush a patch discovered
+    /// asynchronously - e.g. in `on_http_response`, after an outbound
+    /// request the user kicked off has completed - on its next render,
+    /// since `on_http_response` itself has no return value the host acts on.
+    fn render_right_panel(&mut self, _panel_id: &str, _ctx: RightPanelContext) -> RightPanelAction {
+        RightPanelAction::UpdateUi(UiNode::Column(Vec::new()))
+    }
+
+    /// handles a widget interaction inside the right panel. Return
+    /// `RightPanelAction::None` to leave both the panel and the active tab
+    /// as-is.
+    fn on_right_panel_event(
+        &mut self,
+        _panel_id: &str,
+        _ctx: RightPanelContext,
+        _event: UiEvent,
+    ) -> RightPanelAction {
+        RightPanelAction::None
+    }
+
+    /// delivered when a request started via `network::http_request` completes
+    /// (or fails). Requires `Capability::ExternalProcess`.
+    fn on_http_response(&mut self, _handle: u32, _result: Result<HttpResponseData, String>) {}
 }

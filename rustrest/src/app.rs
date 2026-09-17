@@ -85,6 +85,7 @@ pub struct ResizeDrag {
 pub const SIDEBAR_WIDTH_RANGE: (f32, f32) = (180.0, 520.0);
 pub const REQUEST_PANE_HEIGHT_RANGE: (f32, f32) = (120.0, 700.0);
 pub const CONSOLE_PANEL_HEIGHT_RANGE: (f32, f32) = (120.0, 500.0);
+pub const RIGHT_PANEL_WIDTH_RANGE: (f32, f32) = (260.0, 560.0);
 
 pub struct Rustrest {
     pub collections: Vec<PostmanCollection>,
@@ -133,6 +134,13 @@ pub struct Rustrest {
     pub sidebar_width: f32,
     pub request_pane_height: f32,
     pub resize_drag: Option<ResizeDrag>,
+
+    // right panel
+    pub right_panel_width: f32,
+    /// (plugin_id, panel_id) of the currently open right panel, if any.
+    pub right_panel_open: Option<(String, String)>,
+    /// last-rendered declarative UI tree for the open right panel.
+    pub right_panel_tree: Option<rustrest_plugin_host::UiNode>,
 
     // console panel (global, bottom bar)
     pub console_logs: Vec<String>,
@@ -594,6 +602,9 @@ pub fn init() -> (Rustrest, Task<Message>) {
         sidebar_width: 260.0,
         request_pane_height: 320.0,
         resize_drag: None,
+        right_panel_width: 380.0,
+        right_panel_open: None,
+        right_panel_tree: None,
         console_logs: Vec::new(),
         console_collapsed: true,
         console_panel_height: 220.0,
@@ -921,6 +932,125 @@ fn persist_collection_if_known_location(
 /// logs without a separate UI surface.
 fn drain_plugin_logs(app: &mut Rustrest) {
     app.console_logs.extend(app.plugin_manager.drain_logs());
+}
+
+/// snapshots the active tab (if it's an HTTP request tab) into the ambient
+/// context handed to a `RightPanel` plugin on every render/event.
+fn build_right_panel_context(app: &Rustrest) -> rustrest_plugin_host::RightPanelContext {
+    let Some(tab_state) = app.tabs.get(app.active_tab_index) else {
+        return rustrest_plugin_host::RightPanelContext::default();
+    };
+    if !matches!(tab_state.content, WorkspaceContent::HttpRequest) {
+        return rustrest_plugin_host::RightPanelContext::default();
+    }
+    let tab = &tab_state.tab;
+
+    let active_request = Some(rustrest_plugin_host::RequestContext {
+        method: tab.method.to_string(),
+        url: tab.url.clone(),
+        headers: tab
+            .request_headers
+            .iter()
+            .filter(|h| h.is_active)
+            .map(|h| (h.key.clone(), h.value.clone()))
+            .collect(),
+        body: tab.request_body.text(),
+        variables: std::collections::HashMap::new(),
+    });
+
+    let active_response = tab.response.as_ref().map(|result| match result {
+        Ok(resp) => rustrest_plugin_host::ResponseContext {
+            status: resp.status,
+            headers: resp.headers.clone(),
+            body: resp.body.clone(),
+            variables: std::collections::HashMap::new(),
+            test_results: Vec::new(),
+        },
+        Err(err) => rustrest_plugin_host::ResponseContext {
+            status: 0,
+            headers: std::collections::HashMap::new(),
+            body: err.clone(),
+            variables: std::collections::HashMap::new(),
+            test_results: Vec::new(),
+        },
+    });
+
+    rustrest_plugin_host::RightPanelContext {
+        active_request,
+        active_response,
+    }
+}
+
+fn parse_http_method(s: &str) -> crate::http_client::HttpMethod {
+    use crate::http_client::HttpMethod;
+    match s.trim().to_uppercase().as_str() {
+        "GET" => HttpMethod::GET,
+        "POST" => HttpMethod::POST,
+        "PUT" => HttpMethod::PUT,
+        "DELETE" => HttpMethod::DELETE,
+        "PATCH" => HttpMethod::PATCH,
+        "HEAD" => HttpMethod::HEAD,
+        "OPTIONS" => HttpMethod::OPTIONS,
+        other => HttpMethod::Custom(other.to_string()),
+    }
+}
+
+/// applies a `RightPanelAction` returned by any of `render_right_panel`/
+/// `on_right_panel_event` the same way, regardless of which call produced it.
+fn handle_right_panel_action(app: &mut Rustrest, action: rustrest_plugin_host::RightPanelAction) {
+    use rustrest_plugin_host::RightPanelAction;
+    match action {
+        RightPanelAction::None => {}
+        RightPanelAction::UpdateUi(tree) => {
+            app.right_panel_tree = Some(tree);
+        }
+        RightPanelAction::ApplyPatch(patch) => {
+            apply_request_patch_to_active_tab(app, patch);
+        }
+        RightPanelAction::UpdateUiAndApplyPatch(tree, patch) => {
+            app.right_panel_tree = Some(tree);
+            apply_request_patch_to_active_tab(app, patch);
+        }
+    }
+}
+
+/// applies a `RequestPatch` a `RightPanel` plugin handed back onto the
+/// active tab. A no-op if the active tab isn't an HTTP request tab.
+fn apply_request_patch_to_active_tab(
+    app: &mut Rustrest,
+    patch: rustrest_plugin_host::RequestPatch,
+) {
+    let Some(tab_state) = app.tabs.get_mut(app.active_tab_index) else {
+        return;
+    };
+    if !matches!(tab_state.content, WorkspaceContent::HttpRequest) {
+        return;
+    }
+    let tab = &mut tab_state.tab;
+
+    if let Some(method) = patch.method {
+        tab.method = parse_http_method(&method);
+    }
+    if let Some(url) = patch.url {
+        tab.url = url;
+    }
+    if let Some(headers) = patch.headers {
+        tab.request_headers = headers
+            .into_iter()
+            .map(|(k, v)| KeyValuePair::new(&k, &v))
+            .collect();
+        tab.request_headers_values = crate::ui::tab::contents_for(&tab.request_headers);
+    }
+    if let Some(body) = patch.body {
+        tab.request_body = iced::widget::text_editor::Content::with_text(&body);
+    }
+    if let Some(script) = patch.pre_request_script {
+        tab.pre_request_script = iced::widget::text_editor::Content::with_text(&script);
+    }
+    if let Some(script) = patch.post_response_script {
+        tab.post_response_script = iced::widget::text_editor::Content::with_text(&script);
+    }
+    tab.dirty = true;
 }
 
 fn finalize_tab_rename(app: &mut Rustrest, idx: usize) {
@@ -3063,6 +3193,11 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                         app.console_panel_height = (drag.start_size + delta)
                             .clamp(CONSOLE_PANEL_HEIGHT_RANGE.0, CONSOLE_PANEL_HEIGHT_RANGE.1);
                     }
+                    ResizeKind::RightPanel => {
+                        let delta = drag.start_cursor.x - position.x;
+                        app.right_panel_width = (drag.start_size + delta)
+                            .clamp(RIGHT_PANEL_WIDTH_RANGE.0, RIGHT_PANEL_WIDTH_RANGE.1);
+                    }
                 }
             }
             app.cursor_position = position;
@@ -3074,6 +3209,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 ResizeKind::Sidebar => app.sidebar_width,
                 ResizeKind::RequestPane => app.request_pane_height,
                 ResizeKind::ConsolePanel => app.console_panel_height,
+                ResizeKind::RightPanel => app.right_panel_width,
             };
             app.resize_drag = Some(ResizeDrag {
                 kind,
@@ -4933,7 +5069,8 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             task
         }
         Message::PluginProcessTick => {
-            let touched = app.plugin_manager.pump_processes();
+            let mut touched = app.plugin_manager.pump_processes();
+            touched.extend(app.plugin_manager.pump_network());
             if !touched.is_empty() {
                 let open_panels: Vec<(String, String)> = app
                     .tabs
@@ -4953,9 +5090,62 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                         app.plugin_panel_state.insert((plugin_id, panel_id), tree);
                     }
                 }
+                if let Some((plugin_id, panel_id)) = app.right_panel_open.clone()
+                    && touched.contains(&plugin_id)
+                {
+                    let ctx = build_right_panel_context(app);
+                    if let Ok(action) = app
+                        .plugin_manager
+                        .render_right_panel(&plugin_id, &panel_id, ctx)
+                    {
+                        handle_right_panel_action(app, action);
+                    }
+                }
                 drain_plugin_logs(app);
             }
             Task::none()
+        }
+        Message::ToggleRightPanel(plugin_id, panel_id) => {
+            if app.right_panel_open.as_ref() == Some(&(plugin_id.clone(), panel_id.clone())) {
+                app.right_panel_open = None;
+                app.right_panel_tree = None;
+                return Task::none();
+            }
+            let ctx = build_right_panel_context(app);
+            let task = match app
+                .plugin_manager
+                .render_right_panel(&plugin_id, &panel_id, ctx)
+            {
+                Ok(action) => {
+                    app.right_panel_open = Some((plugin_id, panel_id));
+                    handle_right_panel_action(app, action);
+                    Task::none()
+                }
+                Err(e) => Task::done(Message::ShowToast(
+                    format!("Failed to open right panel: {e}"),
+                    ToastStatus::Error,
+                )),
+            };
+            drain_plugin_logs(app);
+            task
+        }
+        Message::RightPanelEvent(plugin_id, panel_id, event) => {
+            let ctx = build_right_panel_context(app);
+            let task = match app
+                .plugin_manager
+                .right_panel_event(&plugin_id, &panel_id, ctx, event)
+            {
+                Ok(action) => {
+                    handle_right_panel_action(app, action);
+                    Task::none()
+                }
+                Err(e) => Task::done(Message::ShowToast(
+                    format!("Right panel action failed: {e}"),
+                    ToastStatus::Error,
+                )),
+            };
+            drain_plugin_logs(app);
+            task
         }
 
         Message::DismissToast(id) => {

@@ -10,7 +10,8 @@
 //! The host frees both buffers by calling `rustrest_dealloc` with the
 //! `(ptr, len)` pairs it was given.
 
-use crate::hooks::{RequestContext, ResponseContext};
+use crate::hooks::{RequestContext, ResponseContext, RightPanelContext};
+use crate::network::HttpResponseData;
 use crate::plugin::Plugin;
 use crate::process::ProcessStream;
 use crate::ui::UiEvent;
@@ -98,6 +99,24 @@ fn route<T: Plugin>(plugin: &mut T, input: &[u8]) -> Vec<u8> {
             Ok((handle, code)) => encode_ok(&plugin.on_process_exit(handle, code)),
             Err(bytes) => bytes,
         },
+        "render_right_panel" => {
+            match decode_payload::<(String, RightPanelContext)>(envelope.payload) {
+                Ok((id, ctx)) => encode_ok(&plugin.render_right_panel(&id, ctx)),
+                Err(bytes) => bytes,
+            }
+        }
+        "on_right_panel_event" => {
+            match decode_payload::<(String, RightPanelContext, UiEvent)>(envelope.payload) {
+                Ok((id, ctx, event)) => encode_ok(&plugin.on_right_panel_event(&id, ctx, event)),
+                Err(bytes) => bytes,
+            }
+        }
+        "on_http_response" => {
+            match decode_payload::<(u32, Result<HttpResponseData, String>)>(envelope.payload) {
+                Ok((handle, result)) => encode_ok(&plugin.on_http_response(handle, result)),
+                Err(bytes) => bytes,
+            }
+        }
         other => encode_err(&format!("unknown plugin call: {other}")),
     }
 }

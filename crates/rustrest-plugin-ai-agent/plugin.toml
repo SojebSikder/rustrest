@@ -1,0 +1,13 @@
+id = "ai-agent"
+name = "AI Agent"
+version = "0.1.0"
+author = "Rustrest"
+description = "Chat about the active request/response, edit requests from natural language, generate test scripts, and explain errors - docked in the right panel."
+schema_version = 1
+
+[capabilities]
+external_process = true
+
+[capabilities.right_panel]
+id = "chat"
+title = "AI Agent"

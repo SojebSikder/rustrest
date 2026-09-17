@@ -1,3 +1,4 @@
+use crate::network::NetworkTable;
 use crate::process::ProcessTable;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -8,4 +9,5 @@ pub struct PluginState {
     pub external_process_allowed: bool,
     pub storage_dir: PathBuf,
     pub processes: Arc<Mutex<ProcessTable>>,
+    pub network: Arc<Mutex<NetworkTable>>,
 }

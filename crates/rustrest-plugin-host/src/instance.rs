@@ -1,6 +1,7 @@
 use crate::error::PluginError;
 use crate::hostcall::link_host_functions;
 use crate::manifest_toml::{self, WASM_FILE_NAME};
+use crate::network::NetworkTable;
 use crate::process::ProcessTable;
 use crate::state::PluginState;
 use rustrest_plugin_api::{Capability, PluginManifest};
@@ -15,6 +16,7 @@ pub struct PluginRuntime {
     pub handles: CallHandles,
     pub logs: Arc<Mutex<Vec<String>>>,
     pub processes: Arc<Mutex<ProcessTable>>,
+    pub network: Arc<Mutex<NetworkTable>>,
 }
 
 pub struct LoadedPlugin {
@@ -116,6 +118,7 @@ fn instantiate_module(
 
     let logs = Arc::new(Mutex::new(Vec::new()));
     let processes = Arc::new(Mutex::new(ProcessTable::default()));
+    let network = Arc::new(Mutex::new(NetworkTable::default()));
     let external_process_allowed = manifest
         .capabilities
         .iter()
@@ -127,6 +130,7 @@ fn instantiate_module(
         external_process_allowed,
         storage_dir: plugin_dir.join("storage"),
         processes: processes.clone(),
+        network: network.clone(),
     };
     let mut store = Store::new(engine, state);
     // generous one-off budget for instantiation/global-init; steady-state
@@ -141,6 +145,7 @@ fn instantiate_module(
         handles,
         logs,
         processes,
+        network,
     })
 }
 
