@@ -8,6 +8,10 @@ schema_version = 1
 [capabilities]
 external_process = true
 
+[[capabilities.commands]]
+id = "open-right-panel:chat"
+title = "Open AI Agent"
+
 [capabilities.right_panel]
 id = "chat"
 title = "AI Agent"

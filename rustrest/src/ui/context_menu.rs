@@ -90,6 +90,9 @@ pub enum ContextMenu {
     /// right-clicked one of 2+ currently multi-selected sidebar rows; offers
     /// batch actions (e.g. delete) across the whole selection.
     MultiSelection(Vec<SidebarItemKey>),
+    /// right-clicked a read-only text node inside a plugin panel (e.g. an AI
+    /// agent chat message) - Copy only, no Paste
+    PluginText(String),
 }
 
 /// wraps any widget with a right-click handler that opens the shared context menu.
@@ -131,6 +134,7 @@ pub fn render_context_menu_overlay<'a>(app: &Rustrest) -> Option<Element<'a, Mes
         ContextMenu::GitActions(_) => false,
         ContextMenu::TextField { .. } => false,
         ContextMenu::MultiSelection(_) => false,
+        ContextMenu::PluginText(_) => false,
     };
     if is_editing {
         return None;
@@ -309,6 +313,9 @@ pub fn render_context_menu_overlay<'a>(app: &Rustrest) -> Option<Element<'a, Mes
             opts
         }
         ContextMenu::MultiSelection(_) => unreachable!("handled by the early return above"),
+        ContextMenu::PluginText(text) => {
+            vec![("Copy", Message::CopyToClipboard(text.clone()))]
+        }
     };
 
     // wrap every option so clicking it always closes the menu

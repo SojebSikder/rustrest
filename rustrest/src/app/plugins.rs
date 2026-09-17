@@ -8,11 +8,13 @@
 use super::{Rustrest, Tab, TabState, WorkspaceContent};
 use crate::message::Message;
 use crate::plugin_gallery::GalleryEntry;
+use crate::ui::confirm_dialog::ConfirmDialogState;
 use crate::ui::plugin_manager::{PluginManagerAction, PluginManagerView};
 use crate::ui::toast::toast::ToastStatus;
 use iced::Task;
 use rustrest_plugin_host::{
-    FormatDef, PluginManager, RightPanelAction, RightPanelContext, UiEvent, UiNode,
+    CollectionOperation, CollectionSummary, FormatDef, PluginManager, RequestSummary,
+    RightPanelAction, RightPanelContext, UiEvent, UiNode,
 };
 use std::collections::HashMap;
 
@@ -99,6 +101,52 @@ pub fn build_right_panel_context(app: &Rustrest) -> RightPanelContext {
     RightPanelContext {
         active_request,
         active_response,
+        collections: app.collections.iter().map(summarize_collection).collect(),
+    }
+}
+
+/// flattens a collection's tree into a read-only `CollectionSummary` a
+/// `RightPanel` plugin can use to reference existing folders/requests by
+/// id/name (e.g. to propose a `CollectionOperation` against something that
+/// already exists instead of guessing ids).
+fn summarize_collection(
+    col: &crate::collection::collection::PostmanCollection,
+) -> CollectionSummary {
+    fn walk(
+        items: &[crate::collection::collection::CollectionItem],
+        path: &[String],
+        folders: &mut Vec<Vec<String>>,
+        requests: &mut Vec<RequestSummary>,
+    ) {
+        for item in items {
+            match item {
+                crate::collection::collection::CollectionItem::Folder(folder) => {
+                    let mut folder_path = path.to_vec();
+                    folder_path.push(folder.name.clone());
+                    folders.push(folder_path.clone());
+                    walk(&folder.item, &folder_path, folders, requests);
+                }
+                crate::collection::collection::CollectionItem::Request(req) => {
+                    requests.push(RequestSummary {
+                        id: req.id,
+                        name: req.name.clone(),
+                        folder_path: path.to_vec(),
+                        method: req.request.method.clone(),
+                    });
+                }
+            }
+        }
+    }
+
+    let mut folders = Vec::new();
+    let mut requests = Vec::new();
+    walk(&col.item, &[], &mut folders, &mut requests);
+
+    CollectionSummary {
+        id: col.id,
+        name: col.info.name.clone(),
+        folders,
+        requests,
     }
 }
 
@@ -118,19 +166,54 @@ fn parse_http_method(s: &str) -> crate::http_client::HttpMethod {
 
 /// applies a `RightPanelAction` returned by any of `render_right_panel`/
 /// `on_right_panel_event` the same way, regardless of which call produced it.
-pub fn handle_right_panel_action(app: &mut Rustrest, action: RightPanelAction) {
+pub fn handle_right_panel_action(app: &mut Rustrest, action: RightPanelAction) -> Task<Message> {
     match action {
-        RightPanelAction::None => {}
+        RightPanelAction::None => Task::none(),
         RightPanelAction::UpdateUi(tree) => {
             app.plugins.right_panel_tree = Some(tree);
+            Task::none()
         }
         RightPanelAction::ApplyPatch(patch) => {
             apply_request_patch_to_active_tab(app, patch);
+            Task::none()
         }
         RightPanelAction::UpdateUiAndApplyPatch(tree, patch) => {
             app.plugins.right_panel_tree = Some(tree);
             apply_request_patch_to_active_tab(app, patch);
+            Task::none()
         }
+        RightPanelAction::UpdateUiAndProposeCollectionOp(tree, op) => {
+            app.plugins.right_panel_tree = Some(tree);
+            propose_collection_op(app, op)
+        }
+    }
+}
+
+/// either applies a plugin-proposed `CollectionOperation` immediately (for
+/// non-destructive ops - create/rename) or, for destructive ones (delete,
+/// move), asks the user to confirm first via the app's existing confirm
+/// dialog before it's applied.
+fn propose_collection_op(app: &mut Rustrest, op: CollectionOperation) -> Task<Message> {
+    if op.is_destructive() {
+        app.overlays.confirm_dialog = Some(ConfirmDialogState {
+            title: "AI Agent Action".to_string(),
+            message: op.describe(),
+            confirm_label: "Apply".to_string(),
+            on_confirm: Box::new(Message::ApplyPluginCollectionOp(op)),
+        });
+        Task::none()
+    } else {
+        apply_collection_op(app, op)
+    }
+}
+
+pub fn apply_collection_op(app: &mut Rustrest, op: CollectionOperation) -> Task<Message> {
+    match super::plugin_collection_ops::apply(app, op) {
+        Ok(msg) => Task::done(Message::ShowToast(msg, ToastStatus::Success)),
+        Err(e) => Task::done(Message::ShowToast(
+            format!("AI agent action failed: {e}"),
+            ToastStatus::Error,
+        )),
     }
 }
 
@@ -405,6 +488,13 @@ pub fn search_changed(app: &mut Rustrest, query: String) -> Task<Message> {
 }
 
 pub fn command(app: &mut Rustrest, plugin_id: String, command_id: String) -> Task<Message> {
+    // reserved convention letting a command
+    // open a right panel directly, without a wasm round-trip: opening a
+    // panel is a host-only action anyway.
+    if let Some(panel_id) = command_id.strip_prefix("open-right-panel:") {
+        return open_right_panel(app, plugin_id, panel_id.to_string());
+    }
+
     let task = match app
         .plugins
         .plugin_manager
@@ -527,6 +617,7 @@ pub fn process_tick(app: &mut Rustrest) -> Task<Message> {
                     .insert((plugin_id, panel_id), tree);
             }
         }
+        let mut right_panel_task = Task::none();
         if let Some((plugin_id, panel_id)) = app.plugins.right_panel_open.clone()
             && touched.contains(&plugin_id)
         {
@@ -536,12 +627,22 @@ pub fn process_tick(app: &mut Rustrest) -> Task<Message> {
                 .plugin_manager
                 .render_right_panel(&plugin_id, &panel_id, ctx)
             {
-                handle_right_panel_action(app, action);
+                right_panel_task = handle_right_panel_action(app, action);
             }
         }
         drain_plugin_logs(app);
+        return right_panel_task;
     }
     Task::none()
+}
+
+/// opens (never closes) a plugin's right panel - the semantics a command
+/// palette entry wants, as opposed to `toggle_right_panel`'s toggle.
+pub fn open_right_panel(app: &mut Rustrest, plugin_id: String, panel_id: String) -> Task<Message> {
+    if app.plugins.right_panel_open.as_ref() == Some(&(plugin_id.clone(), panel_id.clone())) {
+        return Task::none();
+    }
+    toggle_right_panel(app, plugin_id, panel_id)
 }
 
 pub fn toggle_right_panel(
@@ -562,8 +663,7 @@ pub fn toggle_right_panel(
     {
         Ok(action) => {
             app.plugins.right_panel_open = Some((plugin_id, panel_id));
-            handle_right_panel_action(app, action);
-            Task::none()
+            handle_right_panel_action(app, action)
         }
         Err(e) => Task::done(Message::ShowToast(
             format!("Failed to open right panel: {e}"),
@@ -586,10 +686,7 @@ pub fn right_panel_event(
         .plugin_manager
         .right_panel_event(&plugin_id, &panel_id, ctx, event)
     {
-        Ok(action) => {
-            handle_right_panel_action(app, action);
-            Task::none()
-        }
+        Ok(action) => handle_right_panel_action(app, action),
         Err(e) => Task::done(Message::ShowToast(
             format!("Right panel action failed: {e}"),
             ToastStatus::Error,

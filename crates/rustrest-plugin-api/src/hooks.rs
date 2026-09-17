@@ -33,6 +33,30 @@ pub struct ResponseContext {
     pub test_results: Vec<TestResult>,
 }
 
+/// a request living somewhere in a `CollectionSummary`'s tree.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct RequestSummary {
+    pub id: usize,
+    pub name: String,
+    pub folder_path: Vec<String>,
+    pub method: String,
+}
+
+/// a read-only snapshot of one loaded collection's tree, handed to a
+/// `RightPanel` plugin so it can reference existing collections/folders/
+/// requests by id/name (e.g. to let an AI assistant propose a
+/// `CollectionOperation` against something that already exists instead of
+/// guessing ids).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct CollectionSummary {
+    pub id: usize,
+    pub name: String,
+    /// every folder in the tree, as its full path (e.g. `["Auth", "Login"]`
+    /// for a folder named "Login" nested under "Auth").
+    pub folders: Vec<Vec<String>>,
+    pub requests: Vec<RequestSummary>,
+}
+
 /// ambient context handed to a `RightPanel` plugin on every render/event -
 /// a snapshot of whatever the active tab currently holds, so a docked panel
 /// (e.g. an AI assistant) can act on "the current request" without needing
@@ -42,6 +66,10 @@ pub struct ResponseContext {
 pub struct RightPanelContext {
     pub active_request: Option<RequestContext>,
     pub active_response: Option<ResponseContext>,
+    /// every collection currently loaded, so a plugin can act on the
+    /// collection tree itself (not just the active request).
+    #[serde(default)]
+    pub collections: Vec<CollectionSummary>,
 }
 
 /// a set of edits a `RightPanel` plugin wants applied to the active request
@@ -70,4 +98,148 @@ pub enum RightPanelAction {
     /// re-render the panel with this tree AND apply this patch to the active
     /// request tab.
     UpdateUiAndApplyPatch(crate::ui::UiNode, RequestPatch),
+    /// re-render the panel with this tree AND ask the host to perform a
+    /// collection-tree operation (create/rename/delete/duplicate/move a
+    /// collection, folder, or request). Destructive operations are confirmed
+    /// with the user before the host applies them.
+    UpdateUiAndProposeCollectionOp(crate::ui::UiNode, CollectionOperation),
+}
+
+/// a create/rename/delete/duplicate/move performed on the collection tree
+/// itself, proposed by a `RightPanel` plugin and executed host-side.
+/// Internally tagged so it's easy
+/// for an LLM to produce as e.g. `{"op":"create_folder","collection_id":1,...}`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub enum CollectionOperation {
+    CreateCollection {
+        name: String,
+    },
+    RenameCollection {
+        collection_id: usize,
+        new_name: String,
+    },
+    DeleteCollection {
+        collection_id: usize,
+    },
+    CreateFolder {
+        collection_id: usize,
+        parent_path: Vec<String>,
+        name: String,
+    },
+    RenameFolder {
+        collection_id: usize,
+        path: Vec<String>,
+        new_name: String,
+    },
+    DeleteFolder {
+        collection_id: usize,
+        path: Vec<String>,
+    },
+    CreateRequest {
+        collection_id: usize,
+        parent_path: Vec<String>,
+        name: String,
+        method: String,
+        url: String,
+    },
+    RenameRequest {
+        collection_id: usize,
+        request_id: usize,
+        new_name: String,
+    },
+    DeleteRequest {
+        collection_id: usize,
+        parent_path: Vec<String>,
+        request_id: usize,
+    },
+    DuplicateRequest {
+        collection_id: usize,
+        parent_path: Vec<String>,
+        request_id: usize,
+    },
+    MoveRequest {
+        collection_id: usize,
+        from_path: Vec<String>,
+        request_id: usize,
+        to_path: Vec<String>,
+    },
+}
+
+impl CollectionOperation {
+    /// true for operations that remove or relocate something, which the host
+    /// confirms with the user before applying rather than acting immediately.
+    pub fn is_destructive(&self) -> bool {
+        matches!(
+            self,
+            Self::DeleteCollection { .. }
+                | Self::DeleteFolder { .. }
+                | Self::DeleteRequest { .. }
+                | Self::MoveRequest { .. }
+        )
+    }
+
+    /// human-readable one-liner describing this operation, used both as the
+    /// confirm-dialog message and as a log/toast line.
+    pub fn describe(&self) -> String {
+        match self {
+            Self::CreateCollection { name } => format!("Create collection \"{name}\""),
+            Self::RenameCollection {
+                collection_id,
+                new_name,
+            } => format!("Rename collection #{collection_id} to \"{new_name}\""),
+            Self::DeleteCollection { collection_id } => {
+                format!("Delete collection #{collection_id}")
+            }
+            Self::CreateFolder {
+                parent_path, name, ..
+            } => {
+                if parent_path.is_empty() {
+                    format!("Create folder \"{name}\"")
+                } else {
+                    format!("Create folder \"{name}\" in {}", parent_path.join("/"))
+                }
+            }
+            Self::RenameFolder { path, new_name, .. } => {
+                format!("Rename folder {} to \"{new_name}\"", path.join("/"))
+            }
+            Self::DeleteFolder { path, .. } => format!("Delete folder {}", path.join("/")),
+            Self::CreateRequest {
+                parent_path,
+                name,
+                method,
+                url,
+                ..
+            } => {
+                if parent_path.is_empty() {
+                    format!("Create request \"{name}\" ({method} {url})")
+                } else {
+                    format!(
+                        "Create request \"{name}\" ({method} {url}) in {}",
+                        parent_path.join("/")
+                    )
+                }
+            }
+            Self::RenameRequest {
+                request_id,
+                new_name,
+                ..
+            } => format!("Rename request #{request_id} to \"{new_name}\""),
+            Self::DeleteRequest { request_id, .. } => format!("Delete request #{request_id}"),
+            Self::DuplicateRequest { request_id, .. } => {
+                format!("Duplicate request #{request_id}")
+            }
+            Self::MoveRequest {
+                request_id,
+                to_path,
+                ..
+            } => {
+                if to_path.is_empty() {
+                    format!("Move request #{request_id} to the collection root")
+                } else {
+                    format!("Move request #{request_id} to {}", to_path.join("/"))
+                }
+            }
+        }
+    }
 }

@@ -76,6 +76,23 @@ pub fn insert_nested(items: &mut Vec<CollectionItem>, path: &[String]) {
     }
 }
 
+/// inserts a nested folder with a caller-supplied name into the collection
+/// at the specified path (like `insert_nested`, but for callers - e.g. a
+/// plugin-proposed `CollectionOperation` - that already know the folder's
+/// final name instead of relying on the sidebar's "New Folder" + rename-in-place flow).
+pub fn insert_nested_named(items: &mut Vec<CollectionItem>, path: &[String], name: &str) {
+    if let Some(target) = find_folder_items_mut(items, path) {
+        target.push(CollectionItem::Folder(PostmanFolder {
+            name: name.to_string(),
+            description: None,
+            item: Vec::new(),
+            protocol_profile_behavior: None,
+            event: None,
+            unsaved: true,
+        }));
+    }
+}
+
 /// inserts a nested request into the collection at the specified path
 pub fn insert_nested_request(
     items: &mut Vec<CollectionItem>,

@@ -5,8 +5,8 @@ use crate::ui::tab::Tab;
 
 pub use rustrest_core::collection::tree_ops::{
     contains_request_node_by_id, find_request_mut, insert_item_at, insert_nested,
-    insert_nested_request, remove_nested, remove_nested_request, rename_nested_folder, take_folder,
-    take_request,
+    insert_nested_named, insert_nested_request, remove_nested, remove_nested_request,
+    rename_nested_folder, take_folder, take_request,
 };
 
 /// relocates a dragged request/folder from its source location to `dest_folder_path`

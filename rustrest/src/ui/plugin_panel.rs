@@ -1,6 +1,7 @@
 //! Renders a plugin's declarative `UiNode` tree
 
 use crate::message::Message;
+use crate::ui::context_menu::with_context_menu;
 use iced::widget::{Space, button, checkbox, column, row, scrollable, text, text_input};
 use iced::{Element, Length};
 use rustrest_plugin_host::{UiEvent, UiNode};
@@ -73,9 +74,15 @@ pub(crate) fn render_node<'a>(
     let panel_id = panel_id.to_string();
 
     match node {
-        UiNode::Label(label) => text(label.clone()).into(),
+        UiNode::Label(label) => with_context_menu(
+            text(label.clone()),
+            Message::ShowPluginTextContextMenu(label.clone()),
+        ),
 
-        UiNode::Muted(label) => text(label.clone()).size(11).style(text::secondary).into(),
+        UiNode::Muted(label) => with_context_menu(
+            text(label.clone()).size(11).style(text::secondary),
+            Message::ShowPluginTextContextMenu(label.clone()),
+        ),
 
         UiNode::Button { id, label, primary } => button(text(label.clone()))
             .padding([6, 12])

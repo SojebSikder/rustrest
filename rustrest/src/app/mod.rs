@@ -3,6 +3,7 @@ mod environment;
 mod git;
 mod layout;
 mod overlays;
+mod plugin_collection_ops;
 mod plugins;
 mod remote;
 mod settings;
@@ -1371,6 +1372,9 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         Message::ShowTextFieldContextMenu(target, current_value) => {
             overlays::show_text_field_context_menu(app, target, current_value)
         }
+        Message::ShowPluginTextContextMenu(text) => {
+            overlays::show_plugin_text_context_menu(app, text)
+        }
         Message::CopyToClipboard(text) => overlays::copy_to_clipboard(app, text),
         Message::PasteIntoField(target) => overlays::paste_into_field(app, target),
         Message::TextFieldPasteResolved(target, clipboard_text) => {
@@ -1630,6 +1634,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         Message::RightPanelEvent(plugin_id, panel_id, event) => {
             plugins::right_panel_event(app, plugin_id, panel_id, event)
         }
+        Message::ApplyPluginCollectionOp(op) => plugins::apply_collection_op(app, op),
 
         Message::DismissToast(id) => overlays::dismiss_toast(app, id),
         // exit the application

@@ -122,6 +122,12 @@ pub fn show_request_context_menu(
     Task::none()
 }
 
+pub fn show_plugin_text_context_menu(app: &mut Rustrest, text: String) -> Task<Message> {
+    app.overlays.active_context_menu = Some(ContextMenu::PluginText(text));
+    app.overlays.context_menu_position = app.cursor_position;
+    Task::none()
+}
+
 pub fn close_context_menu(app: &mut Rustrest) -> Task<Message> {
     app.overlays.active_context_menu = None;
     Task::none()

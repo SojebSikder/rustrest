@@ -45,7 +45,7 @@ fn stage_plugin_dir(dest: &std::path::Path) {
 
 fn tree_contains(node: &UiNode, needle: &str) -> bool {
     match node {
-        UiNode::Label(s) => s.contains(needle),
+        UiNode::Label(s) | UiNode::Muted(s) => s.contains(needle),
         UiNode::Button { label, .. } => label.contains(needle),
         UiNode::List(items) => items.iter().any(|s| s.contains(needle)),
         UiNode::Row(children) | UiNode::Column(children) => {

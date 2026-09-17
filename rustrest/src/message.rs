@@ -380,6 +380,8 @@ pub enum Message {
 
     // reusable text field context menu (Copy/Paste)
     ShowTextFieldContextMenu(FieldTarget, String),
+    /// Copy-only context menu for read-only plugin-panel text
+    ShowPluginTextContextMenu(String),
     CopyToClipboard(String),
     PasteIntoField(FieldTarget),
     TextFieldPasteResolved(FieldTarget, Option<String>),
@@ -560,6 +562,10 @@ pub enum Message {
     /// plugin_id, panel_id, event - a widget interaction inside the open
     /// right panel.
     RightPanelEvent(String, String, rustrest_plugin_host::UiEvent),
+    /// applies a collection-tree operation a `RightPanel` plugin proposed
+    /// (immediately for non-destructive ops, or after the user accepts the
+    /// confirm dialog shown for destructive ones).
+    ApplyPluginCollectionOp(rustrest_plugin_host::CollectionOperation),
     /// plugin_id - shows a confirmation dialog before uninstalling.
     UninstallPluginPressed(String),
     /// plugin_id - the uninstall confirmation was accepted.

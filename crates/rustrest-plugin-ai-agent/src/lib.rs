@@ -3,8 +3,8 @@
 //! request/response tab.
 
 use rustrest_plugin_api::{
-    HttpRequestSpec, HttpResponseData, Plugin, RequestPatch, RightPanelAction, RightPanelContext,
-    UiEvent, UiNode,
+    CollectionOperation, HttpRequestSpec, HttpResponseData, Plugin, RequestPatch,
+    RightPanelAction, RightPanelContext, UiEvent, UiNode,
 };
 use serde::{Deserialize, Serialize};
 
@@ -70,6 +70,10 @@ struct AiAgentPlugin {
     /// return value the host acts on) - flushed on the next
     /// `render_right_panel` call.
     pending_patch: Option<RequestPatch>,
+    /// mirror of `pending_patch` for a collection-tree operation (create/
+    /// rename/delete/duplicate/move) the model proposed instead of a request
+    /// patch - at most one of the two is ever set for a given reply.
+    pending_collection_op: Option<CollectionOperation>,
 }
 
 impl AiAgentPlugin {
@@ -213,7 +217,7 @@ impl AiAgentPlugin {
             UiNode::TextInput {
                 id: "chat-input".to_string(),
                 value: self.draft_input.clone(),
-                placeholder: "Ask about this request...".to_string(),
+                placeholder: "Message Rustrest Agent...".to_string(),
                 on_submit: Some("send".to_string()),
             },
             UiNode::Button {
@@ -278,6 +282,9 @@ impl Plugin for AiAgentPlugin {
     fn render_right_panel(&mut self, _panel_id: &str, ctx: RightPanelContext) -> RightPanelAction {
         self.load_config_once();
         let tree = self.render_tree(&ctx);
+        if let Some(op) = self.pending_collection_op.take() {
+            return RightPanelAction::UpdateUiAndProposeCollectionOp(tree, op);
+        }
         match self.pending_patch.take() {
             Some(patch) => RightPanelAction::UpdateUiAndApplyPatch(tree, patch),
             None => RightPanelAction::UpdateUi(tree),
@@ -355,9 +362,12 @@ impl Plugin for AiAgentPlugin {
             Ok(data) => match parse_provider_reply(&self.config.provider, &data.body) {
                 Ok(text) => {
                     // the model decides for itself, per the system prompt,
-                    // whether a reply warrants a patch - so every reply is
-                    // checked, regardless of what was asked.
-                    if let Some(patch) = extract_patch(&text) {
+                    // whether a reply warrants a patch or a collection-tree
+                    // operation - so every reply is checked, regardless of
+                    // what was asked. At most one of the two ever applies.
+                    if let Some(op) = extract_collection_op(&text) {
+                        self.pending_collection_op = Some(op);
+                    } else if let Some(patch) = extract_patch(&text) {
                         self.pending_patch = Some(patch);
                     }
                     self.messages.push(ChatMessage {
@@ -398,6 +408,27 @@ fn build_system_prompt(ctx: &RightPanelContext) -> String {
         ));
     }
 
+    if !ctx.collections.is_empty() {
+        prompt.push_str("\n\nExisting collections (reference these by id, not by guessing):");
+        for col in &ctx.collections {
+            prompt.push_str(&format!("\n- collection #{} \"{}\"", col.id, col.name));
+            for folder in &col.folders {
+                prompt.push_str(&format!("\n    folder: {}", folder.join("/")));
+            }
+            for req in &col.requests {
+                let location = if req.folder_path.is_empty() {
+                    "collection root".to_string()
+                } else {
+                    req.folder_path.join("/")
+                };
+                prompt.push_str(&format!(
+                    "\n    request #{} \"{}\" ({}) in {}",
+                    req.id, req.name, req.method, location
+                ));
+            }
+        }
+    }
+
     prompt.push_str(
         "\n\nAnswer in plain, concise language. If, and only if, the user's message asks you to \
          change the active request or add/replace its post-response test script, follow your \
@@ -406,7 +437,27 @@ fn build_system_prompt(ctx: &RightPanelContext) -> String {
          \"headers\":[[string,string]]|null,\"body\":string|null,\"post_response_script\":string|null}. \
          Omit fields you don't want to change (or set them to null). The test script, if any, is \
          JavaScript using the pm.* scripting API this app exposes (pm.test(name, fn), \
-         pm.expect(...), pm.response.status/json()). Otherwise, don't include a code block at all.",
+         pm.expect(...), pm.response.status/json()).\n\n\
+         If, and only if, the user's message asks you to create, rename, delete, duplicate, or \
+         move a collection, folder, or request, follow your explanation with exactly one fenced \
+         ```collection-action code block (instead of the ```json one above - never both) \
+         containing ONLY one JSON object shaped as one of:\n\
+         {\"op\":\"create_collection\",\"name\":string}\n\
+         {\"op\":\"rename_collection\",\"collection_id\":number,\"new_name\":string}\n\
+         {\"op\":\"delete_collection\",\"collection_id\":number}\n\
+         {\"op\":\"create_folder\",\"collection_id\":number,\"parent_path\":[string],\"name\":string}\n\
+         {\"op\":\"rename_folder\",\"collection_id\":number,\"path\":[string],\"new_name\":string}\n\
+         {\"op\":\"delete_folder\",\"collection_id\":number,\"path\":[string]}\n\
+         {\"op\":\"create_request\",\"collection_id\":number,\"parent_path\":[string],\"name\":string,\"method\":string,\"url\":string}\n\
+         {\"op\":\"rename_request\",\"collection_id\":number,\"request_id\":number,\"new_name\":string}\n\
+         {\"op\":\"delete_request\",\"collection_id\":number,\"parent_path\":[string],\"request_id\":number}\n\
+         {\"op\":\"duplicate_request\",\"collection_id\":number,\"parent_path\":[string],\"request_id\":number}\n\
+         {\"op\":\"move_request\",\"collection_id\":number,\"from_path\":[string],\"request_id\":number,\"to_path\":[string]}\n\
+         `parent_path`/`path`/`from_path`/`to_path` are folder-name arrays (e.g. [] for the \
+         collection root, [\"Auth\"] for a top-level folder named Auth). Use the ids/paths listed \
+         above under \"Existing collections\" - never invent one. Deleting or moving something \
+         will ask the user to confirm before it's applied; say so in your explanation. Otherwise, \
+         don't include this block at all.",
     );
 
     prompt
@@ -509,6 +560,15 @@ fn parse_provider_reply(provider: &str, body: &[u8]) -> Result<String, String> {
 /// `RequestPatch`.
 fn extract_patch(text: &str) -> Option<RequestPatch> {
     let start = text.find("```json")? + "```json".len();
+    let rest = &text[start..];
+    let end = rest.find("```")?;
+    serde_json::from_str(rest[..end].trim()).ok()
+}
+
+/// pulls a fenced ```collection-action ... ``` block out of `text` and
+/// decodes it as a `CollectionOperation`.
+fn extract_collection_op(text: &str) -> Option<CollectionOperation> {
+    let start = text.find("```collection-action")? + "```collection-action".len();
     let rest = &text[start..];
     let end = rest.find("```")?;
     serde_json::from_str(rest[..end].trim()).ok()
