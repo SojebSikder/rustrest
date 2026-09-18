@@ -1,10 +1,20 @@
 use std::fs;
 use std::io;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use self_update::cargo_crate_version;
 use self_update::{Extract, Move};
 use sha2::{Digest, Sha256};
+
+/// download progress notification for the self-update flow, reported as
+/// bytes accumulate so the UI can render a fill percentage. `total` is 0
+/// when the server didn't report a `Content-Length`.
+#[derive(Debug, Clone, Copy)]
+pub struct UpdateProgress {
+    pub downloaded: u64,
+    pub total: u64,
+}
 
 const REPO_OWNER: &str = "sojebsikder"; // github username
 const REPO_NAME: &str = "rustrest";
@@ -88,6 +98,46 @@ pub(crate) fn download_to_file(url: &str, dest: &Path) -> Result<(), String> {
     Ok(())
 }
 
+async fn download_to_file_async(url: &str, dest: &Path) -> Result<(), String> {
+    let response = reqwest::get(url).await.map_err(|e| e.to_string())?;
+    if !response.status().is_success() {
+        return Err(format!(
+            "failed to download {url}: HTTP {}",
+            response.status()
+        ));
+    }
+    let bytes = response.bytes().await.map_err(|e| e.to_string())?;
+    fs::write(dest, &bytes).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// downloads `url` into `dest`, reporting a running `UpdateProgress` after
+/// every chunk so the UI can drive a fill percentage.
+async fn download_to_file_with_progress(
+    url: &str,
+    dest: &Path,
+    mut on_progress: impl FnMut(UpdateProgress),
+) -> Result<(), String> {
+    let mut response = reqwest::get(url).await.map_err(|e| e.to_string())?;
+    if !response.status().is_success() {
+        return Err(format!(
+            "failed to download {url}: HTTP {}",
+            response.status()
+        ));
+    }
+    let total = response.content_length().unwrap_or(0);
+    let mut downloaded = 0u64;
+    let mut file = fs::File::create(dest).map_err(|e| e.to_string())?;
+
+    while let Some(chunk) = response.chunk().await.map_err(|e| e.to_string())? {
+        file.write_all(&chunk).map_err(|e| e.to_string())?;
+        downloaded += chunk.len() as u64;
+        on_progress(UpdateProgress { downloaded, total });
+    }
+
+    Ok(())
+}
+
 pub(crate) fn verify_sha256(path: &Path, sha256_path: &Path) -> Result<(), String> {
     let sums = fs::read_to_string(sha256_path).map_err(|e| e.to_string())?;
     let expected = sums
@@ -137,51 +187,68 @@ pub(crate) fn find_file(dir: &Path, name: &str) -> Result<PathBuf, String> {
     ))
 }
 
-pub fn perform_update() -> Result<String, String> {
+pub async fn perform_update_with_progress(
+    mut on_progress: impl FnMut(UpdateProgress) + Send + 'static,
+) -> Result<String, String> {
     let current_exe = std::env::current_exe().map_err(|e| e.to_string())?;
 
     let install_dir = current_exe
         .parent()
-        .ok_or_else(|| "could not determine the install directory".to_string())?;
+        .ok_or_else(|| "could not determine the install directory".to_string())?
+        .to_path_buf();
     let tmp_dir = install_dir.join(format!(".rustrest-update-{}", std::process::id()));
     fs::create_dir_all(&tmp_dir).map_err(|e| e.to_string())?;
 
-    let result = perform_update_into(&tmp_dir, &current_exe);
+    let result = perform_update_into_with_progress(&tmp_dir, &current_exe, &mut on_progress).await;
     let _ = fs::remove_dir_all(&tmp_dir);
     result
 }
 
-fn perform_update_into(tmp_dir: &Path, current_exe: &Path) -> Result<String, String> {
-    let version = latest_release_tag()?;
+async fn perform_update_into_with_progress(
+    tmp_dir: &Path,
+    current_exe: &Path,
+    on_progress: &mut impl FnMut(UpdateProgress),
+) -> Result<String, String> {
+    let version = tokio::task::spawn_blocking(latest_release_tag)
+        .await
+        .map_err(|e| e.to_string())??;
     let target = detect_target()?;
     let archive = archive_name(target);
     let base_url =
         format!("https://github.com/{REPO_OWNER}/{REPO_NAME}/releases/download/v{version}");
 
     let archive_path = tmp_dir.join(&archive);
-    download_to_file(&format!("{base_url}/{archive}"), &archive_path)?;
+    download_to_file_with_progress(&format!("{base_url}/{archive}"), &archive_path, on_progress)
+        .await?;
 
     let checksum_path = tmp_dir.join(format!("{archive}.sha256"));
-    download_to_file(&format!("{base_url}/{archive}.sha256"), &checksum_path)?;
+    download_to_file_async(&format!("{base_url}/{archive}.sha256"), &checksum_path).await?;
 
-    verify_sha256(&archive_path, &checksum_path)?;
+    let target = target.to_string();
+    let tmp_dir = tmp_dir.to_path_buf();
+    let current_exe = current_exe.to_path_buf();
+    tokio::task::spawn_blocking(move || {
+        verify_sha256(&archive_path, &checksum_path)?;
 
-    let extract_dir = tmp_dir.join("extracted");
-    Extract::from_source(&archive_path)
-        .extract_into(&extract_dir)
-        .map_err(|e| e.to_string())?;
+        let extract_dir = tmp_dir.join("extracted");
+        Extract::from_source(&archive_path)
+            .extract_into(&extract_dir)
+            .map_err(|e| e.to_string())?;
 
-    let bin_file_name = if target.contains("windows") {
-        format!("{BIN_NAME}.exe")
-    } else {
-        BIN_NAME.to_string()
-    };
-    let extracted_bin = find_file(&extract_dir, &bin_file_name)?;
+        let bin_file_name = if target.contains("windows") {
+            format!("{BIN_NAME}.exe")
+        } else {
+            BIN_NAME.to_string()
+        };
+        let extracted_bin = find_file(&extract_dir, &bin_file_name)?;
 
-    Move::from_source(&extracted_bin)
-        .replace_using_temp(tmp_dir.join("old_bin"))
-        .to_dest(current_exe)
-        .map_err(|e| e.to_string())?;
+        Move::from_source(&extracted_bin)
+            .replace_using_temp(tmp_dir.join("old_bin"))
+            .to_dest(&current_exe)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
 
     Ok(version)
 }

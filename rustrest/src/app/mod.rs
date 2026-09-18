@@ -1482,6 +1482,9 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         Message::UpdateCheckResult(result) => overlays::update_check_result(app, result),
         Message::ToastActionPressed(id) => overlays::toast_action_pressed(app, id),
         Message::InstallUpdate => overlays::install_update(app),
+        Message::UpdateInstallProgress(progress) => {
+            overlays::update_install_progress(app, progress)
+        }
         Message::UpdateInstallResult(result) => overlays::update_install_result(app, result),
         // end self update
 

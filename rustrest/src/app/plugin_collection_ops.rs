@@ -10,12 +10,15 @@ use crate::collection::collection::{
 };
 use crate::message::SidebarDragItem;
 use crate::utils::{
-    find_request_mut, insert_nested_named, insert_nested_request, move_sidebar_item,
-    remove_nested, remove_nested_request, rename_nested_folder,
+    find_request_mut, insert_nested_named, insert_nested_request, move_sidebar_item, remove_nested,
+    remove_nested_request, rename_nested_folder,
 };
 use rustrest_plugin_host::CollectionOperation;
 
-fn find_collection_mut(app: &mut Rustrest, collection_id: usize) -> Result<&mut PostmanCollection, String> {
+fn find_collection_mut(
+    app: &mut Rustrest,
+    collection_id: usize,
+) -> Result<&mut PostmanCollection, String> {
     app.collections
         .iter_mut()
         .find(|c| c.id == collection_id)
@@ -64,7 +67,9 @@ pub fn apply(app: &mut Rustrest, op: CollectionOperation) -> Result<String, Stri
         } => {
             let col = find_collection_mut(app, collection_id)?;
             col.rename(&new_name);
-            Ok(format!("Renamed collection #{collection_id} to \"{new_name}\""))
+            Ok(format!(
+                "Renamed collection #{collection_id} to \"{new_name}\""
+            ))
         }
 
         CollectionOperation::DeleteCollection { collection_id } => {
@@ -105,12 +110,21 @@ pub fn apply(app: &mut Rustrest, op: CollectionOperation) -> Result<String, Stri
         } => {
             let col = find_collection_mut(app, collection_id)?;
             if !rename_nested_folder(&mut col.item, &path, &new_name) {
-                return Err(format!("no folder at {} in collection #{collection_id}", path.join("/")));
+                return Err(format!(
+                    "no folder at {} in collection #{collection_id}",
+                    path.join("/")
+                ));
             }
-            Ok(format!("Renamed folder {} to \"{new_name}\"", path.join("/")))
+            Ok(format!(
+                "Renamed folder {} to \"{new_name}\"",
+                path.join("/")
+            ))
         }
 
-        CollectionOperation::DeleteFolder { collection_id, path } => {
+        CollectionOperation::DeleteFolder {
+            collection_id,
+            path,
+        } => {
             if path.is_empty() {
                 return Err("can't delete the collection root".to_string());
             }
@@ -202,7 +216,11 @@ pub fn apply(app: &mut Rustrest, op: CollectionOperation) -> Result<String, Stri
             duplicate.name = format!("{} Copy", duplicate.name);
             duplicate.unsaved = true;
 
-            insert_nested_request(&mut col.item, &parent_path, CollectionItem::Request(duplicate));
+            insert_nested_request(
+                &mut col.item,
+                &parent_path,
+                CollectionItem::Request(duplicate),
+            );
             Ok(format!("Duplicated request #{request_id}"))
         }
 
@@ -227,7 +245,14 @@ pub fn apply(app: &mut Rustrest, op: CollectionOperation) -> Result<String, Stri
                 None,
             );
             reveal_in_sidebar(app, collection_id, &to_path);
-            Ok(format!("Moved request #{request_id} to {}", if to_path.is_empty() { "the collection root".to_string() } else { to_path.join("/") }))
+            Ok(format!(
+                "Moved request #{request_id} to {}",
+                if to_path.is_empty() {
+                    "the collection root".to_string()
+                } else {
+                    to_path.join("/")
+                }
+            ))
         }
     }
 }

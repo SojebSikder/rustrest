@@ -2936,6 +2936,7 @@ dependencies = [
  "iced_core",
  "iced_futures",
  "raw-window-handle",
+ "sipper",
  "thiserror 2.0.20",
 ]
 
@@ -5706,7 +5707,7 @@ dependencies = [
 
 [[package]]
 name = "rustrest"
-version = "0.1.13"
+version = "0.1.14"
 dependencies = [
  "dirs",
  "iced",
@@ -5795,7 +5796,7 @@ dependencies = [
 
 [[package]]
 name = "rustrest-remote-agent"
-version = "0.1.13"
+version = "0.1.14"
 dependencies = [
  "rustrest-remote-protocol",
  "tokio",
@@ -6219,6 +6220,16 @@ name = "siphasher"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ee5873ec9cce0195efcb7a4e9507a04cd49aec9c83d0389df45b1ef7ba2e649"
+
+[[package]]
+name = "sipper"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1bccb4192828b3d9a08e0b5a73f17795080dfb278b50190216e3ae2132cf4f95"
+dependencies = [
+ "futures",
+ "pin-project-lite",
+]
 
 [[package]]
 name = "skrifa"

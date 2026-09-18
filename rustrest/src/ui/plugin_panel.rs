@@ -200,10 +200,12 @@ pub(crate) fn render_node<'a>(
                 .into()
         }
 
-        UiNode::AutoScroll(inner) => scrollable(render_node(&plugin_id, &panel_id, inner, to_message))
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .id(autoscroll_id(&plugin_id, &panel_id))
-            .into(),
+        UiNode::AutoScroll(inner) => {
+            scrollable(render_node(&plugin_id, &panel_id, inner, to_message))
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .id(autoscroll_id(&plugin_id, &panel_id))
+                .into()
+        }
     }
 }

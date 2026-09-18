@@ -452,6 +452,7 @@ pub enum Message {
     UpdateCheckResult(Result<Option<UpdateInfo>, String>),
     SilentUpdateCheckResult(Result<Option<UpdateInfo>, String>),
     InstallUpdate,
+    UpdateInstallProgress(crate::updater::UpdateProgress),
     UpdateInstallResult(Result<String, String>),
 
     // remote development (SSH) - inline "add host" form

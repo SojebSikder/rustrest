@@ -20,6 +20,7 @@ pub struct OverlaysState {
     pub menu_state: DropdownMenuState,
     pub available_update: Option<UpdateInfo>,
     pub update_toast_id: Option<usize>,
+    pub download_toast_id: Option<usize>,
     pub response_timing_modal: Option<crate::ui::response_timing_modal::ResponseTimingModalState>,
     pub confirm_dialog: Option<ConfirmDialogState>,
     pub active_context_menu: Option<ContextMenu>,
@@ -289,7 +290,7 @@ pub fn command_palette_item_clicked(
 }
 
 pub fn check_for_update(app: &mut Rustrest) -> Task<Message> {
-    let toast_task = crate::ui::toast::toast::show_pending_and_schedule(
+    let (_, toast_task) = crate::ui::toast::toast::show_pending_and_schedule(
         &mut app.overlays.toast_manager,
         "Checking for updates…".to_string(),
         crate::ui::toast::toast::TOAST_DURATION,
@@ -369,29 +370,70 @@ pub fn toast_action_pressed(app: &mut Rustrest, id: usize) -> Task<Message> {
 }
 
 pub fn install_update(app: &mut Rustrest) -> Task<Message> {
-    let toast_task = crate::ui::toast::toast::show_pending_and_schedule(
+    let id = crate::ui::toast::toast::show_sticky_pending(
         &mut app.overlays.toast_manager,
         "Downloading update…".to_string(),
-        crate::ui::toast::toast::TOAST_DURATION_LONG,
     );
-    let update_task = iced::Task::perform(
-        async {
-            tokio::task::spawn_blocking(updater::perform_update)
-                .await
-                .unwrap_or_else(|e| Err(e.to_string()))
-        },
+    app.overlays.download_toast_id = Some(id);
+    app.overlays
+        .toast_manager
+        .set_download_progress(id, "Downloading update… 0%", 0.0);
+
+    let download = iced::task::sipper::<updater::UpdateProgress, _>(move |mut sender| async move {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let handle = tokio::spawn(async move {
+            updater::perform_update_with_progress(move |progress| {
+                let _ = tx.send(progress);
+            })
+            .await
+        });
+
+        while let Some(progress) = rx.recv().await {
+            sender.send(progress).await;
+        }
+
+        handle.await.unwrap_or_else(|e| Err(e.to_string()))
+    });
+
+    iced::Task::sip(
+        download,
+        Message::UpdateInstallProgress,
         Message::UpdateInstallResult,
-    );
-    iced::Task::batch([toast_task, update_task])
+    )
+}
+
+pub fn update_install_progress(
+    app: &mut Rustrest,
+    progress: updater::UpdateProgress,
+) -> Task<Message> {
+    let Some(id) = app.overlays.download_toast_id else {
+        return Task::none();
+    };
+    let fraction = if progress.total > 0 {
+        progress.downloaded as f32 / progress.total as f32
+    } else {
+        0.0
+    };
+    let message = if progress.total > 0 {
+        format!("Downloading update… {}%", (fraction * 100.0).round() as u32)
+    } else {
+        "Downloading update…".to_string()
+    };
+    app.overlays
+        .toast_manager
+        .set_download_progress(id, message, fraction);
+    Task::none()
 }
 
 pub fn update_install_result(app: &mut Rustrest, result: Result<String, String>) -> Task<Message> {
+    if let Some(id) = app.overlays.download_toast_id.take() {
+        app.overlays.toast_manager.dismiss(id);
+    }
     match result {
-        Ok(version) => crate::ui::toast::toast::show_and_schedule(
+        Ok(version) => crate::ui::toast::toast::show_sticky(
             &mut app.overlays.toast_manager,
             format!("Updated to v{version}. Please restart the app."),
             ToastStatus::Success,
-            crate::ui::toast::toast::TOAST_DURATION_LONG,
         ),
         Err(e) => crate::ui::toast::toast::show_and_schedule(
             &mut app.overlays.toast_manager,

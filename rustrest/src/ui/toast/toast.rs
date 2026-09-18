@@ -31,15 +31,32 @@ pub fn show_pending_and_schedule(
     manager: &mut ToastManager,
     message: impl Into<String>,
     duration: Duration,
-) -> iced::Task<Message> {
+) -> (usize, iced::Task<Message>) {
     let (id, duration) = manager.show_pending(message, duration);
-    iced::Task::perform(
+    let task = iced::Task::perform(
         async move {
             tokio::time::sleep(duration).await;
             id
         },
         Message::DismissToast,
-    )
+    );
+    (id, task)
+}
+
+/// Shows a toast that persists until explicitly dismissed (no auto-close timer)
+pub fn show_sticky(
+    manager: &mut ToastManager,
+    message: impl Into<String>,
+    status: ToastStatus,
+) -> iced::Task<Message> {
+    manager.show_sticky(message, status);
+    iced::Task::none()
+}
+
+/// Same as `show_sticky`, but renders the pending spinner/progress-ring
+/// styling - for a long-running operation with no fixed timer
+pub fn show_sticky_pending(manager: &mut ToastManager, message: impl Into<String>) -> usize {
+    manager.show_sticky_pending(message)
 }
 
 /// Same as `show_and_schedule`, but with an action button
@@ -76,6 +93,9 @@ pub struct Toast {
     pub expires_at: Instant,
     pub action_label: Option<String>,
     pub pending: bool,
+    /// fraction (0.0..=1.0) shown as a circular progress ring
+    pub download_progress: Option<f32>,
+    pub sticky: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -91,7 +111,8 @@ impl ToastManager {
 
     pub fn tick(&mut self) {
         let now = Instant::now();
-        self.toasts.retain(|toast| toast.expires_at > now);
+        self.toasts
+            .retain(|toast| toast.sticky || toast.expires_at > now);
     }
 
     /// whether any currently-shown toast is animating a spinner, so the
@@ -106,7 +127,7 @@ impl ToastManager {
         status: ToastStatus,
         duration: Duration,
     ) -> (usize, Duration) {
-        self.show_internal(message, status, duration, None, false)
+        self.show_internal(message, status, duration, None, false, false)
     }
 
     pub fn show_with_action(
@@ -116,7 +137,14 @@ impl ToastManager {
         duration: Duration,
         action_label: impl Into<String>,
     ) -> (usize, Duration) {
-        self.show_internal(message, status, duration, Some(action_label.into()), false)
+        self.show_internal(
+            message,
+            status,
+            duration,
+            Some(action_label.into()),
+            false,
+            false,
+        )
     }
 
     /// shows a toast with an animated spinner glyph, for an operation
@@ -126,7 +154,20 @@ impl ToastManager {
         message: impl Into<String>,
         duration: Duration,
     ) -> (usize, Duration) {
-        self.show_internal(message, ToastStatus::Info, duration, None, true)
+        self.show_internal(message, ToastStatus::Info, duration, None, true, false)
+    }
+
+    /// shows a toast that persists until explicitly dismissed.
+    pub fn show_sticky(&mut self, message: impl Into<String>, status: ToastStatus) -> usize {
+        self.show_internal(message, status, Duration::ZERO, None, false, true)
+            .0
+    }
+
+    /// shows a pending (spinner/progress-ring) toast that persists until
+    /// explicitly dismissed.
+    pub fn show_sticky_pending(&mut self, message: impl Into<String>) -> usize {
+        self.show_internal(message, ToastStatus::Info, Duration::ZERO, None, true, true)
+            .0
     }
 
     fn show_internal(
@@ -136,6 +177,7 @@ impl ToastManager {
         mut duration: Duration,
         action_label: Option<String>,
         pending: bool,
+        sticky: bool,
     ) -> (usize, Duration) {
         let id = self.next_toast_id;
         self.next_toast_id += 1;
@@ -150,12 +192,23 @@ impl ToastManager {
             expires_at,
             action_label,
             pending,
+            download_progress: None,
+            sticky,
         });
         (id, duration)
     }
 
     pub fn dismiss(&mut self, id: usize) {
         self.toasts.retain(|toast| toast.id != id);
+    }
+
+    /// updates the message and fill fraction (0.0..=1.0) of a pending
+    /// toast's circular progress ring
+    pub fn set_download_progress(&mut self, id: usize, message: impl Into<String>, progress: f32) {
+        if let Some(toast) = self.toasts.iter_mut().find(|toast| toast.id == id) {
+            toast.message = message.into();
+            toast.download_progress = Some(progress.clamp(0.0, 1.0));
+        }
     }
 
     pub fn view<'a, Message>(
@@ -178,7 +231,9 @@ impl ToastManager {
             let action_id = toast.id;
 
             let mut content = row![].spacing(10).align_y(Alignment::Center);
-            if toast.pending {
+            if let Some(progress) = toast.download_progress {
+                content = content.push(crate::ui::progress_ring::progress_ring(progress, 16.0));
+            } else if toast.pending {
                 content = content.push(spinner(spinner_tick));
             }
             content = content.push(text(&toast.message).width(Length::Fill));

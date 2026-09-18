@@ -21,6 +21,6 @@ pub use wasmtime::{Engine, Module};
 pub use rustrest_plugin_api::{
     Capability, CollectionOperation, CollectionSummary, CommandDef, EnvSummary, FormatDef,
     HttpResponseData, MenuItemDef, PanelDef, PickFilesResult, PickedFile, PluginManifest,
-    ProcessStream, RequestContext, RequestPatch, RequestSummary, ResponseContext,
-    RightPanelAction, RightPanelContext, UiEvent, UiNode,
+    ProcessStream, RequestContext, RequestPatch, RequestSummary, ResponseContext, RightPanelAction,
+    RightPanelContext, UiEvent, UiNode,
 };

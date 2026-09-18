@@ -66,7 +66,9 @@ fn pick_and_read() -> PickFilesResult {
 
         match std::fs::read(&path) {
             Ok(bytes) if bytes.len() as u64 > MAX_FILE_BYTES => {
-                result.skipped.push(format!("{name}: exceeds maximum allowed size"));
+                result
+                    .skipped
+                    .push(format!("{name}: exceeds maximum allowed size"));
             }
             Ok(bytes) => match String::from_utf8(bytes) {
                 Ok(text) => result.files.push(PickedFile { name, text }),
