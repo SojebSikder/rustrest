@@ -5707,7 +5707,7 @@ dependencies = [
 
 [[package]]
 name = "rustrest"
-version = "0.1.14"
+version = "0.1.15"
 dependencies = [
  "dirs",
  "iced",
@@ -5796,7 +5796,7 @@ dependencies = [
 
 [[package]]
 name = "rustrest-remote-agent"
-version = "0.1.14"
+version = "0.1.15"
 dependencies = [
  "rustrest-remote-protocol",
  "tokio",
