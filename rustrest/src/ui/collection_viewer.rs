@@ -15,7 +15,7 @@ pub fn render_collection_root(
     // find current live collection data
     let target_collection = collections.iter().find(|c| c.id == collection_id);
     let is_git_backed = target_collection
-        .map(|c| c.storage_dir.is_some())
+        .map(|c| c.storage_dir.is_some() || c.remote_dir.is_some())
         .unwrap_or(false);
 
     // tab headers bavigation bar

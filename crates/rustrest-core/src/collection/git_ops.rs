@@ -99,14 +99,10 @@ async fn run_git_report(root: &Path, args: &[&str]) -> Result<String, String> {
         }
     })?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    let combined = match (stdout.is_empty(), stderr.is_empty()) {
-        (true, true) => String::new(),
-        (false, true) => stdout,
-        (true, false) => stderr,
-        (false, false) => format!("{stdout}\n{stderr}"),
-    };
+    let combined = combine_output(
+        &String::from_utf8_lossy(&output.stdout),
+        &String::from_utf8_lossy(&output.stderr),
+    );
 
     if !output.status.success() {
         return Err(combined);
@@ -218,13 +214,33 @@ fn unquote_path(s: &str) -> String {
     String::from_utf8_lossy(&out).to_string()
 }
 
-/// runs `git status --porcelain=v1 -b` and parses the result.
-pub async fn git_status(path: &Path) -> Result<GitStatusSnapshot, String> {
-    let raw = run_git(
-        path,
-        &["status", "--porcelain=v1", "-b", "--untracked-files=all"],
-    )
-    .await?;
+/// the `git status --porcelain=v1 -b --untracked-files=all` args, shared by
+/// the local and remote (RPC-driven) status paths.
+pub const STATUS_ARGS: &[&str] = &["status", "--porcelain=v1", "-b", "--untracked-files=all"];
+
+/// combines a command's stdout/stderr into one human-readable string, used
+/// for both local and remote push/pull/fetch reporting.
+pub fn combine_output(stdout: &str, stderr: &str) -> String {
+    let stdout = stdout.trim();
+    let stderr = stderr.trim();
+    match (stdout.is_empty(), stderr.is_empty()) {
+        (true, true) => String::new(),
+        (false, true) => stdout.to_string(),
+        (true, false) => stderr.to_string(),
+        (false, false) => format!("{stdout}\n{stderr}"),
+    }
+}
+
+/// builds a synthetic "new file" diff preview for an untracked file's raw
+/// content, used for both local and remote diff previews.
+pub fn synthetic_new_file_diff(file: &Path, content: &str) -> String {
+    let body: String = content.lines().map(|l| format!("+{l}\n")).collect();
+    format!("new file: {}\n{body}", file.display())
+}
+
+/// parses `git status --porcelain=v1 -b` output into a [`GitStatusSnapshot`],
+/// shared by the local and remote status paths.
+pub fn parse_status_output(raw: &str) -> GitStatusSnapshot {
     let mut lines = raw.lines();
 
     let branch = lines.next().and_then(|header| {
@@ -256,7 +272,13 @@ pub async fn git_status(path: &Path) -> Result<GitStatusSnapshot, String> {
         });
     }
 
-    Ok(GitStatusSnapshot { branch, files })
+    GitStatusSnapshot { branch, files }
+}
+
+/// runs `git status --porcelain=v1 -b` and parses the result.
+pub async fn git_status(path: &Path) -> Result<GitStatusSnapshot, String> {
+    let raw = run_git(path, STATUS_ARGS).await?;
+    Ok(parse_status_output(&raw))
 }
 
 /// returns a diff-style preview for a single file, relative to `root`.
@@ -280,8 +302,7 @@ pub async fn git_diff_file(root: &Path, file: &Path) -> Result<String, String> {
         let content = tokio::fs::read_to_string(&full_path)
             .await
             .map_err(|e| format!("Failed to read {full_path:?}: {e}"))?;
-        let body: String = content.lines().map(|l| format!("+{l}\n")).collect();
-        return Ok(format!("new file: {}\n{body}", file.display()));
+        return Ok(synthetic_new_file_diff(file, &content));
     }
 
     let file_arg = file.to_string_lossy().replace('\\', "/");

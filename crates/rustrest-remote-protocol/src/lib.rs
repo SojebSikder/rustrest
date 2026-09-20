@@ -25,6 +25,7 @@ pub enum Request {
     CreateDir(String),
     Delete(String),
     Rename(String, String),
+    RunGit { cwd: String, args: Vec<String> },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,6 +34,17 @@ pub enum Response {
     FileContent(Vec<u8>),
     Ok,
     Error(String),
+    GitOutput(GitCommandOutput),
+}
+
+/// the raw result of running a `git` subcommand on the remote host, mirroring
+/// `std::process::Output` closely enough that the caller can apply the same
+/// success/parsing logic used for local git commands.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GitCommandOutput {
+    pub stdout: String,
+    pub stderr: String,
+    pub success: bool,
 }
 
 /// an envelope pairing a request/response with an id, so a client can match
