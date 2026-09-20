@@ -1,6 +1,8 @@
 mod collections;
 mod environment;
 mod git;
+mod graphql;
+mod grpc;
 mod layout;
 mod overlays;
 mod plugin_collection_ops;
@@ -11,6 +13,7 @@ mod sidebar;
 mod terminal;
 mod workbench;
 mod workspace;
+mod ws;
 
 use crate::collection::collection::{CollectionInfo, PostmanCollection, RemoteDirRef};
 use crate::collection::env::Environment;
@@ -63,6 +66,18 @@ pub enum WorkspaceContent {
         panel_id: String,
     },
     PluginManager,
+    WebSocket(crate::ui::tab::ws::WsTabState),
+    GraphQl(crate::ui::tab::graphql::GraphQlTabState),
+    Grpc(crate::ui::tab::grpc::GrpcTabState),
+}
+
+/// when user opens a new request tab choose which protocol to create.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NewTabProtocol {
+    Http,
+    WebSocket,
+    GraphQl,
+    Grpc,
 }
 
 pub struct TabState {
@@ -153,6 +168,9 @@ impl Rustrest {
                 // nothing to persist.
                 WorkspaceContent::Plugin { .. } => None,
                 WorkspaceContent::PluginManager => None,
+                WorkspaceContent::WebSocket(_)
+                | WorkspaceContent::GraphQl(_)
+                | WorkspaceContent::Grpc(_) => None,
             })
             .collect();
 
@@ -287,6 +305,9 @@ impl Rustrest {
                 WorkspaceContent::RemoteFile { .. } => false,
                 WorkspaceContent::Plugin { .. } => false,
                 WorkspaceContent::PluginManager => false,
+                WorkspaceContent::WebSocket(_)
+                | WorkspaceContent::GraphQl(_)
+                | WorkspaceContent::Grpc(_) => false,
             };
             if belongs {
                 self.sync_tab_to_collection(idx);
@@ -337,6 +358,9 @@ impl Rustrest {
                 WorkspaceContent::RemoteFile { .. } => {}
                 WorkspaceContent::Plugin { .. } => {}
                 WorkspaceContent::PluginManager => {}
+                WorkspaceContent::WebSocket(_)
+                | WorkspaceContent::GraphQl(_)
+                | WorkspaceContent::Grpc(_) => {}
             }
         }
     }
@@ -828,6 +852,9 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                                 WorkspaceContent::RemoteFile { .. } => false,
                                 WorkspaceContent::Plugin { .. } => false,
                                 WorkspaceContent::PluginManager => false,
+                                WorkspaceContent::WebSocket(_)
+                                | WorkspaceContent::GraphQl(_)
+                                | WorkspaceContent::Grpc(_) => false,
                             };
                             if belongs {
                                 tab_state.tab.dirty = false;
@@ -1255,6 +1282,30 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         } => sidebar::delete_saved_response_pressed(app, collection_id, request_id, index),
 
         Message::NewTabPressed => workbench::new_tab_pressed(app),
+        Message::ShowNewTabMenu => overlays::show_new_tab_menu(app),
+        Message::NewProtocolTabPressed(protocol) => {
+            workbench::new_protocol_tab_pressed(app, protocol)
+        }
+
+        Message::ActiveWsMessage(msg) => ws::active_ws_message(app, msg),
+        Message::WsEvent(tab_id, event) => ws::ws_event(app, tab_id, event),
+        Message::WsClosed(tab_id) => ws::ws_closed(app, tab_id),
+
+        Message::SseEvent(tab_id, event) => workbench::sse_stream_event(app, tab_id, event),
+
+        Message::ActiveGraphQlMessage(msg) => graphql::active_graphql_message(app, msg),
+        Message::GraphQlResponseReceived(tab_id, res) => {
+            graphql::response_received(app, tab_id, res)
+        }
+        Message::GraphQlSchemaLoaded(tab_id, res) => graphql::schema_loaded(app, tab_id, res),
+        Message::GraphQlSubscriptionEvent(tab_id, event) => {
+            graphql::subscription_event(app, tab_id, event)
+        }
+
+        Message::ActiveGrpcMessage(msg) => grpc::active_grpc_message(app, msg),
+        Message::GrpcDiscovered(tab_id, res) => grpc::discovered(app, tab_id, res),
+        Message::GrpcResponse(tab_id, res) => grpc::response(app, tab_id, res),
+        Message::GrpcInvokeFinished(tab_id) => grpc::invoke_finished(app, tab_id),
         Message::CloseTabPressed(index) => workbench::close_tab_pressed(app, index),
         Message::NewTerminalTabPressed => workbench::new_terminal_tab_pressed(app),
         Message::TerminalInput(id, bytes) => workbench::terminal_input(app, id, bytes),

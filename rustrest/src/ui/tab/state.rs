@@ -29,6 +29,8 @@ pub struct Tab {
     pub active_response_tab: ResponseSubTab,
     pub body_type: BodyType,
     pub raw_type: RawType,
+    pub graphql_query: text_editor::Content,
+    pub graphql_variables: text_editor::Content,
     pub response_view: ResponseView,
     pub request_params: Vec<KeyValuePair>,
     pub request_params_values: Vec<text_editor::Content>,
@@ -58,6 +60,10 @@ pub struct Tab {
     /// true when this tab has edits that haven't been saved yet; drives the
     /// unsaved-changes dot shown in the sidebar and tab strip.
     pub dirty: bool,
+    /// true once the current response has been detected as
+    /// `text/event-stream`; while set, the Body tab shows `sse_log` instead of the plain response body editor.
+    pub sse_active: bool,
+    pub sse_log: Vec<crate::ui::tab::protocol_common::LogEntry>,
 }
 
 impl Tab {
@@ -85,6 +91,8 @@ impl Tab {
             active_response_tab: ResponseSubTab::Body,
             body_type: BodyType::Raw,
             raw_type: RawType::Json,
+            graphql_query: text_editor::Content::with_text("query {\n  \n}"),
+            graphql_variables: text_editor::Content::with_text("{}"),
             response_view: ResponseView::Json,
             request_params_values: contents_for(&request_params),
             request_params,
@@ -113,6 +121,8 @@ impl Tab {
             cancel_token: CancellationToken::new(),
             response_body_editor: text_editor::Content::with_text(""),
             dirty: false,
+            sse_active: false,
+            sse_log: Vec::new(),
         }
     }
 
@@ -168,6 +178,7 @@ impl Tab {
             event: None,
             unsaved: false,
             response: None,
+            protocol_request: None,
         };
 
         node.update_from_tab(self);
@@ -264,6 +275,8 @@ impl Tab {
             TabMessage::RawTypeChanged(raw_type) => self.raw_type = raw_type,
             TabMessage::ResponseViewChanged(view) => self.response_view = view,
             TabMessage::BodyChanged(action) => self.request_body.perform(action),
+            TabMessage::GraphQlQueryAction(action) => self.graphql_query.perform(action),
+            TabMessage::GraphQlVariablesAction(action) => self.graphql_variables.perform(action),
 
             TabMessage::ScriptTabChanged(script_tab) => {
                 self.script_tab = script_tab;
@@ -503,6 +516,10 @@ impl Tab {
         // strip out comment lines if the body is Raw JSON
         if self.body_type == BodyType::Raw && self.raw_type == RawType::Json {
             resolved_body = strip_json_comments(&resolved_body);
+        } else if self.body_type == BodyType::GraphQl {
+            let query = resolve(&self.graphql_query.text());
+            let variables = resolve(&self.graphql_variables.text());
+            resolved_body = build_graphql_body(&query, &variables);
         }
 
         let resolved_headers = self
@@ -576,6 +593,19 @@ fn sync_params_to_url(url_str: &str, params: &[KeyValuePair]) -> String {
 
     drop(query_serializer);
     parsed_url.to_string()
+}
+
+/// builds the `{"query": ..., "variables": ...}` payload GraphQL-over-HTTP
+/// expects, parsing `variables_text` as JSON (falling back to `null` if it's
+/// blank or invalid, rather than failing the request over a typo).
+fn build_graphql_body(query: &str, variables_text: &str) -> String {
+    let variables_value: serde_json::Value = if variables_text.trim().is_empty() {
+        serde_json::Value::Null
+    } else {
+        serde_json::from_str(variables_text).unwrap_or(serde_json::Value::Null)
+    };
+
+    serde_json::json!({ "query": query, "variables": variables_value }).to_string()
 }
 
 // helper function to strip line comments (`//`) and block comments (`/* */`) from a JSON payload string.

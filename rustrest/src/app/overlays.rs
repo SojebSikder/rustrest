@@ -78,6 +78,12 @@ pub fn show_git_actions_menu(app: &mut Rustrest, col_id: usize) -> Task<Message>
     Task::none()
 }
 
+pub fn show_new_tab_menu(app: &mut Rustrest) -> Task<Message> {
+    app.overlays.active_context_menu = Some(ContextMenu::NewTab);
+    app.overlays.context_menu_position = app.cursor_position;
+    Task::none()
+}
+
 pub fn show_folder_context_menu(
     app: &mut Rustrest,
     collection_id: usize,

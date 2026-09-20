@@ -32,6 +32,8 @@ pub enum TabMessage {
 
     BodyChanged(text_editor::Action),
     RawTypeChanged(RawType),
+    GraphQlQueryAction(text_editor::Action),
+    GraphQlVariablesAction(text_editor::Action),
 
     ParamRowChanged(usize, KeyValuePair),
     AddParamRow,
@@ -120,6 +122,8 @@ impl TabMessage {
 
             TabMessage::AuthChanged(action)
             | TabMessage::BodyChanged(action)
+            | TabMessage::GraphQlQueryAction(action)
+            | TabMessage::GraphQlVariablesAction(action)
             | TabMessage::PreRequestScriptChanged(action)
             | TabMessage::PostResponseScriptChanged(action) => matches!(action, Action::Edit(_)),
 

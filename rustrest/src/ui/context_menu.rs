@@ -25,6 +25,8 @@ pub enum TabFieldTarget {
     FormDataKey(usize),
     FormDataValue(usize),
     BodyEditor,
+    GraphQlQueryEditor,
+    GraphQlVariablesEditor,
     PreRequestScriptEditor,
     PostResponseScriptEditor,
     /// read-only; only "Copy" is offered for this target.
@@ -93,6 +95,7 @@ pub enum ContextMenu {
     /// right-clicked a read-only text node inside a plugin panel (e.g. an AI
     /// agent chat message) - Copy only, no Paste
     PluginText(String),
+    NewTab,
 }
 
 /// wraps any widget with a right-click handler that opens the shared context menu.
@@ -135,6 +138,7 @@ pub fn render_context_menu_overlay<'a>(app: &Rustrest) -> Option<Element<'a, Mes
         ContextMenu::TextField { .. } => false,
         ContextMenu::MultiSelection(_) => false,
         ContextMenu::PluginText(_) => false,
+        ContextMenu::NewTab => false,
     };
     if is_editing {
         return None;
@@ -316,6 +320,24 @@ pub fn render_context_menu_overlay<'a>(app: &Rustrest) -> Option<Element<'a, Mes
         ContextMenu::PluginText(text) => {
             vec![("Copy", Message::CopyToClipboard(text.clone()))]
         }
+        ContextMenu::NewTab => vec![
+            (
+                "HTTP Request",
+                Message::NewProtocolTabPressed(crate::app::NewTabProtocol::Http),
+            ),
+            (
+                "WebSocket",
+                Message::NewProtocolTabPressed(crate::app::NewTabProtocol::WebSocket),
+            ),
+            (
+                "GraphQL",
+                Message::NewProtocolTabPressed(crate::app::NewTabProtocol::GraphQl),
+            ),
+            (
+                "gRPC",
+                Message::NewProtocolTabPressed(crate::app::NewTabProtocol::Grpc),
+            ),
+        ],
     };
 
     // wrap every option so clicking it always closes the menu
@@ -449,6 +471,12 @@ pub fn apply_field_paste(app: &mut Rustrest, target: FieldTarget, text: String) 
                 TabFieldTarget::BodyEditor => tab.update(TabMessage::BodyChanged(Action::Edit(
                     Edit::Paste(Arc::new(text)),
                 ))),
+                TabFieldTarget::GraphQlQueryEditor => tab.update(TabMessage::GraphQlQueryAction(
+                    Action::Edit(Edit::Paste(Arc::new(text))),
+                )),
+                TabFieldTarget::GraphQlVariablesEditor => tab.update(
+                    TabMessage::GraphQlVariablesAction(Action::Edit(Edit::Paste(Arc::new(text)))),
+                ),
                 TabFieldTarget::PreRequestScriptEditor => tab.update(
                     TabMessage::PreRequestScriptChanged(Action::Edit(Edit::Paste(Arc::new(text)))),
                 ),

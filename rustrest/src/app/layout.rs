@@ -18,6 +18,9 @@ pub fn default_multiline_height(kind: MultilineFieldKind) -> f32 {
     match kind {
         MultilineFieldKind::Auth(_) => 40.0,
         MultilineFieldKind::RawBody(_) => 200.0,
+        MultilineFieldKind::GraphQlQuery(_) => 160.0,
+        MultilineFieldKind::GraphQlVariables(_) => 100.0,
+        MultilineFieldKind::GrpcRequestJson(_) => 160.0,
         MultilineFieldKind::CommitMessage => 200.0,
         MultilineFieldKind::EnvVarValue { .. } => 40.0,
         MultilineFieldKind::KvValue { .. } => 40.0,

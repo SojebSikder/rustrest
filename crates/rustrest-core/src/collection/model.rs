@@ -242,6 +242,49 @@ pub struct PostmanRequestNode {
     /// saved response snapshots for this request
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response: Option<Vec<PostmanResponseExample>>,
+
+    /// used when this request is a WebSocket/SSE/GraphQL/gRPC request
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protocol_request: Option<ProtocolRequestDetails>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum ProtocolRequestDetails {
+    WebSocket(WebSocketRequestDetails),
+    GraphQl(GraphQlRequestDetails),
+    Grpc(GrpcRequestDetails),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct WebSocketRequestDetails {
+    pub url: String,
+    pub headers: Vec<PostmanHeader>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct GraphQlRequestDetails {
+    pub url: String,
+    pub headers: Vec<PostmanHeader>,
+    pub query: String,
+    pub variables: String,
+    pub operation_name: Option<String>,
+    /// endpoint used for `graphql-transport-ws` subscriptions, if different
+    /// from `url` (e.g. `url` is `https://...` and this is `wss://...`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subscription_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct GrpcRequestDetails {
+    pub endpoint: String,
+    pub use_tls: bool,
+    pub service: String,
+    pub method: String,
+    pub request_json: String,
+    pub metadata: Vec<PostmanHeader>,
+    /// empty means "discover via server reflection"
+    pub proto_files: Vec<String>,
 }
 
 /// a saved snapshot of a response
@@ -295,6 +338,14 @@ pub struct PostmanBody {
     pub raw: Option<String>,
     pub formdata: Option<Vec<PostmanBodyRow>>,
     pub urlencoded: Option<Vec<PostmanBodyRow>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub graphql: Option<PostmanGraphQlBody>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PostmanGraphQlBody {
+    pub query: String,
+    pub variables: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

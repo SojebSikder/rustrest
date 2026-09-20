@@ -1,9 +1,15 @@
 mod multipart;
+mod stream;
 mod timed_client;
 mod tls;
 
+pub use stream::{StreamingResponse, open_stream};
+pub use tls::client_config;
+
 use crate::common::{BodyType, FormDataRow};
 use bytes::Bytes;
+use http_body_util::BodyExt;
+use hyper::body::Incoming;
 use std::collections::HashMap;
 use std::fmt;
 use std::path::Path;
@@ -317,10 +323,19 @@ fn shape_response(
     }
 }
 
-pub async fn send_request(
-    spec: RequestSpec,
-    cancel_token: CancellationToken,
-) -> Result<HttpResponse, String> {
+struct PreparedRequest {
+    url: Url,
+    method: http::Method,
+    headers: Vec<(String, String)>,
+    body: Bytes,
+    timeout: Duration,
+    prepare: Duration,
+}
+
+/// Everything about a `RequestSpec` that can be resolved before touching
+/// the network: URL/method parsing, merging in the cookie/auth headers, and
+/// building the body bytes.
+async fn prepare(spec: RequestSpec) -> Result<PreparedRequest, String> {
     let prepare_start = Instant::now();
 
     let url = Url::parse(&spec.url).map_err(|e| format!("Invalid URL pattern: {}", e))?;
@@ -347,15 +362,29 @@ pub async fn send_request(
         }
     }
 
-    let prepare = prepare_start.elapsed();
+    Ok(PreparedRequest {
+        url,
+        method,
+        headers: header_list,
+        body: Bytes::from(body_bytes),
+        timeout: spec.timeout,
+        prepare: prepare_start.elapsed(),
+    })
+}
+
+pub async fn send_request(
+    spec: RequestSpec,
+    cancel_token: CancellationToken,
+) -> Result<HttpResponse, String> {
+    let prepared = prepare(spec).await?;
 
     let outcome = match tokio::time::timeout(
-        spec.timeout,
+        prepared.timeout,
         timed_client::execute_request(
-            method,
-            url,
-            header_list,
-            Bytes::from(body_bytes),
+            prepared.method,
+            prepared.url,
+            prepared.headers,
+            prepared.body,
             &cancel_token,
         ),
     )
@@ -366,5 +395,117 @@ pub async fn send_request(
     };
 
     let process_start = Instant::now();
-    Ok(shape_response(outcome, prepare, process_start))
+    Ok(shape_response(outcome, prepared.prepare, process_start))
+}
+
+/// A response whose headers have arrived; the body hasn't been touched yet.
+pub enum SendOutcome {
+    /// A normal response, fully read and shaped exactly like `send_request`
+    /// would.
+    Complete(HttpResponse),
+    /// The response is `text/event-stream` - status/headers are resolved,
+    /// and `body` is left open for the caller to read event chunks from
+    /// live instead of buffering the whole (potentially endless) stream.
+    EventStream {
+        status: u16,
+        headers: HashMap<String, String>,
+        body: EventStreamBody,
+    },
+}
+
+pub struct EventStreamBody(Incoming);
+
+impl EventStreamBody {
+    /// Pulls the next non-empty body chunk, or `None` once the server has
+    /// closed the stream.
+    pub async fn next_chunk(&mut self) -> Option<Result<Bytes, String>> {
+        loop {
+            match self.0.frame().await {
+                Some(Ok(frame)) => match frame.into_data() {
+                    Ok(data) if !data.is_empty() => return Some(Ok(data)),
+                    Ok(_) => continue,
+                    Err(_) => continue,
+                },
+                Some(Err(e)) => return Some(Err(format!("Stream read error: {}", e))),
+                None => return None,
+            }
+        }
+    }
+}
+
+/// Sends a request exactly like `send_request`, except that a
+/// `text/event-stream` response is detected from its `Content-Type` and
+/// handed back still-open for live streaming, instead of being buffered in
+/// full (which would never finish for a long-lived SSE feed).
+pub async fn send_request_auto(
+    spec: RequestSpec,
+    cancel_token: CancellationToken,
+) -> Result<SendOutcome, String> {
+    let prepared = prepare(spec).await?;
+
+    let final_hop = match tokio::time::timeout(
+        prepared.timeout,
+        timed_client::execute_request_head(
+            prepared.method,
+            prepared.url,
+            prepared.headers,
+            prepared.body,
+            &cancel_token,
+        ),
+    )
+    .await
+    {
+        Ok(result) => result?,
+        Err(_) => return Err("Request timed out".to_string()),
+    };
+
+    let is_event_stream = final_hop
+        .headers
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|s| {
+            s.trim_start()
+                .to_ascii_lowercase()
+                .starts_with("text/event-stream")
+        });
+
+    if is_event_stream {
+        let mut headers = HashMap::new();
+        for (key, value) in final_hop.headers.iter() {
+            if let Ok(val_str) = value.to_str() {
+                headers.insert(key.to_string(), val_str.to_string());
+            }
+        }
+        return Ok(SendOutcome::EventStream {
+            status: final_hop.status,
+            headers,
+            body: EventStreamBody(final_hop.body),
+        });
+    }
+
+    let download_start = Instant::now();
+    let body_bytes = tokio::select! {
+        result = final_hop.body.collect() => {
+            result.map_err(|e| format!("Payload Parsing Error: {}", e))?.to_bytes()
+        }
+        _ = cancel_token.cancelled() => return Err("Request cancelled by user.".to_string()),
+    };
+
+    let mut timings = final_hop.timings;
+    timings.download = download_start.elapsed();
+
+    let outcome = timed_client::ExecOutcome {
+        status: final_hop.status,
+        headers: final_hop.headers,
+        body: body_bytes,
+        timings,
+        request_size: final_hop.request_size,
+    };
+
+    let process_start = Instant::now();
+    Ok(SendOutcome::Complete(shape_response(
+        outcome,
+        prepared.prepare,
+        process_start,
+    )))
 }

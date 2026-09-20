@@ -190,6 +190,9 @@ fn clear_tab_dirty_for_collection(app: &mut Rustrest, col_id: usize) {
             WorkspaceContent::RemoteFile { .. } => false,
             WorkspaceContent::Plugin { .. } => false,
             WorkspaceContent::PluginManager => false,
+            WorkspaceContent::WebSocket(_)
+            | WorkspaceContent::GraphQl(_)
+            | WorkspaceContent::Grpc(_) => false,
         };
         if belongs {
             tab_state.tab.dirty = false;
@@ -490,6 +493,7 @@ pub fn add_request_pressed(
             event: None,
             unsaved: true,
             response: None,
+            protocol_request: None,
         };
 
         let tab_request_node = new_request_node.clone();

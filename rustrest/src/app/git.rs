@@ -31,7 +31,10 @@ pub struct GitState {
 /// already-connected [`RemoteSession`].
 enum GitTarget {
     Local(PathBuf),
-    Remote { session: Arc<RemoteSession>, root: String },
+    Remote {
+        session: Arc<RemoteSession>,
+        root: String,
+    },
 }
 
 /// resolves the git target for `col_id`. `Err` means the collection is
@@ -105,7 +108,11 @@ async fn remote_git_diff_file(
     Ok(output.stdout)
 }
 
-async fn remote_git_commit_all(session: &RemoteSession, root: &str, message: &str) -> Result<(), String> {
+async fn remote_git_commit_all(
+    session: &RemoteSession,
+    root: &str,
+    message: &str,
+) -> Result<(), String> {
     let add = session
         .run_git(root, &["add", "-A"])
         .await
@@ -123,8 +130,15 @@ async fn remote_git_commit_all(session: &RemoteSession, root: &str, message: &st
     Ok(())
 }
 
-async fn remote_git_report(session: &RemoteSession, root: &str, args: &[&str]) -> Result<String, String> {
-    let output = session.run_git(root, args).await.map_err(|e| e.to_string())?;
+async fn remote_git_report(
+    session: &RemoteSession,
+    root: &str,
+    args: &[&str],
+) -> Result<String, String> {
+    let output = session
+        .run_git(root, args)
+        .await
+        .map_err(|e| e.to_string())?;
     let combined = git_ops::combine_output(&output.stdout, &output.stderr);
     if !output.success {
         return Err(combined);

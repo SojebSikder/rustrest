@@ -2,6 +2,7 @@ use super::PhaseTimings;
 use bytes::Bytes;
 use http::{HeaderMap, Method, Request};
 use http_body_util::{BodyExt, Full};
+use hyper::body::Incoming;
 use hyper_util::rt::TokioIo;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -19,6 +20,21 @@ pub(crate) struct ExecOutcome {
     pub body: Bytes,
     pub timings: PhaseTimings,
     pub request_size: u64,
+}
+
+/// The result of following every redirect hop, with the final hop's
+/// response headers resolved but its body left unread - the caller decides
+/// whether to buffer it whole (a normal response) or stream it chunk by
+/// chunk (an event-stream response), without redoing any of the connection
+/// work above.
+pub(crate) struct FinalHop {
+    pub status: u16,
+    pub headers: HeaderMap,
+    /// every phase except `download`/`process`, which depend on what the
+    /// caller does with `body`.
+    pub timings: PhaseTimings,
+    pub request_size: u64,
+    pub body: Incoming,
 }
 
 enum MaybeTlsStream {
@@ -66,30 +82,30 @@ impl AsyncWrite for MaybeTlsStream {
     }
 }
 
-struct HopResult {
+/// One hop's response, with headers resolved but the body left unread.
+struct HopHead {
     status: u16,
     headers: HeaderMap,
-    body: Bytes,
     location: Option<String>,
     socket_init: Duration,
     dns: Duration,
     tcp: Duration,
     tls: Duration,
     ttfb: Duration,
-    download: Duration,
     request_bytes: u64,
+    body: Incoming,
 }
 
 fn has_header(headers: &[(String, String)], name: &str) -> bool {
     headers.iter().any(|(k, _)| k.eq_ignore_ascii_case(name))
 }
 
-async fn execute_hop(
+async fn execute_hop_head(
     url: &Url,
     method: &Method,
     headers: &[(String, String)],
     body: Bytes,
-) -> Result<HopResult, String> {
+) -> Result<HopHead, String> {
     let hop_start = Instant::now();
     let scheme_https = url.scheme() == "https";
     let host = url
@@ -197,27 +213,17 @@ async fn execute_hop(
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
 
-    let download_start = Instant::now();
-    let body_bytes = response
-        .into_body()
-        .collect()
-        .await
-        .map_err(|e| format!("Payload Parsing Error: {}", e))?
-        .to_bytes();
-    let download = download_start.elapsed();
-
-    Ok(HopResult {
+    Ok(HopHead {
         status,
         headers: resp_headers,
-        body: body_bytes,
         location,
         socket_init,
         dns,
         tcp,
         tls,
         ttfb,
-        download,
         request_bytes,
+        body: response.into_body(),
     })
 }
 
@@ -225,13 +231,14 @@ fn is_redirect_status(status: u16) -> bool {
     matches!(status, 301 | 302 | 303 | 307 | 308)
 }
 
-pub(crate) async fn execute_request(
+/// Follows redirects until a non-redirect response comes back, leaving its body unread.
+async fn run_hops(
     method: Method,
     start_url: Url,
     mut headers: Vec<(String, String)>,
     mut body: Bytes,
     cancel_token: &CancellationToken,
-) -> Result<ExecOutcome, String> {
+) -> Result<FinalHop, String> {
     let mut url = start_url;
     let mut current_method = method;
     let mut timings = PhaseTimings::default();
@@ -239,7 +246,7 @@ pub(crate) async fn execute_request(
 
     loop {
         let hop = tokio::select! {
-            res = execute_hop(&url, &current_method, &headers, body.clone()) => res?,
+            res = execute_hop_head(&url, &current_method, &headers, body.clone()) => res?,
             _ = cancel_token.cancelled() => return Err("Request cancelled by user.".to_string()),
         };
 
@@ -248,7 +255,6 @@ pub(crate) async fn execute_request(
         timings.tcp_handshake += hop.tcp;
         timings.ssl_handshake += hop.tls;
         timings.waiting += hop.ttfb;
-        timings.download += hop.download;
 
         if is_redirect_status(hop.status) {
             if let Some(location) = hop.location {
@@ -256,6 +262,10 @@ pub(crate) async fn execute_request(
                     return Err("Too many redirects".to_string());
                 }
                 redirects += 1;
+
+                // this hop's body is a redirect page we're discarding; drop
+                // it without reading (the connection is per-hop here)
+                drop(hop.body);
 
                 url = url
                     .join(&location)
@@ -278,12 +288,54 @@ pub(crate) async fn execute_request(
             }
         }
 
-        return Ok(ExecOutcome {
+        return Ok(FinalHop {
             status: hop.status,
             headers: hop.headers,
-            body: hop.body,
             timings,
             request_size: hop.request_bytes,
+            body: hop.body,
         });
     }
+}
+
+pub(crate) async fn execute_request(
+    method: Method,
+    start_url: Url,
+    headers: Vec<(String, String)>,
+    body: Bytes,
+    cancel_token: &CancellationToken,
+) -> Result<ExecOutcome, String> {
+    let final_hop = run_hops(method, start_url, headers, body, cancel_token).await?;
+
+    let download_start = Instant::now();
+    let body_bytes = tokio::select! {
+        result = final_hop.body.collect() => {
+            result.map_err(|e| format!("Payload Parsing Error: {}", e))?.to_bytes()
+        }
+        _ = cancel_token.cancelled() => return Err("Request cancelled by user.".to_string()),
+    };
+
+    let mut timings = final_hop.timings;
+    timings.download = download_start.elapsed();
+
+    Ok(ExecOutcome {
+        status: final_hop.status,
+        headers: final_hop.headers,
+        body: body_bytes,
+        timings,
+        request_size: final_hop.request_size,
+    })
+}
+
+/// Like [`execute_request`], but stops short of reading the final body -
+/// the caller (which knows whether the response is an event stream from its
+/// `Content-Type`) decides whether to buffer it or stream it.
+pub(crate) async fn execute_request_head(
+    method: Method,
+    start_url: Url,
+    headers: Vec<(String, String)>,
+    body: Bytes,
+    cancel_token: &CancellationToken,
+) -> Result<FinalHop, String> {
+    run_hops(method, start_url, headers, body, cancel_token).await
 }

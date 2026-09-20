@@ -325,6 +325,54 @@ where
                     .into()
                 }
 
+                BodyType::GraphQl => {
+                    let query_editor = multiline_input(
+                        "query { ... }",
+                        &tab.graphql_query,
+                        10,
+                        multiline_height(MultilineFieldKind::GraphQlQuery(tab_id)),
+                        move |action| wrap_msg(TabMessage::GraphQlQueryAction(action)),
+                        wrap_msg(TabMessage::ShowFieldContextMenu(
+                            TabFieldTarget::GraphQlQueryEditor,
+                            tab.graphql_query
+                                .selection()
+                                .unwrap_or_else(|| tab.graphql_query.text()),
+                        )),
+                        on_multiline_resize_start(MultilineFieldKind::GraphQlQuery(tab_id)),
+                    );
+
+                    let variables_editor = multiline_input(
+                        "{}",
+                        &tab.graphql_variables,
+                        10,
+                        multiline_height(MultilineFieldKind::GraphQlVariables(tab_id)),
+                        move |action| wrap_msg(TabMessage::GraphQlVariablesAction(action)),
+                        wrap_msg(TabMessage::ShowFieldContextMenu(
+                            TabFieldTarget::GraphQlVariablesEditor,
+                            tab.graphql_variables
+                                .selection()
+                                .unwrap_or_else(|| tab.graphql_variables.text()),
+                        )),
+                        on_multiline_resize_start(MultilineFieldKind::GraphQlVariables(tab_id)),
+                    );
+
+                    let query_pane = column![
+                        text("Query").size(12),
+                        container(query_editor).style(container::bordered_box),
+                    ]
+                    .spacing(6)
+                    .width(Length::FillPortion(3));
+
+                    let variables_pane = column![
+                        text("Variables (JSON)").size(12),
+                        container(variables_editor).style(container::bordered_box),
+                    ]
+                    .spacing(6)
+                    .width(Length::FillPortion(2));
+
+                    row![query_pane, variables_pane].spacing(12).into()
+                }
+
                 BodyType::Binary => {
                     let select_file_btn = button(text("Select File"))
                         .padding(10)

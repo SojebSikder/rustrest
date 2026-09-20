@@ -1,0 +1,14 @@
+[package]
+name = "rustrest-ws"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "rustrest_ws"
+
+[dependencies]
+rustrest-core = { path = "../rustrest-core" }
+tokio = { version = "1", features = ["rt", "sync", "macros", "net", "time"] }
+tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect", "handshake", "rustls-tls-webpki-roots"] }
+futures-util = "0.3"
+http = "1"

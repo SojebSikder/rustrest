@@ -3,7 +3,8 @@ use std::sync::{Arc, OnceLock};
 use tokio::net::TcpStream;
 use tokio_rustls::{TlsConnector, client::TlsStream};
 
-fn client_config() -> Arc<rustls::ClientConfig> {
+/// for TLS setup
+pub fn client_config() -> Arc<rustls::ClientConfig> {
     static CONFIG: OnceLock<Arc<rustls::ClientConfig>> = OnceLock::new();
     CONFIG
         .get_or_init(|| {

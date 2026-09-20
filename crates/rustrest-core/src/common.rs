@@ -5,15 +5,17 @@ pub enum BodyType {
     XWwwFormUrlencoded,
     Raw,
     Binary,
+    GraphQl,
 }
 
 impl BodyType {
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::None,
         Self::FormData,
         Self::XWwwFormUrlencoded,
         Self::Raw,
         Self::Binary,
+        Self::GraphQl,
     ];
 
     pub fn label(&self) -> &str {
@@ -23,6 +25,7 @@ impl BodyType {
             Self::XWwwFormUrlencoded => "x-www-form-urlencoded",
             Self::Raw => "raw",
             Self::Binary => "binary",
+            Self::GraphQl => "GraphQL",
         }
     }
 }
