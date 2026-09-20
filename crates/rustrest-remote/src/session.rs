@@ -101,6 +101,26 @@ impl RemoteSession {
             .await
     }
 
+    /// runs `git <args>` with its working directory set to `cwd` on the
+    /// remote host.
+    pub async fn run_git(
+        &self,
+        cwd: &str,
+        args: &[&str],
+    ) -> Result<rustrest_remote_protocol::GitCommandOutput, RemoteError> {
+        let request = Request::RunGit {
+            cwd: cwd.to_string(),
+            args: args.iter().map(|s| s.to_string()).collect(),
+        };
+        match self.rpc.call(request).await? {
+            Response::GitOutput(output) => Ok(output),
+            Response::Error(message) => Err(RemoteError::Remote(message)),
+            _ => Err(RemoteError::Remote(
+                "unexpected response to RunGit".to_string(),
+            )),
+        }
+    }
+
     async fn expect_ok(&self, request: Request) -> Result<(), RemoteError> {
         match self.rpc.call(request).await? {
             Response::Ok => Ok(()),

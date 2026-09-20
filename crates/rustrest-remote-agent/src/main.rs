@@ -1,6 +1,8 @@
 //! Headless binary that runs on the remote host.
 
-use rustrest_remote_protocol::{Envelope, Request, Response, read_message, write_message};
+use rustrest_remote_protocol::{
+    Envelope, GitCommandOutput, Request, Response, read_message, write_message,
+};
 use tokio::io::{self, AsyncWriteExt};
 
 #[tokio::main(flavor = "current_thread")]
@@ -48,6 +50,25 @@ async fn handle(request: Request) -> Response {
             Ok(()) => Response::Ok,
             Err(err) => Response::Error(err.to_string()),
         },
+        Request::RunGit { cwd, args } => run_git(&cwd, &args).await,
+    }
+}
+
+async fn run_git(cwd: &str, args: &[String]) -> Response {
+    let mut command = tokio::process::Command::new("git");
+    command.current_dir(cwd).args(args);
+
+    match command.output().await {
+        Ok(output) => Response::GitOutput(GitCommandOutput {
+            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+            success: output.status.success(),
+        }),
+        Err(err) => Response::Error(if err.kind() == std::io::ErrorKind::NotFound {
+            "git not found on PATH on the remote host, install Git to use this feature".to_string()
+        } else {
+            format!("Failed to run git: {err}")
+        }),
     }
 }
 
