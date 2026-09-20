@@ -160,6 +160,7 @@ pub fn apply(app: &mut Rustrest, op: CollectionOperation) -> Result<String, Stri
                     event: None,
                     unsaved: true,
                     response: None,
+                    protocol_request: None,
                 }),
             );
             reveal_in_sidebar(app, collection_id, &parent_path);

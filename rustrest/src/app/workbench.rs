@@ -7,7 +7,6 @@
 use super::{Rustrest, Tab, TabState, WorkspaceContent};
 use crate::collection::collection::CollectionItem;
 use crate::collection::env::Environment;
-use crate::http_client::send_request;
 use crate::message::Message;
 use crate::ui::context_menu::{ContextMenu, FieldTarget};
 use crate::ui::save_request_model::types::SaveRequestModalState;
@@ -41,6 +40,9 @@ fn finalize_tab_rename(app: &mut Rustrest, idx: usize) {
                 WorkspaceContent::RemoteFile { path, .. } => path.clone(),
                 WorkspaceContent::Plugin { panel_id, .. } => panel_id.clone(),
                 WorkspaceContent::PluginManager => "Manage Plugins".to_string(),
+                WorkspaceContent::WebSocket(_) => "WebSocket Request".to_string(),
+                WorkspaceContent::GraphQl(_) => "GraphQL Request".to_string(),
+                WorkspaceContent::Grpc(_) => "gRPC Request".to_string(),
             };
         }
     }
@@ -73,6 +75,41 @@ pub fn new_tab_pressed(app: &mut Rustrest) -> Task<Message> {
     app.tabs.push(TabState {
         tab: Tab::new(app.next_tab_id),
         content: WorkspaceContent::HttpRequest,
+        is_editing_name: false,
+    });
+    app.active_tab_index = app.tabs.len() - 1;
+    app.next_tab_id += 1;
+    iced::widget::operation::snap_to_end(crate::ui::workspace::tab_bar_scroll_id())
+}
+
+pub fn new_protocol_tab_pressed(
+    app: &mut Rustrest,
+    protocol: super::NewTabProtocol,
+) -> Task<Message> {
+    let content = match protocol {
+        super::NewTabProtocol::Http => return new_tab_pressed(app),
+        super::NewTabProtocol::WebSocket => {
+            WorkspaceContent::WebSocket(crate::ui::tab::ws::WsTabState::default())
+        }
+        super::NewTabProtocol::GraphQl => {
+            WorkspaceContent::GraphQl(crate::ui::tab::graphql::GraphQlTabState::default())
+        }
+        super::NewTabProtocol::Grpc => {
+            WorkspaceContent::Grpc(crate::ui::tab::grpc::GrpcTabState::default())
+        }
+    };
+
+    let mut tab = Tab::new(app.next_tab_id);
+    tab.name = match protocol {
+        super::NewTabProtocol::Http => "Untitled Request".to_string(),
+        super::NewTabProtocol::WebSocket => "WebSocket Request".to_string(),
+        super::NewTabProtocol::GraphQl => "GraphQL Request".to_string(),
+        super::NewTabProtocol::Grpc => "gRPC Request".to_string(),
+    };
+
+    app.tabs.push(TabState {
+        tab,
+        content,
         is_editing_name: false,
     });
     app.active_tab_index = app.tabs.len() - 1;
@@ -351,6 +388,8 @@ pub fn send_pressed(app: &mut Rustrest) -> Task<Message> {
         tab.cancel_token = CancellationToken::new();
         tab.is_loading = true;
         tab.response = None;
+        tab.sse_active = false;
+        tab.sse_log.clear();
 
         let collection_vars = tab
             .collection_id
@@ -403,11 +442,135 @@ pub fn send_pressed(app: &mut Rustrest) -> Task<Message> {
             .cookies(filtered_cookies)
             .auth_raw(compiled_auth);
 
-        return Task::perform(send_request(spec, tab.cancel_token.clone()), move |res| {
-            Message::ResponseReceived(tab_id, res)
-        });
+        let cancel_token = tab.cancel_token.clone();
+
+        return crate::ui::tab::streaming::spawn_streaming(
+            move |events_tx| async move {
+                let stream_cancel_token = cancel_token.clone();
+
+                match crate::http_client::send_request_auto(spec, cancel_token).await {
+                    Ok(crate::http_client::SendOutcome::Complete(resp)) => {
+                        let _ = events_tx.send(SendProgress::Complete(Ok(resp))).await;
+                    }
+                    Ok(crate::http_client::SendOutcome::EventStream {
+                        status,
+                        headers,
+                        mut body,
+                    }) => {
+                        let _ = events_tx
+                            .send(SendProgress::Sse(rustrest_sse::SseEvent::Open {
+                                status,
+                                headers: headers.into_iter().collect(),
+                            }))
+                            .await;
+                        let mut parser = rustrest_sse::SseParser::new();
+                        loop {
+                            let chunk = tokio::select! {
+                                c = body.next_chunk() => c,
+                                _ = stream_cancel_token.cancelled() => {
+                                    let _ = events_tx
+                                        .send(SendProgress::Sse(rustrest_sse::SseEvent::Closed))
+                                        .await;
+                                    break;
+                                }
+                            };
+                            match chunk {
+                                Some(Ok(bytes)) => {
+                                    for msg in parser.feed(&bytes) {
+                                        let _ = events_tx
+                                            .send(SendProgress::Sse(
+                                                rustrest_sse::SseEvent::Message(msg),
+                                            ))
+                                            .await;
+                                    }
+                                }
+                                Some(Err(e)) => {
+                                    let _ = events_tx
+                                        .send(SendProgress::Sse(rustrest_sse::SseEvent::Error(e)))
+                                        .await;
+                                    break;
+                                }
+                                None => {
+                                    let _ = events_tx
+                                        .send(SendProgress::Sse(rustrest_sse::SseEvent::Closed))
+                                        .await;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        let _ = events_tx.send(SendProgress::Complete(Err(e))).await;
+                    }
+                }
+            },
+            move |progress| match progress {
+                SendProgress::Complete(res) => Message::ResponseReceived(tab_id, res),
+                SendProgress::Sse(event) => Message::SseEvent(tab_id, event),
+            },
+            move |_| Message::None,
+        );
     }
     Task::none()
+}
+
+enum SendProgress {
+    Complete(Result<crate::http_client::HttpResponse, String>),
+    Sse(rustrest_sse::SseEvent),
+}
+
+pub fn sse_stream_event(
+    app: &mut Rustrest,
+    tab_id: usize,
+    event: rustrest_sse::SseEvent,
+) -> Task<Message> {
+    let Some(tab_state) = app.tabs.iter_mut().find(|t| t.tab.id == tab_id) else {
+        return Task::none();
+    };
+    if !matches!(tab_state.content, WorkspaceContent::HttpRequest) {
+        return Task::none();
+    }
+    let tab = &mut tab_state.tab;
+
+    use crate::ui::tab::protocol_common::{LogEntry, push_capped};
+
+    match event {
+        rustrest_sse::SseEvent::Open { status, headers } => {
+            tab.response = Some(Ok(crate::http_client::HttpResponse {
+                status,
+                body: String::new(),
+                headers: headers.into_iter().collect(),
+                elapsed: std::time::Duration::ZERO,
+                test_results: Vec::new(),
+                timings: Default::default(),
+                request_size: 0,
+                response_size: 0,
+            }));
+            tab.sse_active = true;
+            tab.sse_log.clear();
+            push_capped(
+                &mut tab.sse_log,
+                LogEntry::info(format!("Connected (HTTP {status})")),
+            );
+        }
+        rustrest_sse::SseEvent::Message(msg) => {
+            let label = match &msg.id {
+                Some(id) => format!("{} (id: {id})", msg.event),
+                None => msg.event.clone(),
+            };
+            push_capped(&mut tab.sse_log, LogEntry::incoming(label, msg.data));
+        }
+        rustrest_sse::SseEvent::Error(e) => {
+            tab.is_loading = false;
+            push_capped(&mut tab.sse_log, LogEntry::error(e));
+        }
+        rustrest_sse::SseEvent::Closed => {
+            tab.is_loading = false;
+            push_capped(&mut tab.sse_log, LogEntry::info("Closed"));
+        }
+    }
+
+    iced::widget::operation::snap_to_end(crate::ui::tab::protocol_common::sse_log_id(tab_id))
 }
 
 pub fn response_received(
@@ -840,6 +1003,9 @@ pub fn save_active_request_shortcut(app: &mut Rustrest) -> Task<Message> {
             }
             WorkspaceContent::Plugin { .. } => Task::none(),
             WorkspaceContent::PluginManager => Task::none(),
+            WorkspaceContent::WebSocket(_)
+            | WorkspaceContent::GraphQl(_)
+            | WorkspaceContent::Grpc(_) => Task::none(),
         }
     } else {
         Task::none()

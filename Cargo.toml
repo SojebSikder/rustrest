@@ -10,6 +10,10 @@ members = [
     "crates/rustrest-command-palette",
     "crates/rustrest-plugin-api",
     "crates/rustrest-plugin-host",
+    "crates/rustrest-ws",
+    "crates/rustrest-sse",
+    "crates/rustrest-graphql",
+    "crates/rustrest-grpc",
 ]
 resolver = "2"
 

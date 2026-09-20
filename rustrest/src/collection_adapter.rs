@@ -1,6 +1,6 @@
 use crate::collection::collection::{
-    PostmanBody, PostmanBodyRow, PostmanEvent, PostmanHeader, PostmanRequestNode,
-    PostmanResponseExample, PostmanScript, PostmanScriptExec, PostmanUrl,
+    PostmanBody, PostmanBodyRow, PostmanEvent, PostmanGraphQlBody, PostmanHeader,
+    PostmanRequestNode, PostmanResponseExample, PostmanScript, PostmanScriptExec, PostmanUrl,
 };
 use crate::http_client::HttpMethod;
 use crate::ui::tab::Tab;
@@ -82,12 +82,28 @@ pub fn sync_body_from_tab(node: &mut PostmanRequestNode, tab: &Tab) {
                     raw: Some(text_content),
                     formdata: None,
                     urlencoded: None,
+                    graphql: None,
                 })
             }
+        }
+        BodyType::GraphQl => {
+            let query = tab.graphql_query.text();
+            let variables = tab.graphql_variables.text();
+            Some(PostmanBody {
+                mode: Some("graphql".to_string()),
+                raw: None,
+                formdata: None,
+                urlencoded: None,
+                graphql: Some(PostmanGraphQlBody {
+                    query,
+                    variables: (!variables.trim().is_empty()).then_some(variables),
+                }),
+            })
         }
         BodyType::FormData => Some(PostmanBody {
             mode: Some("formdata".to_string()),
             raw: None,
+            graphql: None,
             formdata: Some(
                 tab.body_form_data
                     .iter()
@@ -109,6 +125,7 @@ pub fn sync_body_from_tab(node: &mut PostmanRequestNode, tab: &Tab) {
             mode: Some("urlencoded".to_string()),
             raw: None,
             formdata: None,
+            graphql: None,
             urlencoded: Some(
                 tab.body_urlencoded
                     .iter()
@@ -293,6 +310,18 @@ pub fn create_tab_from_request(
                             .collect();
                         tab.body_form_data_values =
                             crate::ui::tab::contents_for_form_data(&tab.body_form_data);
+                    }
+                }
+                "graphql" => {
+                    tab.body_type = BodyType::GraphQl;
+                    tab.active_sub_tab = RequestSubTab::Body;
+                    if let Some(graphql) = &body.graphql {
+                        tab.graphql_query =
+                            iced::widget::text_editor::Content::with_text(&graphql.query);
+                        if let Some(variables) = &graphql.variables {
+                            tab.graphql_variables =
+                                iced::widget::text_editor::Content::with_text(variables);
+                        }
                     }
                 }
                 "urlencoded" => {

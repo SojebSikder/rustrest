@@ -23,7 +23,7 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
             iced::widget::text("Create a new request or collection to get started.").size(13),
             row![
                 button("New Request")
-                    .on_press(Message::NewTabPressed)
+                    .on_press(Message::ShowNewTabMenu)
                     .style(button::success)
                     .padding([8, 16]),
                 button("New Collection")
@@ -71,6 +71,9 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
             WorkspaceContent::RemoteFile { .. } => text("☁").size(11).into(),
             WorkspaceContent::Plugin { .. } => text("⚙").size(11).into(),
             WorkspaceContent::PluginManager => text("🧩").size(11).into(),
+            WorkspaceContent::WebSocket(_) => text("WS").size(11).into(),
+            WorkspaceContent::GraphQl(_) => text("GQL").size(11).into(),
+            WorkspaceContent::Grpc(_) => text("gRPC").size(11).into(),
         };
 
         let tab_content: Element<Message> = if tab_state.is_editing_name {
@@ -145,7 +148,7 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
     }
 
     let add_tab_btn = button("+")
-        .on_press(Message::NewTabPressed)
+        .on_press(Message::ShowNewTabMenu)
         .padding(6)
         .style(button::success);
 
@@ -246,6 +249,36 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
         }
 
         WorkspaceContent::PluginManager => super::plugin_manager::render_plugin_manager_tab(app),
+
+        WorkspaceContent::WebSocket(state) => super::tab::ws::view(
+            state,
+            active_tab_state.tab.id,
+            Message::ActiveWsMessage,
+            app.layout.request_pane_height,
+            Message::ResizeDragStarted(ResizeKind::RequestPane),
+        ),
+        WorkspaceContent::GraphQl(state) => super::tab::graphql::view(
+            state,
+            active_tab_state.tab.id,
+            Message::ActiveGraphQlMessage,
+            app.layout.request_pane_height,
+            Message::ResizeDragStarted(ResizeKind::RequestPane),
+            move |kind: MultilineFieldKind| app.layout.multiline_height(kind),
+            move |kind: MultilineFieldKind| {
+                Message::ResizeDragStarted(ResizeKind::MultilineField(kind))
+            },
+        ),
+        WorkspaceContent::Grpc(state) => super::tab::grpc::view(
+            state,
+            active_tab_state.tab.id,
+            Message::ActiveGrpcMessage,
+            app.layout.request_pane_height,
+            Message::ResizeDragStarted(ResizeKind::RequestPane),
+            move |kind: MultilineFieldKind| app.layout.multiline_height(kind),
+            move |kind: MultilineFieldKind| {
+                Message::ResizeDragStarted(ResizeKind::MultilineField(kind))
+            },
+        ),
     };
 
     column![tab_bar_row, tab_view].spacing(15).into()

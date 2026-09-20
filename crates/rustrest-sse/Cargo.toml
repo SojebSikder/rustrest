@@ -1,0 +1,14 @@
+[package]
+name = "rustrest-sse"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "rustrest_sse"
+
+[dependencies]
+rustrest-core = { path = "../rustrest-core" }
+tokio = { version = "1", features = ["rt", "sync", "macros"] }
+tokio-util = "0.7"
+http = "1"
+url = "2.5"

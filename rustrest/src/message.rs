@@ -1,4 +1,4 @@
-use crate::app::CollectionSubTab;
+use crate::app::{CollectionSubTab, NewTabProtocol};
 use crate::collection::collection::{PostmanCollection, PostmanRequestNode};
 use crate::collection::git_ops::{GitRemoteOp, GitStatusSnapshot};
 use crate::http_client::HttpResponse;
@@ -25,8 +25,11 @@ pub enum ResizeKind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MultilineFieldKind {
-    Auth(usize),    // tab id
-    RawBody(usize), // tab id
+    Auth(usize),
+    RawBody(usize),
+    GraphQlQuery(usize),
+    GraphQlVariables(usize),
+    GrpcRequestJson(usize),
     CommitMessage,
     EnvVarValue {
         env_idx: usize,
@@ -607,6 +610,30 @@ pub enum Message {
     SettingsTabSelected(crate::ui::settings::SettingsTab),
     ThemeSelected(crate::ui::settings::AppTheme),
     CloseOnOutsideClickToggled(bool),
+
+    // new tab protocol picker
+    ShowNewTabMenu,
+    NewProtocolTabPressed(NewTabProtocol),
+
+    // websocket
+    ActiveWsMessage(crate::ui::tab::ws::WsTabMessage),
+    WsEvent(usize, rustrest_ws::WsEvent),
+    WsClosed(usize),
+
+    // server-sent events (SSE): a streaming mode on a regular HTTP request tab
+    SseEvent(usize, rustrest_sse::SseEvent),
+
+    // graphql
+    ActiveGraphQlMessage(crate::ui::tab::graphql::GraphQlTabMessage),
+    GraphQlResponseReceived(usize, Result<rustrest_graphql::GraphQlResponse, String>),
+    GraphQlSchemaLoaded(usize, Result<rustrest_graphql::GraphQlResponse, String>),
+    GraphQlSubscriptionEvent(usize, rustrest_graphql::SubscriptionEvent),
+
+    // grpc
+    ActiveGrpcMessage(crate::ui::tab::grpc::GrpcTabMessage),
+    GrpcDiscovered(usize, Result<rustrest_grpc::GrpcTarget, String>),
+    GrpcResponse(usize, Result<String, String>),
+    GrpcInvokeFinished(usize),
 
     AppExit,
     None,

@@ -299,6 +299,17 @@ where
             .align_y(Alignment::Center);
 
             let dynamic_pane: Element<Message> = match tab.active_response_tab {
+                ResponseSubTab::Body if tab.sse_active => {
+                    container(crate::ui::tab::protocol_common::message_log(
+                        &tab.sse_log,
+                        crate::ui::tab::protocol_common::sse_log_id(tab.id),
+                    ))
+                    .style(container::bordered_box)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .into()
+                }
+
                 ResponseSubTab::Body => {
                     let view_dropdown =
                         pick_list(&ResponseView::ALL[..], Some(tab.response_view), move |v| {
