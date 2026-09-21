@@ -1,6 +1,6 @@
 use crate::error::PluginError;
 use rustrest_plugin_api::{
-    Capability, CommandDef, FormatDef, MenuItemDef, PanelDef, PluginManifest,
+    Capability, CommandDef, FormatDef, MenuItemDef, PanelDef, PluginManifest, StatusBarItemDef,
 };
 use serde::Deserialize;
 use std::path::Path;
@@ -43,6 +43,8 @@ struct TomlCapabilities {
     import_formats: Vec<FormatDef>,
     #[serde(default)]
     export_formats: Vec<FormatDef>,
+    #[serde(default)]
+    status_bar_items: Vec<StatusBarItemDef>,
 }
 
 pub fn parse(toml_source: &str) -> Result<PluginManifest, PluginError> {
@@ -82,6 +84,9 @@ pub fn parse(toml_source: &str) -> Result<PluginManifest, PluginError> {
     }
     for format in raw.capabilities.export_formats {
         capabilities.push(Capability::ExportFormat(format));
+    }
+    for item in raw.capabilities.status_bar_items {
+        capabilities.push(Capability::StatusBarItem(item));
     }
 
     Ok(PluginManifest {

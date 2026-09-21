@@ -1,12 +1,12 @@
 use crate::error::PluginError;
 use crate::files::FileEvent;
-use crate::instance::{LoadedPlugin, compile, load_from_module, load_plugin};
+use crate::instance::{LoadedPlugin, compile, instantiate, load_from_module};
 use crate::manifest_toml::{self, MANIFEST_FILE_NAME, WASM_FILE_NAME};
 use crate::network::{NetworkEvent, NetworkTable};
 use crate::process::{ProcessEvent, ProcessTable};
 use rustrest_plugin_api::{
     Capability, CommandDef, FormatDef, MenuItemDef, PanelDef, PluginManifest, RequestContext,
-    ResponseContext, RightPanelAction, RightPanelContext, UiEvent, UiNode,
+    ResponseContext, RightPanelAction, RightPanelContext, StatusBarItemDef, UiEvent, UiNode,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -20,6 +20,18 @@ const APP_NAME: &str = "Rustrest";
 struct PersistedState {
     #[serde(default)]
     disabled: HashSet<String>,
+}
+
+/// output of `PluginManager::prepare_load_all`'s background-thread-safe
+/// discover+compile step; see `PluginManager::finish_load_all`.
+#[derive(Debug, Clone)]
+pub struct PreparedPlugin {
+    dir_name: String,
+    plugin_dir: PathBuf,
+    enabled: bool,
+    manifest: Option<PluginManifest>,
+    module: Option<Module>,
+    load_error: Option<String>,
 }
 
 /// Discovers, loads, and drives every wasm plugin under the plugins
@@ -54,6 +66,10 @@ impl PluginManager {
         &self.plugins_dir
     }
 
+    pub fn state_path(&self) -> &Path {
+        &self.state_path
+    }
+
     fn new_engine() -> Engine {
         let mut config = Config::new();
         config.consume_fuel(true);
@@ -75,11 +91,28 @@ impl PluginManager {
     /// that file alone is enough to list/validate it, no wasm is compiled
     /// or run just to discover what's installed.
     pub fn load_all(&mut self) {
-        let disabled = self.read_disabled();
-        fs::create_dir_all(&self.plugins_dir).ok();
+        let engine = self.engine_handle();
+        let prepared = Self::prepare_load_all(&self.plugins_dir, &self.state_path, &engine);
+        self.finish_load_all(prepared);
+    }
+
+    /// discovery + manifest-parsing + wasm-compile step of `load_all`,
+    /// taking explicit paths (rather than `&self`) and no other borrow of
+    /// the manager, so it can run on a background thread ahead of
+    /// constructing/owning a `PluginManager` there - the compile is the
+    /// slow part of startup, and running it before the window paints is the
+    /// main cause of slow app startup when plugins are installed. Pass the
+    /// result to `finish_load_all` on the main thread to activate it.
+    pub fn prepare_load_all(
+        plugins_dir: &Path,
+        state_path: &Path,
+        engine: &Engine,
+    ) -> Vec<PreparedPlugin> {
+        let disabled = Self::read_disabled_at(state_path);
+        fs::create_dir_all(plugins_dir).ok();
 
         let mut discovered = Vec::new();
-        if let Ok(entries) = fs::read_dir(&self.plugins_dir) {
+        if let Ok(entries) = fs::read_dir(plugins_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if !path.is_dir() {
@@ -95,24 +128,101 @@ impl PluginManager {
             }
         }
 
-        if discovered.is_empty() {
-            self.plugins = Vec::new();
-            return;
-        }
-
-        let engine = self.engine.get_or_insert_with(Self::new_engine);
-
-        self.plugins = discovered
+        discovered
             .into_iter()
             .map(|(dir_name, plugin_dir)| {
                 let enabled = !disabled.contains(&dir_name);
-                load_plugin(engine, &dir_name, &plugin_dir, enabled)
+                let manifest = match manifest_toml::read_from_dir(&plugin_dir) {
+                    Ok(m) => m,
+                    Err(e) => {
+                        return PreparedPlugin {
+                            dir_name,
+                            plugin_dir,
+                            enabled: false,
+                            manifest: None,
+                            module: None,
+                            load_error: Some(e.to_string()),
+                        };
+                    }
+                };
+                if manifest.id != dir_name {
+                    return PreparedPlugin {
+                        load_error: Some(format!(
+                            "manifest id '{}' does not match plugin directory name '{}'",
+                            manifest.id, dir_name
+                        )),
+                        dir_name,
+                        plugin_dir,
+                        enabled: false,
+                        manifest: Some(manifest),
+                        module: None,
+                    };
+                }
+                // a disabled plugin can't run anything, so skip the
+                // (potentially slow) wasm compile entirely - `set_enabled`
+                // compiles+instantiates it lazily if re-enabled later.
+                if !enabled {
+                    return PreparedPlugin {
+                        dir_name,
+                        plugin_dir,
+                        enabled: false,
+                        manifest: Some(manifest),
+                        module: None,
+                        load_error: None,
+                    };
+                }
+                let wasm_path = plugin_dir.join(WASM_FILE_NAME);
+                match compile(engine, &wasm_path) {
+                    Ok(module) => PreparedPlugin {
+                        dir_name,
+                        plugin_dir,
+                        enabled: true,
+                        manifest: Some(manifest),
+                        module: Some(module),
+                        load_error: None,
+                    },
+                    Err(e) => PreparedPlugin {
+                        dir_name,
+                        plugin_dir,
+                        enabled: false,
+                        manifest: Some(manifest),
+                        module: None,
+                        load_error: Some(e.to_string()),
+                    },
+                }
+            })
+            .collect()
+    }
+
+    /// finishes `prepare_load_all`'s output: instantiates each compiled
+    /// module (cheap, in-memory linking, safe to run on the main thread)
+    /// and installs the result as the active plugin list.
+    pub fn finish_load_all(&mut self, prepared: Vec<PreparedPlugin>) {
+        let engine = self.engine.get_or_insert_with(Self::new_engine).clone();
+        self.plugins = prepared
+            .into_iter()
+            .map(|p| match (p.manifest, p.module) {
+                (Some(manifest), Some(module)) => load_from_module(
+                    &p.dir_name,
+                    &engine,
+                    &module,
+                    &manifest,
+                    &p.plugin_dir,
+                    p.enabled,
+                ),
+                (manifest, _) => LoadedPlugin {
+                    dir_name: p.dir_name,
+                    manifest,
+                    enabled: false,
+                    load_error: p.load_error,
+                    runtime: None,
+                },
             })
             .collect();
     }
 
-    fn read_disabled(&self) -> HashSet<String> {
-        fs::read_to_string(&self.state_path)
+    fn read_disabled_at(state_path: &Path) -> HashSet<String> {
+        fs::read_to_string(state_path)
             .ok()
             .and_then(|s| serde_json::from_str::<PersistedState>(&s).ok())
             .map(|s| s.disabled)
@@ -139,6 +249,38 @@ impl PluginManager {
     }
 
     pub fn set_enabled(&mut self, plugin_id: &str, enabled: bool) {
+        // a plugin that was disabled at startup never got its wasm
+        // instantiated (see `PluginManager::prepare_load_all`); if it's
+        // being turned back on,
+        // instantiate it now instead of leaving it permanently inert.
+        if enabled
+            && let Some(dir_name) = self.plugins.iter().find_map(|p| {
+                (p.id() == plugin_id && p.runtime.is_none() && p.load_error.is_none())
+                    .then(|| p.dir_name.clone())
+            })
+        {
+            let plugin_dir = self.plugins_dir.join(&dir_name);
+            let engine = self.engine.get_or_insert_with(Self::new_engine).clone();
+            let manifest = self
+                .plugins
+                .iter()
+                .find(|p| p.dir_name == dir_name)
+                .and_then(|p| p.manifest.clone());
+            if let Some(manifest) = manifest {
+                let wasm_path = plugin_dir.join(WASM_FILE_NAME);
+                let result = instantiate(&engine, &dir_name, &wasm_path, &manifest, &plugin_dir);
+                if let Some(plugin) = self.plugins.iter_mut().find(|p| p.dir_name == dir_name) {
+                    match result {
+                        Ok(runtime) => {
+                            plugin.runtime = Some(runtime);
+                            plugin.load_error = None;
+                        }
+                        Err(e) => plugin.load_error = Some(e.to_string()),
+                    }
+                }
+            }
+        }
+
         if let Some(plugin) = self.plugins.iter_mut().find(|p| p.id() == plugin_id) {
             plugin.enabled = enabled && plugin.runtime.is_some();
             if !plugin.enabled
@@ -427,6 +569,21 @@ impl PluginManager {
             for cap in &manifest.capabilities {
                 if let Capability::RightPanel(panel) = cap {
                     out.push((plugin.id().to_string(), panel.clone()));
+                }
+            }
+        }
+        out
+    }
+
+    pub fn status_bar_items(&self) -> Vec<(String, StatusBarItemDef)> {
+        let mut out = Vec::new();
+        for plugin in self.plugins.iter().filter(|p| p.is_active()) {
+            let Some(manifest) = &plugin.manifest else {
+                continue;
+            };
+            for cap in &manifest.capabilities {
+                if let Capability::StatusBarItem(item) = cap {
+                    out.push((plugin.id().to_string(), item.clone()));
                 }
             }
         }

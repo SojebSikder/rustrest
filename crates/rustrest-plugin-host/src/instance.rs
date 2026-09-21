@@ -1,7 +1,6 @@
 use crate::error::PluginError;
 use crate::files::FileTable;
 use crate::hostcall::link_host_functions;
-use crate::manifest_toml::{self, WASM_FILE_NAME};
 use crate::network::NetworkTable;
 use crate::process::ProcessTable;
 use crate::state::PluginState;
@@ -44,60 +43,7 @@ impl LoadedPlugin {
     }
 }
 
-/// discovers, parses `plugin.toml`, and (if that succeeds) compiles +
-/// instantiates `plugin.wasm` for the plugin directory `plugin_dir`.
-pub fn load_plugin(
-    engine: &Engine,
-    dir_name: &str,
-    plugin_dir: &Path,
-    enabled: bool,
-) -> LoadedPlugin {
-    let manifest = match manifest_toml::read_from_dir(plugin_dir) {
-        Ok(m) => m,
-        Err(e) => {
-            return LoadedPlugin {
-                dir_name: dir_name.to_string(),
-                manifest: None,
-                enabled: false,
-                load_error: Some(e.to_string()),
-                runtime: None,
-            };
-        }
-    };
-
-    if manifest.id != dir_name {
-        return LoadedPlugin {
-            dir_name: dir_name.to_string(),
-            load_error: Some(format!(
-                "manifest id '{}' does not match plugin directory name '{}'",
-                manifest.id, dir_name
-            )),
-            manifest: Some(manifest),
-            enabled: false,
-            runtime: None,
-        };
-    }
-
-    let wasm_path = plugin_dir.join(WASM_FILE_NAME);
-    match instantiate(engine, dir_name, &wasm_path, &manifest, plugin_dir) {
-        Ok(runtime) => LoadedPlugin {
-            dir_name: dir_name.to_string(),
-            manifest: Some(manifest),
-            enabled,
-            load_error: None,
-            runtime: Some(runtime),
-        },
-        Err(e) => LoadedPlugin {
-            dir_name: dir_name.to_string(),
-            manifest: Some(manifest),
-            enabled: false,
-            load_error: Some(e.to_string()),
-            runtime: None,
-        },
-    }
-}
-
-fn instantiate(
+pub(crate) fn instantiate(
     engine: &Engine,
     label: &str,
     wasm_path: &Path,

@@ -27,6 +27,20 @@ pub struct PanelDef {
     pub title: String,
 }
 
+/// One entry a plugin contributes to the bottom status bar. Static: read
+/// once from the manifest at load time
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StatusBarItemDef {
+    /// stable id, unique within the plugin.
+    pub id: String,
+    pub label: String,
+    /// command id, dispatched the same way as a command-palette entry
+    /// (via `Plugin::on_command`) when the item is clicked. `None` renders
+    /// it as plain, non-interactive text.
+    #[serde(default)]
+    pub command_id: Option<String>,
+}
+
 /// A collection import format a plugin can decode into Rustrest's own
 /// collection JSON model.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,6 +68,8 @@ pub enum Capability {
     RightPanel(PanelDef),
     ImportFormat(FormatDef),
     ExportFormat(FormatDef),
+    /// an entry in the bottom status bar
+    StatusBarItem(StatusBarItemDef),
     /// unlocks the `which` / `download_file` / `make_executable` /
     /// `storage_dir` / `run_command` / `process_*` host calls. Declared separately from the other
     /// capabilities because it's the one that lets a plugin touch the

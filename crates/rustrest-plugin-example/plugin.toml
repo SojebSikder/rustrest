@@ -2,7 +2,7 @@ id = "example"
 name = "Example Plugin"
 version = "0.1.0"
 author = "Rustrest"
-description = "Demonstrates a request hook, a command, a sidebar panel, a right panel, and spawning an external process."
+description = "Demonstrates a request hook, a command, a sidebar panel, a right panel, a status bar item, and spawning an external process."
 schema_version = 1
 
 [capabilities]
@@ -21,3 +21,8 @@ title = "Example"
 [capabilities.right_panel]
 id = "example-right"
 title = "Example"
+
+[[capabilities.status_bar_items]]
+id = "say-hello"
+label = "Example: Say Hello"
+command_id = "say-hello"
