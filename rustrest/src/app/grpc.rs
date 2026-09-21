@@ -21,7 +21,33 @@ fn active_grpc_state(
     }
 }
 
+fn is_grpc_edit(msg: &GrpcTabMessage) -> bool {
+    match msg {
+        GrpcTabMessage::EndpointChanged(_)
+        | GrpcTabMessage::UseTlsToggled(_)
+        | GrpcTabMessage::UseReflectionModeSelected
+        | GrpcTabMessage::ProtoFilesPicked(_)
+        | GrpcTabMessage::ServiceSelected(_)
+        | GrpcTabMessage::MethodSelected(_)
+        | GrpcTabMessage::MetadataChanged(_, _)
+        | GrpcTabMessage::AddMetadata
+        | GrpcTabMessage::RemoveMetadata(_)
+        | GrpcTabMessage::Reset => true,
+        GrpcTabMessage::RequestJsonAction(action) => {
+            matches!(action, iced::widget::text_editor::Action::Edit(_))
+        }
+        _ => false,
+    }
+}
+
 pub fn active_grpc_message(app: &mut Rustrest, msg: GrpcTabMessage) -> Task<Message> {
+    if is_grpc_edit(&msg) {
+        let idx = app.active_tab_index;
+        if let Some(tab_state) = app.tabs.get_mut(idx) {
+            tab_state.tab.dirty = true;
+        }
+    }
+
     let Some((tab_id, state)) = active_grpc_state(app) else {
         return Task::none();
     };

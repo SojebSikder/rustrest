@@ -114,134 +114,155 @@ fn status_color(status: u16) -> iced::Color {
     }
 }
 
-fn build_cookie_table<'a, Message>(headers: &HashMap<String, String>) -> Element<'a, Message>
+fn build_cookie_table<'a, Message>(
+    headers: &HashMap<String, String>,
+    wrap_msg: impl Fn(TabMessage) -> Message + Copy + 'static,
+) -> Element<'a, Message>
 where
     Message: Clone + 'static,
 {
-    let mut cookie_table = column![].spacing(1);
-    cookie_table = cookie_table.push(
-        container(
-            row![
-                text("Name")
-                    .width(Length::FillPortion(2))
-                    .size(12)
-                    .color(iced::Color::from_rgb(0.5, 0.5, 0.5)),
-                text("Value")
-                    .width(Length::FillPortion(4))
-                    .size(12)
-                    .color(iced::Color::from_rgb(0.5, 0.5, 0.5)),
-            ]
-            .padding(8)
-            .align_y(Alignment::Center),
-        )
-        .style(container::bordered_box),
-    );
-
-    if let Some(cookie_header) = headers
+    let cookie_header = headers
         .get("set-cookie")
-        .or_else(|| headers.get("Set-Cookie"))
-    {
-        let cookies: Vec<&str> = cookie_header.split(';').collect();
+        .or_else(|| headers.get("Set-Cookie"));
 
-        for (index, cookie_kv) in cookies.iter().enumerate() {
-            let parts: Vec<&str> = cookie_kv.splitn(2, '=').collect();
-            let key = parts.first().unwrap_or(&"").trim();
-            let val = parts.get(1).unwrap_or(&"").trim();
+    let rows: Vec<(String, String)> = cookie_header
+        .map(|cookie_header| {
+            cookie_header
+                .split(';')
+                .filter_map(|cookie_kv| {
+                    let parts: Vec<&str> = cookie_kv.splitn(2, '=').collect();
+                    let key = parts.first().unwrap_or(&"").trim().to_string();
+                    let val = parts.get(1).unwrap_or(&"").trim().to_string();
+                    if key.is_empty() { None } else { Some((key, val)) }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
 
-            if !key.is_empty() {
-                cookie_table = cookie_table.push(
-                    container(
-                        row![
-                            text(key.to_string())
-                                .font(Font::MONOSPACE)
-                                .size(13)
-                                .width(Length::FillPortion(2)),
-                            text(val.to_string())
-                                .font(Font::MONOSPACE)
-                                .size(13)
-                                .width(Length::FillPortion(4)),
-                        ]
-                        .padding(8)
-                        .align_y(Alignment::Center),
-                    )
-                    .style(if index % 2 == 0 {
-                        container::bordered_box
-                    } else {
-                        container::transparent
-                    }),
-                );
-            }
-        }
-    } else {
-        cookie_table = cookie_table.push(
-            container(
-                text("No cookies returned in response headers.")
-                    .size(13)
-                    .color(iced::Color::from_rgb(0.5, 0.5, 0.5)),
-            )
-            .padding(10),
+    build_kv_table(
+        ("Name", "Value"),
+        (2, 4),
+        "No cookies returned in response headers.",
+        rows,
+        wrap_msg,
+    )
+}
+
+fn build_headers_table<'a, Message>(
+    headers: &HashMap<String, String>,
+    wrap_msg: impl Fn(TabMessage) -> Message + Copy + 'static,
+) -> Element<'a, Message>
+where
+    Message: Clone + 'static,
+{
+    let mut rows: Vec<(String, String)> = headers
+        .iter()
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    rows.sort_by(|a, b| a.0.cmp(&b.0));
+
+    build_kv_table(
+        ("Header Key", "Value"),
+        (1, 2),
+        "No headers returned.",
+        rows,
+        wrap_msg,
+    )
+}
+
+/// builds a two-column key/value table (used for response headers and
+/// cookies) where every cell offers a right-click "Copy" and every row has a
+/// visible "Copy" button, plus a "Copy All" button that copies the whole
+/// table as `key: value` lines.
+fn build_kv_table<'a, Message>(
+    column_labels: (&'static str, &'static str),
+    column_portions: (u16, u16),
+    empty_message: &'static str,
+    rows: Vec<(String, String)>,
+    wrap_msg: impl Fn(TabMessage) -> Message + Copy + 'static,
+) -> Element<'a, Message>
+where
+    Message: Clone + 'static,
+{
+    let mut title_row = row![
+        text(column_labels.0)
+            .width(Length::FillPortion(column_portions.0))
+            .size(12)
+            .color(iced::Color::from_rgb(0.5, 0.5, 0.5)),
+        text(column_labels.1)
+            .width(Length::FillPortion(column_portions.1))
+            .size(12)
+            .color(iced::Color::from_rgb(0.5, 0.5, 0.5)),
+    ]
+    .padding(8)
+    .align_y(Alignment::Center);
+
+    if !rows.is_empty() {
+        let all_text = rows
+            .iter()
+            .map(|(k, v)| format!("{k}: {v}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        title_row = title_row.push(
+            button(text("Copy All").size(11))
+                .padding([2, 8])
+                .style(button::text)
+                .on_press(wrap_msg(TabMessage::CopyToClipboard(all_text))),
         );
     }
 
-    scrollable(container(cookie_table).width(Length::Fill))
-        .height(Length::Fill)
-        .into()
-}
-
-fn build_headers_table<'a, Message>(headers: &HashMap<String, String>) -> Element<'a, Message>
-where
-    Message: Clone + 'static,
-{
-    let mut headers_table = column![].spacing(1);
-    headers_table = headers_table.push(
-        container(
-            row![
-                text("Header Key")
-                    .width(Length::FillPortion(1))
-                    .size(12)
-                    .color(iced::Color::from_rgb(0.5, 0.5, 0.5)),
-                text("Value")
-                    .width(Length::FillPortion(2))
-                    .size(12)
-                    .color(iced::Color::from_rgb(0.5, 0.5, 0.5)),
-            ]
-            .padding(8)
-            .align_y(Alignment::Center),
-        )
-        .style(container::bordered_box),
+    let mut table = column![].spacing(1).push(
+        container(title_row).style(container::bordered_box),
     );
 
-    if headers.is_empty() {
-        headers_table = headers_table.push(
+    if rows.is_empty() {
+        table = table.push(
             container(
-                text("No headers returned.")
+                text(empty_message)
                     .size(13)
                     .color(iced::Color::from_rgb(0.5, 0.5, 0.5)),
             )
             .padding(10),
         );
     } else {
-        let mut sorted_headers: Vec<(&String, &String)> = headers.iter().collect();
-        sorted_headers.sort_by(|a, b| a.0.cmp(b.0));
+        for (index, (key, val)) in rows.into_iter().enumerate() {
+            let row_text = format!("{key}: {val}");
 
-        for (index, (key, val)) in sorted_headers.into_iter().enumerate() {
-            headers_table = headers_table.push(
+            let key_field = with_context_menu(
+                text(key.clone())
+                    .font(Font {
+                        weight: iced::font::Weight::Bold,
+                        ..Font::DEFAULT
+                    })
+                    .size(13)
+                    .width(Length::FillPortion(column_portions.0)),
+                wrap_msg(TabMessage::ShowFieldContextMenu(
+                    TabFieldTarget::ResponseField,
+                    key,
+                )),
+            );
+
+            let value_field = with_context_menu(
+                text(val.clone())
+                    .font(Font::MONOSPACE)
+                    .size(13)
+                    .width(Length::FillPortion(column_portions.1)),
+                wrap_msg(TabMessage::ShowFieldContextMenu(
+                    TabFieldTarget::ResponseField,
+                    val,
+                )),
+            );
+
+            let copy_btn = button(text("Copy").size(11))
+                .padding([2, 6])
+                .style(button::text)
+                .on_press(wrap_msg(TabMessage::CopyToClipboard(row_text)));
+
+            table = table.push(
                 container(
-                    row![
-                        text(key.to_string())
-                            .font(Font {
-                                weight: iced::font::Weight::Bold,
-                                ..Font::DEFAULT
-                            })
-                            .size(13)
-                            .width(Length::FillPortion(1)),
-                        text(val.to_string())
-                            .font(Font::MONOSPACE)
-                            .size(13)
-                            .width(Length::FillPortion(2)),
-                    ]
-                    .padding(8)
-                    .align_y(Alignment::Center),
+                    row![key_field, value_field, copy_btn]
+                        .padding(8)
+                        .align_y(Alignment::Center),
                 )
                 .style(if index % 2 == 0 {
                     container::bordered_box
@@ -252,7 +273,7 @@ where
         }
     }
 
-    scrollable(container(headers_table).width(Length::Fill))
+    scrollable(container(table).width(Length::Fill))
         .height(Length::Fill)
         .into()
 }
@@ -346,8 +367,8 @@ where
                     .into()
                 }
 
-                ResponseSubTab::Cookies => build_cookie_table(&resp.headers),
-                ResponseSubTab::Headers => build_headers_table(&resp.headers),
+                ResponseSubTab::Cookies => build_cookie_table(&resp.headers, wrap_msg),
+                ResponseSubTab::Headers => build_headers_table(&resp.headers, wrap_msg),
 
                 ResponseSubTab::TestResults => {
                     let mut test_list = column![].spacing(8);
@@ -458,18 +479,25 @@ where
     .align_y(Alignment::Center);
 
     let dynamic_pane: Element<Message> = match tab.active_response_tab {
-        ResponseSubTab::Body => container(
-            scrollable(text(saved.body.clone()).font(Font::MONOSPACE).size(13))
-                .height(Length::Fill),
-        )
-        .style(container::bordered_box)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .padding(10)
-        .into(),
+        ResponseSubTab::Body => {
+            let body_text = with_context_menu(
+                text(saved.body.clone()).font(Font::MONOSPACE).size(13),
+                wrap_msg(TabMessage::ShowFieldContextMenu(
+                    TabFieldTarget::ResponseBodyEditor,
+                    saved.body.clone(),
+                )),
+            );
 
-        ResponseSubTab::Cookies => build_cookie_table(&saved.headers),
-        ResponseSubTab::Headers => build_headers_table(&saved.headers),
+            container(scrollable(body_text).height(Length::Fill))
+                .style(container::bordered_box)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .padding(10)
+                .into()
+        }
+
+        ResponseSubTab::Cookies => build_cookie_table(&saved.headers, wrap_msg),
+        ResponseSubTab::Headers => build_headers_table(&saved.headers, wrap_msg),
 
         ResponseSubTab::TestResults => container(
             text("Test results aren't captured in saved responses.")

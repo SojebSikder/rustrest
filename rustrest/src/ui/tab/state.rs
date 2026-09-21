@@ -475,6 +475,7 @@ impl Tab {
             // this message ever reaches `Tab::update`
             TabMessage::ShowFieldContextMenu(..) => {}
             TabMessage::ShowResponseTimingModal(_) => {}
+            TabMessage::CopyToClipboard(_) => {}
         }
     }
 

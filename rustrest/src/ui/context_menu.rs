@@ -31,6 +31,19 @@ pub enum TabFieldTarget {
     PostResponseScriptEditor,
     /// read-only; only "Copy" is offered for this target.
     ResponseBodyEditor,
+    /// read-only; a header/cookie key or value cell in the response pane.
+    /// only "Copy" is offered for this target.
+    ResponseField,
+}
+
+impl TabFieldTarget {
+    /// read-only fields never offer "Paste" in their context menu.
+    fn is_read_only(&self) -> bool {
+        matches!(
+            self,
+            TabFieldTarget::ResponseBodyEditor | TabFieldTarget::ResponseField
+        )
+    }
 }
 
 /// identifies any addressable text field in the app.
@@ -311,7 +324,8 @@ pub fn render_context_menu_overlay<'a>(app: &Rustrest) -> Option<Element<'a, Mes
             current_value,
         } => {
             let mut opts = vec![("Copy", Message::CopyToClipboard(current_value.clone()))];
-            if !matches!(target, FieldTarget::Tab(TabFieldTarget::ResponseBodyEditor)) {
+            let is_read_only = matches!(target, FieldTarget::Tab(t) if t.is_read_only());
+            if !is_read_only {
                 opts.push(("Paste", Message::PasteIntoField(target.clone())));
             }
             opts
@@ -485,7 +499,7 @@ pub fn apply_field_paste(app: &mut Rustrest, target: FieldTarget, text: String) 
                         Edit::Paste(Arc::new(text)),
                     )))
                 }
-                TabFieldTarget::ResponseBodyEditor => {
+                TabFieldTarget::ResponseBodyEditor | TabFieldTarget::ResponseField => {
                     // read-only; the menu never offers "Paste" for this target
                 }
             }

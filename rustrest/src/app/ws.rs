@@ -23,7 +23,24 @@ fn active_ws_state(app: &mut Rustrest) -> Option<(usize, &mut crate::ui::tab::ws
     }
 }
 
+fn is_ws_edit(msg: &WsTabMessage) -> bool {
+    matches!(
+        msg,
+        WsTabMessage::UrlChanged(_)
+            | WsTabMessage::HeaderChanged(_, _)
+            | WsTabMessage::AddHeader
+            | WsTabMessage::RemoveHeader(_)
+    )
+}
+
 pub fn active_ws_message(app: &mut Rustrest, msg: WsTabMessage) -> Task<Message> {
+    if is_ws_edit(&msg) {
+        let idx = app.active_tab_index;
+        if let Some(tab_state) = app.tabs.get_mut(idx) {
+            tab_state.tab.dirty = true;
+        }
+    }
+
     let Some((tab_id, state)) = active_ws_state(app) else {
         return Task::none();
     };

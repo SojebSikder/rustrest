@@ -299,15 +299,17 @@ impl Rustrest {
     pub fn sync_collection_tabs(&mut self, col_id: usize) {
         for idx in 0..self.tabs.len() {
             let belongs = match &self.tabs[idx].content {
-                WorkspaceContent::HttpRequest => self.tabs[idx].tab.collection_id == Some(col_id),
+                WorkspaceContent::HttpRequest
+                | WorkspaceContent::WebSocket(_)
+                | WorkspaceContent::GraphQl(_)
+                | WorkspaceContent::Grpc(_) => {
+                    self.tabs[idx].tab.collection_id == Some(col_id)
+                }
                 WorkspaceContent::CollectionRoot { collection_id, .. } => *collection_id == col_id,
                 WorkspaceContent::Terminal { .. } => false,
                 WorkspaceContent::RemoteFile { .. } => false,
                 WorkspaceContent::Plugin { .. } => false,
                 WorkspaceContent::PluginManager => false,
-                WorkspaceContent::WebSocket(_)
-                | WorkspaceContent::GraphQl(_)
-                | WorkspaceContent::Grpc(_) => false,
             };
             if belongs {
                 self.sync_tab_to_collection(idx);
@@ -360,7 +362,21 @@ impl Rustrest {
                 WorkspaceContent::PluginManager => {}
                 WorkspaceContent::WebSocket(_)
                 | WorkspaceContent::GraphQl(_)
-                | WorkspaceContent::Grpc(_) => {}
+                | WorkspaceContent::Grpc(_) => {
+                    if let (Some(req_id), Some(col_id)) =
+                        (tab_state.tab.request_id, tab_state.tab.collection_id)
+                    {
+                        if let Some(col) = self.collections.iter_mut().find(|c| c.id == col_id) {
+                            if let Some(node) = find_request_mut(&mut col.item, req_id) {
+                                crate::collection_adapter::update_protocol_node_from_content(
+                                    node,
+                                    &tab_state.tab.name,
+                                    &tab_state.content,
+                                );
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -1186,10 +1202,10 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                 request_id: req_node.id,
             });
 
-            let existing_tab_idx = app.tabs.iter().position(|t| {
-                t.tab.request_id == Some(req_node.id)
-                    && matches!(t.content, WorkspaceContent::HttpRequest)
-            });
+            let existing_tab_idx = app
+                .tabs
+                .iter()
+                .position(|t| t.tab.request_id == Some(req_node.id));
 
             if let Some(idx) = existing_tab_idx {
                 app.active_tab_index = idx;
@@ -1203,10 +1219,11 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
 
                 let new_tab =
                     create_tab_from_request(app.next_tab_id, &req_node, associated_collection_id);
+                let content = crate::collection_adapter::workspace_content_for_request(&req_node);
 
                 app.tabs.push(TabState {
                     tab: new_tab,
-                    content: WorkspaceContent::HttpRequest,
+                    content,
                     is_editing_name: false,
                 });
                 app.next_tab_id += 1;

@@ -27,7 +27,32 @@ fn parse_variables(text: &str) -> Option<serde_json::Value> {
     serde_json::from_str(trimmed).ok()
 }
 
+fn is_graphql_edit(msg: &GraphQlTabMessage) -> bool {
+    use iced::widget::text_editor::Action;
+    match msg {
+        GraphQlTabMessage::UrlChanged(_)
+        | GraphQlTabMessage::HeaderChanged(_, _)
+        | GraphQlTabMessage::AddHeader
+        | GraphQlTabMessage::RemoveHeader(_)
+        | GraphQlTabMessage::OperationNameChanged(_)
+        | GraphQlTabMessage::OperationPicked(_, _)
+        | GraphQlTabMessage::ToggleTreeNode(_)
+        | GraphQlTabMessage::ExpandTreeNode(_) => true,
+        GraphQlTabMessage::QueryAction(action) | GraphQlTabMessage::VariablesAction(action) => {
+            matches!(action, Action::Edit(_))
+        }
+        _ => false,
+    }
+}
+
 pub fn active_graphql_message(app: &mut Rustrest, msg: GraphQlTabMessage) -> Task<Message> {
+    if is_graphql_edit(&msg) {
+        let idx = app.active_tab_index;
+        if let Some(tab_state) = app.tabs.get_mut(idx) {
+            tab_state.tab.dirty = true;
+        }
+    }
+
     let Some((tab_id, state)) = active_gql_state(app) else {
         return Task::none();
     };

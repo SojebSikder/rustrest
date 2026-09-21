@@ -5,7 +5,7 @@
 //! and the "Save Request" modal.
 
 use super::{Rustrest, Tab, TabState, WorkspaceContent};
-use crate::collection::collection::CollectionItem;
+use crate::collection::collection::{CollectionItem, PostmanRequestNode};
 use crate::collection::env::Environment;
 use crate::message::Message;
 use crate::ui::context_menu::{ContextMenu, FieldTarget};
@@ -200,6 +200,9 @@ pub fn close_active_tab_shortcut(app: &mut Rustrest) -> Task<Message> {
 }
 
 pub fn active_tab_message(app: &mut Rustrest, tab_msg: TabMessage) -> Task<Message> {
+    if let TabMessage::CopyToClipboard(text) = tab_msg {
+        return super::overlays::copy_to_clipboard(app, text);
+    }
     if let TabMessage::ShowFieldContextMenu(target, value) = tab_msg {
         app.overlays.active_context_menu = Some(ContextMenu::TextField {
             target: FieldTarget::Tab(target),
@@ -851,7 +854,13 @@ pub fn tab_drag_ended(app: &mut Rustrest) -> Task<Message> {
 
 pub fn save_request_pressed(app: &mut Rustrest, tab_idx: usize) -> Task<Message> {
     if let Some(tab_state) = app.tabs.get(tab_idx) {
-        if matches!(tab_state.content, WorkspaceContent::HttpRequest) {
+        if matches!(
+            tab_state.content,
+            WorkspaceContent::HttpRequest
+                | WorkspaceContent::WebSocket(_)
+                | WorkspaceContent::GraphQl(_)
+                | WorkspaceContent::Grpc(_)
+        ) {
             // if this request is already saved into a collection, sync its
             // current state back in place and flush the collection to disk
             // if it already has a known save location (git folder / file).
@@ -963,7 +972,20 @@ pub fn save_request_confirmed(app: &mut Rustrest) -> Task<Message> {
         tab_state.tab.request_id = Some(req_id);
         tab_state.tab.collection_id = Some(col_id);
         tab_state.tab.dirty = false;
-        Some(tab_state.tab.to_postman_request_node(req_id, &name))
+
+        let node = match crate::collection_adapter::protocol_request_details(&tab_state.content) {
+            Some((request, protocol_request)) => PostmanRequestNode {
+                id: req_id,
+                name: name.clone(),
+                event: None,
+                request,
+                unsaved: false,
+                response: None,
+                protocol_request: Some(protocol_request),
+            },
+            None => tab_state.tab.to_postman_request_node(req_id, &name),
+        };
+        Some(node)
     } else {
         None
     };
@@ -1005,7 +1027,9 @@ pub fn save_active_request_shortcut(app: &mut Rustrest) -> Task<Message> {
             WorkspaceContent::PluginManager => Task::none(),
             WorkspaceContent::WebSocket(_)
             | WorkspaceContent::GraphQl(_)
-            | WorkspaceContent::Grpc(_) => Task::none(),
+            | WorkspaceContent::Grpc(_) => {
+                super::update(app, Message::SaveRequestPressed(app.active_tab_index))
+            }
         }
     } else {
         Task::none()

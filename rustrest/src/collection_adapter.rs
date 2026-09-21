@@ -1,12 +1,20 @@
+use crate::app::WorkspaceContent;
 use crate::collection::collection::{
-    PostmanBody, PostmanBodyRow, PostmanEvent, PostmanGraphQlBody, PostmanHeader,
-    PostmanRequestNode, PostmanResponseExample, PostmanScript, PostmanScriptExec, PostmanUrl,
+    GraphQlRequestDetails, GrpcRequestDetails, PostmanBody, PostmanBodyRow, PostmanEvent,
+    PostmanGraphQlBody, PostmanHeader, PostmanRequestDetails, PostmanRequestNode,
+    PostmanResponseExample, PostmanScript, PostmanScriptExec, PostmanUrl, ProtocolRequestDetails,
+    WebSocketRequestDetails,
 };
 use crate::http_client::HttpMethod;
 use crate::ui::tab::Tab;
+use crate::ui::tab::graphql::GraphQlTabState;
+use crate::ui::tab::grpc::GrpcTabState;
 use crate::ui::tab::types::{
     BodyType, FormDataRow, FormDataType, KeyValuePair, RequestSubTab, SavedResponse,
 };
+use crate::ui::tab::ws::WsTabState;
+use iced::widget::text_editor;
+use std::path::PathBuf;
 
 pub trait RequestNodeTabExt {
     /// updates this collection request node from a live UI tab, including pre-request & test scripts.
@@ -364,4 +372,187 @@ pub fn create_tab_from_request(
     }
 
     tab
+}
+
+/// picks the workspace content a saved request should reopen into: a
+/// WebSocket/GraphQL/gRPC panel if the node carries one of those, otherwise
+/// the plain HTTP request tab
+pub fn workspace_content_for_request(node: &PostmanRequestNode) -> WorkspaceContent {
+    match &node.protocol_request {
+        Some(ProtocolRequestDetails::WebSocket(details)) => {
+            WorkspaceContent::WebSocket(ws_state_from_details(details))
+        }
+        Some(ProtocolRequestDetails::GraphQl(details)) => {
+            WorkspaceContent::GraphQl(graphql_state_from_details(details))
+        }
+        Some(ProtocolRequestDetails::Grpc(details)) => {
+            WorkspaceContent::Grpc(grpc_state_from_details(details))
+        }
+        None => WorkspaceContent::HttpRequest,
+    }
+}
+
+/// builds the `(request, protocol_request)` pair a `PostmanRequestNode` needs
+/// to persist a WebSocket/GraphQL/gRPC tab's current live state; `None` for
+/// any other workspace content
+pub fn protocol_request_details(
+    content: &WorkspaceContent,
+) -> Option<(PostmanRequestDetails, ProtocolRequestDetails)> {
+    match content {
+        WorkspaceContent::WebSocket(state) => {
+            let details = ws_state_to_details(state);
+            let request =
+                placeholder_request_details("WEBSOCKET", &details.url, details.headers.clone());
+            Some((request, ProtocolRequestDetails::WebSocket(details)))
+        }
+        WorkspaceContent::GraphQl(state) => {
+            let details = graphql_state_to_details(state);
+            let request =
+                placeholder_request_details("GRAPHQL", &details.url, details.headers.clone());
+            Some((request, ProtocolRequestDetails::GraphQl(details)))
+        }
+        WorkspaceContent::Grpc(state) => {
+            let details = grpc_state_to_details(state);
+            let request =
+                placeholder_request_details("GRPC", &details.endpoint, details.metadata.clone());
+            Some((request, ProtocolRequestDetails::Grpc(details)))
+        }
+        _ => None,
+    }
+}
+
+/// updates an existing collection node in place from a WebSocket/GraphQL/gRPC
+/// tab's current live state; no-op (returns `false`) for any other content kind.
+pub fn update_protocol_node_from_content(
+    node: &mut PostmanRequestNode,
+    tab_name: &str,
+    content: &WorkspaceContent,
+) -> bool {
+    let Some((request, protocol_request)) = protocol_request_details(content) else {
+        return false;
+    };
+    node.name = tab_name.to_string();
+    node.request = request;
+    node.protocol_request = Some(protocol_request);
+    true
+}
+
+fn placeholder_request_details(
+    method: &str,
+    url: &str,
+    headers: Vec<PostmanHeader>,
+) -> PostmanRequestDetails {
+    PostmanRequestDetails {
+        method: method.to_string(),
+        url: Some(PostmanUrl::String(url.to_string())),
+        header: if headers.is_empty() {
+            None
+        } else {
+            Some(headers)
+        },
+        body: None,
+        auth: None,
+    }
+}
+
+fn kv_pairs_to_postman_headers(pairs: &[KeyValuePair]) -> Vec<PostmanHeader> {
+    pairs
+        .iter()
+        .filter(|kv| !kv.key.is_empty())
+        .map(|kv| PostmanHeader {
+            key: kv.key.clone(),
+            value: kv.value.clone(),
+            disabled: if kv.is_active { None } else { Some(true) },
+        })
+        .collect()
+}
+
+fn postman_headers_to_kv(headers: &[PostmanHeader]) -> Vec<KeyValuePair> {
+    headers
+        .iter()
+        .map(|h| {
+            let mut kv = KeyValuePair::new(&h.key, &h.value);
+            kv.is_active = !h.disabled.unwrap_or(false);
+            kv
+        })
+        .collect()
+}
+
+fn ws_state_to_details(state: &WsTabState) -> WebSocketRequestDetails {
+    WebSocketRequestDetails {
+        url: state.url.clone(),
+        headers: kv_pairs_to_postman_headers(&state.headers),
+    }
+}
+
+fn ws_state_from_details(details: &WebSocketRequestDetails) -> WsTabState {
+    let mut headers = postman_headers_to_kv(&details.headers);
+    if headers.is_empty() {
+        headers.push(KeyValuePair::new("", ""));
+    }
+    WsTabState {
+        url: details.url.clone(),
+        headers,
+        ..WsTabState::default()
+    }
+}
+
+fn graphql_state_to_details(state: &GraphQlTabState) -> GraphQlRequestDetails {
+    GraphQlRequestDetails {
+        url: state.url.clone(),
+        headers: kv_pairs_to_postman_headers(&state.headers),
+        query: state.query.text(),
+        variables: state.variables.text(),
+        operation_name: (!state.operation_name.trim().is_empty())
+            .then(|| state.operation_name.clone()),
+        subscription_url: None,
+    }
+}
+
+fn graphql_state_from_details(details: &GraphQlRequestDetails) -> GraphQlTabState {
+    let mut headers = postman_headers_to_kv(&details.headers);
+    if headers.is_empty() {
+        headers.push(KeyValuePair::new("Content-Type", "application/json"));
+    }
+    GraphQlTabState {
+        url: details.url.clone(),
+        headers,
+        query: text_editor::Content::with_text(&details.query),
+        variables: text_editor::Content::with_text(&details.variables),
+        operation_name: details.operation_name.clone().unwrap_or_default(),
+        ..GraphQlTabState::default()
+    }
+}
+
+fn grpc_state_to_details(state: &GrpcTabState) -> GrpcRequestDetails {
+    GrpcRequestDetails {
+        endpoint: state.endpoint.clone(),
+        use_tls: state.use_tls,
+        service: state.selected_service.clone().unwrap_or_default(),
+        method: state.selected_method.clone().unwrap_or_default(),
+        request_json: state.request_json.text(),
+        metadata: kv_pairs_to_postman_headers(&state.metadata),
+        proto_files: state
+            .proto_files
+            .iter()
+            .map(|p| p.to_string_lossy().to_string())
+            .collect(),
+    }
+}
+
+fn grpc_state_from_details(details: &GrpcRequestDetails) -> GrpcTabState {
+    let mut metadata = postman_headers_to_kv(&details.metadata);
+    if metadata.is_empty() {
+        metadata.push(KeyValuePair::new("", ""));
+    }
+    GrpcTabState {
+        endpoint: details.endpoint.clone(),
+        use_tls: details.use_tls,
+        proto_files: details.proto_files.iter().map(PathBuf::from).collect(),
+        metadata,
+        selected_service: (!details.service.is_empty()).then(|| details.service.clone()),
+        selected_method: (!details.method.is_empty()).then(|| details.method.clone()),
+        request_json: text_editor::Content::with_text(&details.request_json),
+        ..GrpcTabState::default()
+    }
 }

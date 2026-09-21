@@ -84,6 +84,11 @@ pub enum TabMessage {
     /// response (`None`) or a saved snapshot at the given index; intercepted
     /// at the app level before reaching `Tab::update`.
     ShowResponseTimingModal(Option<usize>),
+
+    /// copies the given text straight to the clipboard, with no context menu
+    /// in between (e.g. a row's "Copy" button); intercepted at the app level
+    /// before reaching `Tab::update`.
+    CopyToClipboard(String),
 }
 
 impl TabMessage {
@@ -137,7 +142,8 @@ impl TabMessage {
             | TabMessage::CancelRequest
             | TabMessage::ViewSavedResponse(_)
             | TabMessage::ShowFieldContextMenu(_, _)
-            | TabMessage::ShowResponseTimingModal(_) => false,
+            | TabMessage::ShowResponseTimingModal(_)
+            | TabMessage::CopyToClipboard(_) => false,
         }
     }
 }

@@ -14,7 +14,12 @@ pub fn unsaved_dot<'a, Message: 'a>() -> Element<'a, Message> {
 /// whether an open tab (request or collection root) has unsaved changes.
 pub fn tab_is_unsaved(app: &Rustrest, tab_state: &TabState) -> bool {
     match &tab_state.content {
-        WorkspaceContent::HttpRequest => tab_state.tab.request_id.is_none() || tab_state.tab.dirty,
+        WorkspaceContent::HttpRequest
+        | WorkspaceContent::WebSocket(_)
+        | WorkspaceContent::GraphQl(_)
+        | WorkspaceContent::Grpc(_) => {
+            tab_state.tab.request_id.is_none() || tab_state.tab.dirty
+        }
         WorkspaceContent::CollectionRoot { collection_id, .. } => app
             .collections
             .iter()
@@ -25,9 +30,6 @@ pub fn tab_is_unsaved(app: &Rustrest, tab_state: &TabState) -> bool {
         WorkspaceContent::RemoteFile { dirty, .. } => *dirty,
         WorkspaceContent::Plugin { .. } => false,
         WorkspaceContent::PluginManager => false,
-        WorkspaceContent::WebSocket(_)
-        | WorkspaceContent::GraphQl(_)
-        | WorkspaceContent::Grpc(_) => false,
     }
 }
 
@@ -36,8 +38,13 @@ pub fn tab_is_unsaved(app: &Rustrest, tab_state: &TabState) -> bool {
 pub fn request_is_unsaved(app: &Rustrest, req: &PostmanRequestNode) -> bool {
     req.unsaved
         || app.tabs.iter().any(|t| {
-            matches!(t.content, WorkspaceContent::HttpRequest)
-                && t.tab.request_id == Some(req.id)
+            matches!(
+                t.content,
+                WorkspaceContent::HttpRequest
+                    | WorkspaceContent::WebSocket(_)
+                    | WorkspaceContent::GraphQl(_)
+                    | WorkspaceContent::Grpc(_)
+            ) && t.tab.request_id == Some(req.id)
                 && t.tab.dirty
         })
 }
