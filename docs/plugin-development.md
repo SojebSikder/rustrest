@@ -235,6 +235,15 @@ extensions = ["json", "yaml", "yml"]   # file-picker filter extensions
 id = "insomnia-v4"
 title = "Insomnia v4 (JSON)"
 extensions = ["json"]
+
+[[capabilities.status_bar_items]]  # entries in the bottom status bar
+id = "say-hello"
+label = "Example: Say Hello"
+command_id = "say-hello"    # optional - dispatched via on_command when clicked;
+                             # omit for a plain, non-interactive label. Static:
+                             # read once at load time, like menu_items - use a
+                             # sidebar_panel/right_panel instead for anything
+                             # that needs to update its own label at runtime.
 ```
 
 Every table under `[capabilities]` is optional - only declare what you use. The host only ever calls the `Plugin` methods matching a capability you actually declared.
@@ -245,7 +254,7 @@ Every table under `[capabilities]` is optional - only declare what you use. The 
 | ---------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------ |
 | `on_pre_request(ctx) -> ctx`                                     | `request_hooks`         | Mutate method/url/headers/body/variables before a request is sent.             |
 | `on_post_response(ctx) -> ctx`                                   | `request_hooks`         | Inspect/mutate status/headers/body/variables/test results after a response.    |
-| `on_command(id) -> Result<Option<String>, String>`               | `commands`/`menu_items` | Handle a command-palette or menu action; the returned string shows as a toast. |
+| `on_command(id) -> Result<Option<String>, String>`               | `commands`/`menu_items`/`status_bar_items` | Handle a command-palette, menu, or status bar action; the returned string shows as a toast. |
 | `render_panel(panel_id) -> UiNode`                               | `sidebar_panel`         | Render (or re-render) your panel's declarative widget tree.                    |
 | `on_panel_event(panel_id, event) -> Option<UiNode>`              | `sidebar_panel`         | Handle a widget interaction; return `Some(tree)` to update the panel.          |
 | `import(format_id, bytes) -> Result<Value, String>`              | `import_formats`        | Decode into Rustrest's own collection JSON (Postman v2.1-shaped).              |

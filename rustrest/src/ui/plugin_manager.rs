@@ -50,6 +50,7 @@ fn capability_label(capability: &Capability) -> &'static str {
         Capability::RightPanel(_) => "Right Panel",
         Capability::ImportFormat(_) => "Import Format",
         Capability::ExportFormat(_) => "Export Format",
+        Capability::StatusBarItem(_) => "Status Bar Item",
         Capability::ExternalProcess => "External Process",
     }
 }
@@ -161,6 +162,11 @@ pub fn render_plugin_manager_tab(app: &Rustrest) -> Element<'_, Message> {
 fn render_installed_list(app: &Rustrest, is_busy: bool) -> Element<'_, Message> {
     let installed = app.plugins.plugin_manager.installed();
     let mut list = column![].spacing(10);
+
+    if app.status_bar.is_active("startup-plugins") {
+        list = list.push(spinner_with_label(app.spinner_tick, "Loading plugins..."));
+        return list.into();
+    }
 
     if installed.is_empty() {
         list = list.push(

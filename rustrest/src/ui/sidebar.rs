@@ -2,6 +2,7 @@ use crate::app::Rustrest;
 use crate::collection::collection::{CollectionItem, PostmanRequestNode, PostmanResponseExample};
 use crate::message::{Message, SidebarDragItem, SidebarDropTarget, SidebarItemKey};
 use crate::ui::context_menu::{FieldTarget, with_context_menu};
+use crate::ui::spinner::spinner_with_label;
 use crate::ui::unsaved::{
     collection_is_unsaved, folder_is_unsaved, request_is_unsaved, unsaved_dot,
 };
@@ -101,7 +102,10 @@ fn flatten_sidebar_item(
 pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
     let mut sidebar_contents = column![].spacing(10);
 
-    if app.collections.is_empty() {
+    if app.status_bar.is_active("startup-workspace") {
+        sidebar_contents =
+            sidebar_contents.push(spinner_with_label(app.spinner_tick, "Loading workspace..."));
+    } else if app.collections.is_empty() {
         sidebar_contents = sidebar_contents.push(
             text("No collections imported yet.")
                 .size(11)

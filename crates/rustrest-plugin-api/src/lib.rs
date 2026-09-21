@@ -53,7 +53,7 @@ pub use hooks::{
 pub use host::log;
 pub use manifest::{
     CURRENT_SCHEMA_VERSION, Capability, CommandDef, FormatDef, MenuItemDef, PanelDef,
-    PluginManifest,
+    PluginManifest, StatusBarItemDef,
 };
 #[cfg(target_arch = "wasm32")]
 pub use network::http_request;

@@ -116,6 +116,8 @@ pub struct Rustrest {
     pub plugins: plugins::PluginsState,
 
     pub settings: settings::SettingsState,
+
+    pub status_bar: crate::ui::status_bar::StatusBarState,
 }
 
 impl Rustrest {
@@ -129,6 +131,7 @@ impl Rustrest {
             || self.plugins.plugin_manager_busy.is_some()
             || !self.git.git_remote_op_running.is_empty()
             || self.overlays.toast_manager.has_pending()
+            || self.status_bar.has_active_spinner()
             || self.tabs.iter().any(|t| {
                 matches!(
                     &t.content,
@@ -251,6 +254,22 @@ impl Rustrest {
     /// `ws`'s collections from their remembered file/folder locations, adopts
     /// its environments and restores its tabs
     pub fn apply_workspace(&mut self, ws: &SavedWorkspace) -> Vec<String> {
+        let loaded = ws
+            .collection_sources
+            .iter()
+            .map(load_collection_from_source)
+            .collect();
+        self.apply_workspace_with_loaded_collections(ws, loaded)
+    }
+
+    /// same as `apply_workspace`, but for collections that were already
+    /// loaded from disk elsewhere (at startup, on a background thread, so
+    /// the window can paint before the load completes).
+    pub fn apply_workspace_with_loaded_collections(
+        &mut self,
+        ws: &SavedWorkspace,
+        loaded: Vec<Result<PostmanCollection, String>>,
+    ) -> Vec<String> {
         self.collections.clear();
         for tab in &self.tabs {
             if let WorkspaceContent::Terminal { terminal_id, .. } = tab.content {
@@ -269,8 +288,8 @@ impl Rustrest {
         self.sidebar.sidebar_selection_anchor = None;
 
         let mut errors = Vec::new();
-        for source in &ws.collection_sources {
-            match load_collection_from_source(source) {
+        for result in loaded {
+            match result {
                 Ok(mut collection) => {
                     collection.id = self.next_tab_id;
                     self.next_tab_id += 1;
@@ -543,21 +562,28 @@ pub fn init() -> (Rustrest, Task<Message>) {
             theme: persisted_settings.theme,
             close_on_outside_click: persisted_settings.close_on_outside_click,
         },
+        status_bar: crate::ui::status_bar::StatusBarState::default(),
     };
-    app.plugins.plugin_manager.load_all();
-    let plugin_load_errors: Vec<String> = app
-        .plugins
-        .plugin_manager
-        .installed()
-        .iter()
-        .filter_map(|p| {
-            p.load_error
-                .as_ref()
-                .map(|e| format!("Plugin '{}' failed to load: {e}", p.dir_name))
-        })
-        .collect();
+    // ensure at least one tab exists right away - `view()` indexes
+    // `app.tabs[app.active_tab_index]` unconditionally, and the real tabs
+    // (restored from the saved session) aren't available until the
+    // workspace's collections finish loading below, in the background.
+    app.tabs.push(TabState {
+        tab: Tab::new(app.next_tab_id),
+        content: WorkspaceContent::HttpRequest,
+        is_editing_name: false,
+    });
+    app.next_tab_id += 1;
 
-    let load_errors = if let Some(manifest) = crate::workspace::load() {
+    // resolving which workspace is active is a single small JSON file read -
+    // cheap, kept on the main thread. Loading *its collections* is the
+    // actually slow part (a directory-backed collection can mean reading
+    // hundreds of files), so that step - and installed-plugin discovery,
+    // which involves compiling each plugin's wasm - run on a background
+    // thread and get applied via `StartupWorkspaceLoaded` /
+    // `StartupPluginsLoaded` once done, instead of blocking the window from
+    // painting.
+    let active_workspace = if let Some(manifest) = crate::workspace::load() {
         app.workspace.workspaces = manifest.workspaces;
         app.workspace.active_workspace_id = manifest.active_workspace_id;
         app.workspace.next_workspace_id = manifest.next_workspace_id;
@@ -576,62 +602,73 @@ pub fn init() -> (Rustrest, Task<Message>) {
             .find(|w| w.id == app.workspace.active_workspace_id)
             .or_else(|| app.workspace.workspaces.first())
             .cloned();
-
-        match active {
-            Some(active) => {
-                app.workspace.active_workspace_id = active.id;
-                app.apply_workspace(&active)
-            }
-            None => Vec::new(),
+        if let Some(active) = &active {
+            app.workspace.active_workspace_id = active.id;
         }
+        active
     } else {
         // first run, or upgrading from a pre-workspace install: best-effort
         // migrate any tabs from the legacy session.json into a new default
         // workspace, then persist the manifest so this only runs once.
+        // (a fresh workspace never has any collection sources yet, so this
+        // path has nothing slow to defer.)
         let legacy_session = crate::session::load();
         let default_ws = default_workspace(1, legacy_session);
         app.workspace.workspaces = vec![default_ws.clone()];
         app.workspace.active_workspace_id = 1;
         app.workspace.next_workspace_id = 2;
-        let errors = app.apply_workspace(&default_ws);
         crate::workspace::save(&app.build_workspace_manifest());
-        errors
+        Some(default_ws)
     };
 
-    if app.tabs.is_empty() {
-        app.tabs.push(TabState {
-            tab: Tab::new(app.next_tab_id),
-            content: WorkspaceContent::HttpRequest,
-            is_editing_name: false,
-        });
-        app.next_tab_id += 1;
-    }
-
-    let load_errors_task = if load_errors.is_empty() {
-        Task::none()
-    } else {
-        Task::batch(
-            load_errors
-                .into_iter()
-                .map(|err| Task::done(Message::ShowToast(err, ToastStatus::Error))),
-        )
+    let workspace_load_task = match active_workspace {
+        Some(ws) if !ws.collection_sources.is_empty() => {
+            app.status_bar
+                .set("startup-workspace", "Loading workspace...", true);
+            let sources = ws.collection_sources.clone();
+            Task::perform(
+                async move {
+                    tokio::task::spawn_blocking(move || {
+                        sources.iter().map(load_collection_from_source).collect()
+                    })
+                    .await
+                    .unwrap_or_default()
+                },
+                Message::StartupWorkspaceLoaded,
+            )
+        }
+        Some(_) => Task::none(),
+        None => Task::none(),
     };
+
+    app.status_bar
+        .set("startup-plugins", "Loading plugins...", true);
+    let plugin_engine = app.plugins.plugin_manager.engine_handle();
+    let plugins_dir = app.plugins.plugin_manager.plugins_dir().to_path_buf();
+    let state_path = app.plugins.plugin_manager.state_path().to_path_buf();
+    let plugin_load_task = Task::perform(
+        async move {
+            tokio::task::spawn_blocking(move || {
+                rustrest_plugin_host::PluginManager::prepare_load_all(
+                    &plugins_dir,
+                    &state_path,
+                    &plugin_engine,
+                )
+            })
+            .await
+            .unwrap_or_default()
+        },
+        Message::StartupPluginsLoaded,
+    );
 
     // silently check for updates on startup; surfaces a toast only if one is found
     let update_check_task = Task::done(Message::CheckForUpdateSilently);
 
-    let plugin_errors_task = Task::batch(
-        plugin_load_errors
-            .into_iter()
-            .map(|err| Task::done(Message::ShowToast(err, ToastStatus::Error))),
-    );
-
     let startup_task = Task::batch([
         open_main_window.map(|_id| Message::None),
-        load_errors_task,
         update_check_task,
-        plugin_errors_task,
-        remote::auto_connect_remote_collections(&app),
+        workspace_load_task,
+        plugin_load_task,
     ]);
 
     (app, startup_task)
@@ -1539,6 +1576,52 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         }
 
         // self update
+        Message::StartupWorkspaceLoaded(loaded) => {
+            app.status_bar.clear("startup-workspace");
+            let Some(ws) = app
+                .workspace
+                .workspaces
+                .iter()
+                .find(|w| w.id == app.workspace.active_workspace_id)
+                .cloned()
+            else {
+                return Task::none();
+            };
+            let load_errors = app.apply_workspace_with_loaded_collections(&ws, loaded);
+            if app.tabs.is_empty() {
+                app.tabs.push(TabState {
+                    tab: Tab::new(app.next_tab_id),
+                    content: WorkspaceContent::HttpRequest,
+                    is_editing_name: false,
+                });
+                app.next_tab_id += 1;
+            }
+            let mut tasks: Vec<Task<Message>> = load_errors
+                .into_iter()
+                .map(|err| Task::done(Message::ShowToast(err, ToastStatus::Error)))
+                .collect();
+            tasks.push(remote::auto_connect_remote_collections(app));
+            Task::batch(tasks)
+        }
+        Message::StartupPluginsLoaded(prepared) => {
+            app.status_bar.clear("startup-plugins");
+            app.plugins.plugin_manager.finish_load_all(prepared);
+            Task::batch(
+                app.plugins
+                    .plugin_manager
+                    .installed()
+                    .iter()
+                    .filter_map(|p| {
+                        p.load_error.as_ref().map(|e| {
+                            Task::done(Message::ShowToast(
+                                format!("Plugin '{}' failed to load: {e}", p.dir_name),
+                                ToastStatus::Error,
+                            ))
+                        })
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        }
         Message::CheckForUpdate => overlays::check_for_update(app),
         // check on startup: same lookup, but stays quiet on "up to date" or errors instead of toasting on every launch
         Message::CheckForUpdateSilently => overlays::check_for_update_silently(),
@@ -1710,7 +1793,14 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         Message::AppExit => {
             app.commit_active_workspace_snapshot();
             crate::workspace::save(&app.build_workspace_manifest());
-            iced::exit()
+            // hard-exit instead of `iced::exit()`: iced's graceful shutdown
+            // drops its internal tokio runtime, which blocks the whole
+            // process until every in-flight `spawn_blocking` closure
+            // finishes - including an uncancellable wasm compile from
+            // startup plugin loading, an update check, etc. Everything that
+            // matters is already persisted above, so there's nothing left
+            // worth waiting for.
+            std::process::exit(0);
         }
     }
 }

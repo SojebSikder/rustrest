@@ -178,6 +178,14 @@ pub enum Message {
     SaveCollectionPressed(usize),
     CollectionFirstSaved(usize, std::path::PathBuf),
 
+    /// the active workspace's collections finished loading on a background
+    /// thread after startup (the window is already showing by this point).
+    StartupWorkspaceLoaded(Vec<Result<PostmanCollection, String>>),
+    /// installed plugins finished discovering/compiling on a background
+    /// thread after startup; instantiating them is still done on the main
+    /// thread (cheap, in-memory linking) by the handler.
+    StartupPluginsLoaded(Vec<rustrest_plugin_host::PreparedPlugin>),
+
     SidebarRequestClicked {
         req_node: PostmanRequestNode,
         collection_id: usize,

@@ -19,7 +19,7 @@ mod workspace;
 use crate::ui::command_palette::view as view_command_palette;
 use crate::ui::commit_modal::view_commit_modal;
 use crate::ui::confirm_dialog::view_confirm_dialog;
-use crate::ui::console_panel::{render_console_bar, render_console_panel};
+use crate::ui::console_panel::{render_console_clear_bar, render_console_panel};
 use crate::ui::env_editor::render_env_editor;
 use crate::ui::export_plugin_picker::view_export_plugin_picker;
 use crate::ui::menu::menu::{
@@ -491,9 +491,7 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
         Message::ToastActionPressed,
     );
 
-    let console_bar = render_console_bar(&app.layout.console_logs, app.layout.console_collapsed);
-
-    let mut workbench_column = column![workbench, console_bar]
+    let mut workbench_column = column![workbench]
         .spacing(10)
         .width(Length::Fill)
         .height(Length::Fill);
@@ -503,11 +501,14 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
             DividerOrientation::Horizontal,
             Message::ResizeDragStarted(ResizeKind::ConsolePanel),
         );
-        let console_content = container(render_console_panel(&app.layout.console_logs))
-            .height(Length::Fixed(app.layout.console_panel_height))
-            .width(Length::Fill)
-            .padding(10)
-            .style(container::bordered_box);
+        let console_content = container(column![
+            render_console_clear_bar(),
+            render_console_panel(&app.layout.console_logs)
+        ])
+        .height(Length::Fixed(app.layout.console_panel_height))
+        .width(Length::Fill)
+        .padding(10)
+        .style(container::bordered_box);
 
         workbench_column = workbench_column
             .push(console_resize_handle)
@@ -544,7 +545,10 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
         content_row = content_row.push(render_right_panel_rail(app, right_panels));
     }
 
-    let base_layout = column![top_bar, content_row]
+    let status_bar = ui::status_bar::render_status_bar(app);
+
+    let base_layout = column![top_bar, content_row, status_bar]
+        .spacing(8)
         .padding(Padding {
             top: 44.0,
             left: 15.0,

@@ -92,7 +92,7 @@ Every method has a no-op default - only override what your declared capabilities
 | --- | --- | --- |
 | `on_pre_request(ctx) -> ctx` | `request_hooks` | Mutate method/url/headers/body/variables before a request is sent. |
 | `on_post_response(ctx) -> ctx` | `request_hooks` | Inspect/mutate status/headers/body/variables/test results after a response. |
-| `on_command(id) -> Result<Option<String>, String>` | `commands`/`menu_items` | Handle a command-palette or menu action; the returned string shows as a toast. |
+| `on_command(id) -> Result<Option<String>, String>` | `commands`/`menu_items`/`status_bar_items` | Handle a command-palette, menu, or status bar action; the returned string shows as a toast. |
 | `render_panel(panel_id) -> UiNode` | `sidebar_panel` | Render (or re-render) your panel's declarative widget tree. |
 | `on_panel_event(panel_id, event) -> Option<UiNode>` | `sidebar_panel` | Handle a widget interaction; return `Some(tree)` to update the panel. |
 | `import(format_id, bytes) -> Result<Value, String>` | `import_formats` | Decode into Rustrest's own collection JSON (Postman v2.1-shaped). |
@@ -114,6 +114,10 @@ Declaring `external_process = true` in `plugin.toml` unlocks the [`process`] mod
 ## The `right_panel` capability
 
 A docked panel (toggled from the top bar) that, unlike `sidebar_panel`, is handed an ambient `RightPanelContext` snapshot on every render/event - the active request/response, every loaded collection, and every environment - and returns a `RightPanelAction` that can re-render the panel, patch the active request, or propose a create/rename/delete/duplicate/move on the collection tree (`CollectionOperation`), with destructive operations confirmed by the user before the host applies them.
+
+## The `status_bar_items` capability
+
+Adds one or more entries to the bottom status bar - a plain label, or (with `command_id` set) a clickable one dispatched through `on_command`, same as `commands`/`menu_items`. Declared statically in `plugin.toml` and read once at load time; there's no host call to push a live label update, so anything that needs to reflect changing state belongs in a `sidebar_panel` or `right_panel` instead, both of which the host re-renders on demand.
 
 ## Full guide
 
