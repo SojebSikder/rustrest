@@ -41,6 +41,7 @@ use iced::window;
 use iced::{Alignment, Element, Length, Padding};
 use iced::{Event, Subscription, event};
 use message::{Message, MultilineFieldKind, ResizeKind};
+use self_update::cargo_crate_version;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -50,7 +51,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 // static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 const APP_NAME: &str = "Rustrest";
-const APP_VERSION: &str = "0.1.15";
+const APP_VERSION: &str = cargo_crate_version!();
 
 const APP_ICON: &[u8] = include_bytes!("../../assets/images/logo-transparent.png");
 
