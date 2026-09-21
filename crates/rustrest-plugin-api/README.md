@@ -121,6 +121,7 @@ For manifest reference, the full `right_panel`/streaming/file-picker walkthrough
 
 - [`rustrest-plugin-example`](https://github.com/SojebSikder/rustrest/tree/main/crates/rustrest-plugin-example) - a template touching every capability.
 - [`rustrest-plugin-insomnia`](https://github.com/SojebSikder/rustrest/tree/main/crates/rustrest-plugin-insomnia) - a real import/export plugin for Insomnia v4/v5 collections.
+- [`rustrest-plugin-openapi`](https://github.com/SojebSikder/rustrest/tree/main/crates/rustrest-plugin-openapi) - a real import/export plugin for OpenAPI 3.0/3.1 and Swagger 2.0 API definitions.
 - [`rustrest-plugin-ai-agent`](https://github.com/SojebSikder/rustrest/tree/main/crates/rustrest-plugin-ai-agent) - a `right_panel` AI assistant: streamed replies, proposing collection-tree operations, and a collection/environment/file context picker.
 
 ## License

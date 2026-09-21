@@ -133,7 +133,11 @@ where
                     let parts: Vec<&str> = cookie_kv.splitn(2, '=').collect();
                     let key = parts.first().unwrap_or(&"").trim().to_string();
                     let val = parts.get(1).unwrap_or(&"").trim().to_string();
-                    if key.is_empty() { None } else { Some((key, val)) }
+                    if key.is_empty() {
+                        None
+                    } else {
+                        Some((key, val))
+                    }
                 })
                 .collect()
         })
@@ -211,9 +215,9 @@ where
         );
     }
 
-    let mut table = column![].spacing(1).push(
-        container(title_row).style(container::bordered_box),
-    );
+    let mut table = column![]
+        .spacing(1)
+        .push(container(title_row).style(container::bordered_box));
 
     if rows.is_empty() {
         table = table.push(

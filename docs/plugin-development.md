@@ -67,13 +67,14 @@ example/
 
 The directory name **must** match the `id` field in `plugin.toml` - this is enforced on load; a mismatch is reported as a load error in the Manage Plugins tab rather than silently ignored.
 
-Three real plugins ship in this repo as references:
+Real plugins ship in this repo as references:
 
 - [`crates/rustrest-plugin-example`](../crates/rustrest-plugin-example) - a template touching every capability, including spawning a persistent external process.
 - [`crates/rustrest-plugin-insomnia`](../crates/rustrest-plugin-insomnia) - a real import/export plugin for Insomnia v4/v5 collections.
+- [`crates/rustrest-plugin-openapi`](../crates/rustrest-plugin-openapi) - a real import/export plugin for OpenAPI 3.0/3.1 and Swagger 2.0 API definitions (JSON or YAML).
 - [`crates/rustrest-plugin-ai-agent`](../crates/rustrest-plugin-ai-agent) - an AI agent docked in the right panel: chat about the active request/response, generate a test script, edit the request or the collection tree from natural language, and pull in selected collections/environments/files as extra context - backed by a user-configured Anthropic/OpenAI/Ollama-compatible endpoint. The full reference for the `right_panel` capability, streamed responses, proposing collection-tree operations, the file picker, and outbound-HTTP/storage in general.
 
-All three are deliberately excluded from the root Cargo workspace (see their own `Cargo.toml`/`.cargo/config.toml`) so a normal `cargo build` of Rustrest itself doesn't require the `wasm32-unknown-unknown` target.
+All of these are deliberately excluded from the root Cargo workspace (see their own `Cargo.toml`/`.cargo/config.toml`) so a normal `cargo build` of Rustrest itself doesn't require the `wasm32-unknown-unknown` target.
 
 ## Building your first plugin
 

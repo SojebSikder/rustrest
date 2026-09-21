@@ -17,9 +17,7 @@ pub fn tab_is_unsaved(app: &Rustrest, tab_state: &TabState) -> bool {
         WorkspaceContent::HttpRequest
         | WorkspaceContent::WebSocket(_)
         | WorkspaceContent::GraphQl(_)
-        | WorkspaceContent::Grpc(_) => {
-            tab_state.tab.request_id.is_none() || tab_state.tab.dirty
-        }
+        | WorkspaceContent::Grpc(_) => tab_state.tab.request_id.is_none() || tab_state.tab.dirty,
         WorkspaceContent::CollectionRoot { collection_id, .. } => app
             .collections
             .iter()

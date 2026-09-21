@@ -302,9 +302,7 @@ impl Rustrest {
                 WorkspaceContent::HttpRequest
                 | WorkspaceContent::WebSocket(_)
                 | WorkspaceContent::GraphQl(_)
-                | WorkspaceContent::Grpc(_) => {
-                    self.tabs[idx].tab.collection_id == Some(col_id)
-                }
+                | WorkspaceContent::Grpc(_) => self.tabs[idx].tab.collection_id == Some(col_id),
                 WorkspaceContent::CollectionRoot { collection_id, .. } => *collection_id == col_id,
                 WorkspaceContent::Terminal { .. } => false,
                 WorkspaceContent::RemoteFile { .. } => false,

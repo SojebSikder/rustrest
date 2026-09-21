@@ -1,0 +1,31 @@
+id = "openapi"
+name = "OpenAPI / Swagger"
+version = "0.1.0"
+author = "Rustrest"
+description = "Import/export OpenAPI 3.0/3.1 and Swagger 2.0 (JSON or YAML) API definitions."
+schema_version = 1
+
+[[capabilities.import_formats]]
+id = "openapi"
+title = "OpenAPI 3.x / Swagger 2.0 (JSON or YAML)"
+extensions = ["json", "yaml", "yml"]
+
+[[capabilities.export_formats]]
+id = "openapi-3.0"
+title = "OpenAPI 3.0 (JSON)"
+extensions = ["json"]
+
+[[capabilities.export_formats]]
+id = "openapi-3.0-yaml"
+title = "OpenAPI 3.0 (YAML)"
+extensions = ["yaml"]
+
+[[capabilities.export_formats]]
+id = "swagger-2.0"
+title = "Swagger 2.0 (JSON)"
+extensions = ["json"]
+
+[[capabilities.export_formats]]
+id = "swagger-2.0-yaml"
+title = "Swagger 2.0 (YAML)"
+extensions = ["yaml"]

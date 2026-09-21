@@ -1,0 +1,25 @@
+[workspace]
+# deliberately its own standalone workspace, kept out of the main
+# `rustrest` workspace (see root Cargo.toml) so a normal `cargo build`
+# doesn't require the wasm32-unknown-unknown target.
+
+[package]
+name = "rustrest-plugin-openapi"
+version = "0.1.0"
+edition = "2024"
+description = "Native Rustrest plugin: import/export OpenAPI 3.0/3.1 and Swagger 2.0 (JSON or YAML) API definitions"
+publish = false
+
+[lib]
+name = "rustrest_plugin_openapi"
+crate-type = ["cdylib"]
+
+[dependencies]
+rustrest-plugin-api = { path = "../rustrest-plugin-api" }
+serde_json = { version = "1.0", features = ["preserve_order"] }
+serde_yaml = "0.9"
+
+[profile.release]
+panic = "abort"
+strip = true
+opt-level = "s"
