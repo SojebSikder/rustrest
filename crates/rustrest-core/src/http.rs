@@ -91,7 +91,6 @@ pub struct RequestSpec {
     binary_file_path: Option<String>,
     headers: Vec<(String, String)>,
     cookies: Vec<(String, String)>,
-    auth_raw: String,
     timeout: Duration,
 }
 
@@ -106,7 +105,6 @@ impl RequestSpec {
             binary_file_path: None,
             headers: Vec::new(),
             cookies: Vec::new(),
-            auth_raw: String::new(),
             timeout: Duration::from_secs(30),
         }
     }
@@ -141,11 +139,6 @@ impl RequestSpec {
         self
     }
 
-    pub fn auth_raw(mut self, auth_raw: impl Into<String>) -> Self {
-        self.auth_raw = auth_raw.into();
-        self
-    }
-
     #[allow(dead_code)]
     pub fn timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
@@ -170,12 +163,11 @@ fn map_method(method: &HttpMethod) -> Result<http::Method, String> {
     })
 }
 
-/// Merges request headers, the assembled Cookie header, and the raw
-/// Authorization value into one ordered header list, dropping blank keys.
+/// Merges request headers with the assembled Cookie header into one ordered
+/// header list, dropping blank keys.
 fn collect_headers(
     headers: Vec<(String, String)>,
     cookie_header: Option<String>,
-    auth_raw: &str,
 ) -> Vec<(String, String)> {
     let mut result: Vec<(String, String)> = headers
         .into_iter()
@@ -185,11 +177,6 @@ fn collect_headers(
 
     if let Some(cookie) = cookie_header {
         result.push(("Cookie".to_string(), cookie));
-    }
-
-    let trimmed_auth = auth_raw.trim();
-    if !trimmed_auth.is_empty() {
-        result.push(("Authorization".to_string(), trimmed_auth.to_string()));
     }
 
     result
@@ -342,7 +329,7 @@ async fn prepare(spec: RequestSpec) -> Result<PreparedRequest, String> {
     let method = map_method(&spec.method)?;
 
     let cookie_header = build_cookie_header(spec.cookies);
-    let mut header_list = collect_headers(spec.headers, cookie_header, &spec.auth_raw);
+    let mut header_list = collect_headers(spec.headers, cookie_header);
 
     let (body_bytes, extra_header) = build_body(
         &spec.method,

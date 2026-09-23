@@ -203,6 +203,61 @@ pub fn active_tab_message(app: &mut Rustrest, tab_msg: TabMessage) -> Task<Messa
     if let TabMessage::CopyToClipboard(text) = tab_msg {
         return super::overlays::copy_to_clipboard(app, text);
     }
+    if let TabMessage::Auth(crate::ui::tab::messages::AuthMessage::OAuth2FetchToken) = &tab_msg {
+        let Some(tab_state) = app.tabs.get_mut(app.active_tab_index) else {
+            return Task::none();
+        };
+        let form = &mut tab_state.tab.request_auth;
+        form.oauth2_fetching_token = true;
+
+        let token_url = form.oauth2_token_url.clone();
+        let client_id = form.oauth2_client_id.clone();
+        let client_secret = form.oauth2_client_secret.clone();
+        let scope = form.oauth2_scope.clone();
+        let client_auth = form.oauth2_client_auth;
+
+        return Task::perform(
+            async move {
+                rustrest_core::auth::fetch_oauth2_client_credentials_token(
+                    &token_url,
+                    &client_id,
+                    &client_secret,
+                    &scope,
+                    client_auth,
+                )
+                .await
+            },
+            |result| {
+                Message::ActiveTabMessage(TabMessage::Auth(
+                    crate::ui::tab::messages::AuthMessage::OAuth2TokenFetched(
+                        result.map(|r| r.access_token),
+                    ),
+                ))
+            },
+        );
+    }
+    if let TabMessage::Auth(crate::ui::tab::messages::AuthMessage::OAuth2TokenFetched(result)) =
+        tab_msg
+    {
+        let Some(tab_state) = app.tabs.get_mut(app.active_tab_index) else {
+            return Task::none();
+        };
+        tab_state.tab.request_auth.oauth2_fetching_token = false;
+        return match result {
+            Ok(token) => {
+                tab_state.tab.request_auth.oauth2_access_token = token;
+                tab_state.tab.dirty = true;
+                Task::done(Message::ShowToast(
+                    "Fetched a new OAuth 2.0 access token".to_string(),
+                    ToastStatus::Success,
+                ))
+            }
+            Err(e) => Task::done(Message::ShowToast(
+                format!("Couldn't fetch OAuth 2.0 access token: {e}"),
+                ToastStatus::Error,
+            )),
+        };
+    }
     if let TabMessage::ShowFieldContextMenu(target, value) = tab_msg {
         app.overlays.active_context_menu = Some(ContextMenu::TextField {
             target: FieldTarget::Tab(target),
@@ -399,14 +454,17 @@ pub fn send_pressed(app: &mut Rustrest) -> Task<Message> {
             .and_then(|c_id| app.collections.iter().find(|c| c.id == c_id))
             .map(|c| c.get_native_variables());
 
-        let (
-            final_url,
-            compiled_body,
-            compiled_form_data,
-            mut filtered_headers,
-            filtered_cookies,
-            compiled_auth,
-        ) = tab.compile_request_fields(&Some(effective_env), collection_vars.as_deref());
+        let (final_url, compiled_body, compiled_form_data, mut filtered_headers, filtered_cookies) =
+            match tab.compile_request_fields(&Some(effective_env), collection_vars.as_deref()) {
+                Ok(compiled) => compiled,
+                Err(e) => {
+                    tab.is_loading = false;
+                    return Task::done(Message::ShowToast(
+                        format!("Couldn't build the request: {e}"),
+                        ToastStatus::Error,
+                    ));
+                }
+            };
 
         // apply any header overrides the script made via pm.setHeader(...)
         for (k, v) in script_headers {
@@ -442,8 +500,7 @@ pub fn send_pressed(app: &mut Rustrest) -> Task<Message> {
             .form_data(compiled_form_data)
             .binary_file_path(tab.binary_file_path.clone())
             .headers(filtered_headers)
-            .cookies(filtered_cookies)
-            .auth_raw(compiled_auth);
+            .cookies(filtered_cookies);
 
         let cancel_token = tab.cancel_token.clone();
 

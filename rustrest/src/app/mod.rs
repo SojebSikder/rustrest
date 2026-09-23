@@ -127,6 +127,10 @@ impl Rustrest {
         self.remote.remote_connecting.is_some()
             || self.remote.remote_explorers.values().any(|e| e.loading)
             || self.tabs.iter().any(|t| t.tab.is_loading)
+            || self
+                .tabs
+                .iter()
+                .any(|t| t.tab.request_auth.oauth2_fetching_token)
             || self.git.commit_modal.as_ref().is_some_and(|m| m.committing)
             || self.plugins.plugin_manager_busy.is_some()
             || !self.git.git_remote_op_running.is_empty()

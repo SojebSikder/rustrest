@@ -108,6 +108,7 @@ pub fn render_configuration_pane<'a, Message>(
     wrap_msg: impl Fn(TabMessage) -> Message + Copy + 'static,
     multiline_height: impl Fn(MultilineFieldKind) -> f32 + Copy + 'a,
     on_multiline_resize_start: impl Fn(MultilineFieldKind) -> Message + Copy + 'a,
+    spinner_tick: u64,
 ) -> Element<'a, Message>
 where
     Message: Clone + 'static,
@@ -205,17 +206,12 @@ where
             multiline_height,
             on_multiline_resize_start,
         ),
-        RequestSubTab::Auth => multiline_input(
-            "Authorization Headers...",
-            &tab.request_auth,
-            10,
-            multiline_height(MultilineFieldKind::Auth(tab_id)),
-            move |action| wrap_msg(TabMessage::AuthChanged(action)),
-            wrap_msg(TabMessage::ShowFieldContextMenu(
-                TabFieldTarget::Auth,
-                tab.request_auth.text(),
-            )),
-            on_multiline_resize_start(MultilineFieldKind::Auth(tab_id)),
+        RequestSubTab::Auth => super::auth::render_auth_pane(
+            tab,
+            wrap_msg,
+            multiline_height,
+            on_multiline_resize_start,
+            spinner_tick,
         ),
 
         RequestSubTab::Body => {

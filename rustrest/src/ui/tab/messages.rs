@@ -5,6 +5,55 @@ use super::types::{
 use crate::ui::context_menu::TabFieldTarget;
 use crate::{http_client::HttpMethod, ui::tab::types::ScriptTab};
 use iced::widget::text_editor;
+use rustrest_core::{AuthLocation, AuthType, ClientAuthStyle, JwtAlgorithm, OAuth1SignatureMethod, OAuth2GrantType};
+
+/// every field edit the Authorization tab can produce, grouped out of
+/// `TabMessage` since there's one per `RequestAuth` field.
+#[derive(Debug, Clone)]
+pub enum AuthMessage {
+    TypeChanged(AuthType),
+
+    CustomRawAction(text_editor::Action),
+
+    BearerTokenChanged(String),
+
+    ApiKeyKeyChanged(String),
+    ApiKeyValueChanged(String),
+    ApiKeyAddToChanged(AuthLocation),
+
+    BasicUsernameChanged(String),
+    BasicPasswordChanged(String),
+
+    JwtAlgorithmChanged(JwtAlgorithm),
+    JwtSecretChanged(String),
+    JwtPayloadAction(text_editor::Action),
+    JwtHeaderPrefixChanged(String),
+    JwtAddToChanged(AuthLocation),
+
+    OAuth1SignatureMethodChanged(OAuth1SignatureMethod),
+    OAuth1ConsumerKeyChanged(String),
+    OAuth1ConsumerSecretChanged(String),
+    OAuth1TokenChanged(String),
+    OAuth1TokenSecretChanged(String),
+    OAuth1RealmChanged(String),
+    OAuth1AddToChanged(AuthLocation),
+
+    OAuth2GrantTypeChanged(OAuth2GrantType),
+    OAuth2AccessTokenChanged(String),
+    OAuth2HeaderPrefixChanged(String),
+    OAuth2AddToChanged(AuthLocation),
+    OAuth2TokenUrlChanged(String),
+    OAuth2ClientIdChanged(String),
+    OAuth2ClientSecretChanged(String),
+    OAuth2ScopeChanged(String),
+    OAuth2ClientAuthChanged(ClientAuthStyle),
+    /// intercepted at the app level (needs to spawn a network request)
+    /// before reaching `Tab::update`.
+    OAuth2FetchToken,
+    /// the client-credentials token exchange resolved; also intercepted at
+    /// the app level so a toast can report success/failure.
+    OAuth2TokenFetched(Result<String, String>),
+}
 
 /// identifies which per-row "Value" editor a `ValueEditorAction` targets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -22,7 +71,7 @@ pub enum TabMessage {
     MethodSelected(String),
     MethodChanged(HttpMethod),
     SubTabSelected(RequestSubTab),
-    AuthChanged(text_editor::Action),
+    Auth(AuthMessage),
     BodyTypeChanged(BodyType),
 
     SelectBinaryFile,
@@ -125,14 +174,25 @@ impl TabMessage {
             | TabMessage::SaveResponse
             | TabMessage::DeleteSavedResponse(_) => true,
 
-            TabMessage::AuthChanged(action)
-            | TabMessage::BodyChanged(action)
+            TabMessage::BodyChanged(action)
             | TabMessage::GraphQlQueryAction(action)
             | TabMessage::GraphQlVariablesAction(action)
             | TabMessage::PreRequestScriptChanged(action)
             | TabMessage::PostResponseScriptChanged(action) => matches!(action, Action::Edit(_)),
 
             TabMessage::ValueEditorAction(_, _, action) => matches!(action, Action::Edit(_)),
+
+            // every Authorization-tab field edit counts as content, incl. a
+            // fetched OAuth2 token becoming part of the saved auth config -
+            // except a bare cursor move in one of its text editors, and
+            // kicking off the token fetch itself (its *result* is the edit).
+            TabMessage::Auth(auth_msg) => match auth_msg {
+                AuthMessage::CustomRawAction(action) | AuthMessage::JwtPayloadAction(action) => {
+                    matches!(action, Action::Edit(_))
+                }
+                AuthMessage::OAuth2FetchToken => false,
+                _ => true,
+            },
 
             TabMessage::SubTabSelected(_)
             | TabMessage::ResponseViewChanged(_)

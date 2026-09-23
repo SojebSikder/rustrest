@@ -17,6 +17,7 @@ pub const MULTILINE_FIELD_HEIGHT_RANGE: (f32, f32) = (40.0, 600.0);
 pub fn default_multiline_height(kind: MultilineFieldKind) -> f32 {
     match kind {
         MultilineFieldKind::Auth(_) => 40.0,
+        MultilineFieldKind::AuthJwtPayload(_) => 80.0,
         MultilineFieldKind::RawBody(_) => 200.0,
         MultilineFieldKind::GraphQlQuery(_) => 160.0,
         MultilineFieldKind::GraphQlVariables(_) => 100.0,

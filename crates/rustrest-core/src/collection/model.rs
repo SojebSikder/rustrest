@@ -305,8 +305,30 @@ pub struct PostmanRequestDetails {
     pub url: Option<PostmanUrl>,
     pub header: Option<Vec<PostmanHeader>>,
     pub body: Option<PostmanBody>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub auth: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_auth"
+    )]
+    pub auth: Option<crate::auth::RequestAuth>,
+}
+
+/// accepts either the structured `RequestAuth` object, or a plain string -
+/// collections saved before structured auth existed have `"auth"` as a raw
+/// `Authorization` header value, which loads as `AuthType::Custom` so
+/// nothing is lost.
+fn deserialize_auth<'de, D>(
+    deserializer: D,
+) -> Result<Option<crate::auth::RequestAuth>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value: Option<serde_json::Value> = Option::deserialize(deserializer)?;
+    Ok(match value {
+        None | Some(serde_json::Value::Null) => None,
+        Some(serde_json::Value::String(s)) => Some(crate::auth::RequestAuth::from_legacy_string(s)),
+        Some(v) => serde_json::from_value(v).ok(),
+    })
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -354,4 +376,49 @@ pub struct PostmanBodyRow {
     pub value: Option<String>,
     pub disabled: Option<bool>,
     pub r#type: Option<String>,
+}
+
+#[cfg(test)]
+mod auth_backcompat_tests {
+    use super::*;
+    use crate::auth::AuthType;
+
+    fn minimal_details_json(auth: &str) -> String {
+        format!(r#"{{"method":"GET","url":null,"header":null,"body":null,"auth":{auth}}}"#)
+    }
+
+    #[test]
+    fn legacy_string_auth_loads_as_custom() {
+        let json = minimal_details_json(r#""Bearer some-old-token""#);
+        let details: PostmanRequestDetails = serde_json::from_str(&json).unwrap();
+        let auth = details.auth.expect("auth present");
+        assert_eq!(auth.auth_type, AuthType::Custom);
+        assert_eq!(auth.custom_raw, "Bearer some-old-token");
+    }
+
+    #[test]
+    fn missing_auth_field_loads_as_none() {
+        let json = r#"{"method":"GET","url":null,"header":null,"body":null}"#;
+        let details: PostmanRequestDetails = serde_json::from_str(json).unwrap();
+        assert!(details.auth.is_none());
+    }
+
+    #[test]
+    fn structured_auth_round_trips_through_json() {
+        let mut auth = crate::auth::RequestAuth::default();
+        auth.auth_type = AuthType::Bearer;
+        auth.bearer_token = "abc".to_string();
+        let details = PostmanRequestDetails {
+            method: "GET".to_string(),
+            url: None,
+            header: None,
+            body: None,
+            auth: Some(auth),
+        };
+        let json = serde_json::to_string(&details).unwrap();
+        let round_tripped: PostmanRequestDetails = serde_json::from_str(&json).unwrap();
+        let auth = round_tripped.auth.expect("auth present");
+        assert_eq!(auth.auth_type, AuthType::Bearer);
+        assert_eq!(auth.bearer_token, "abc");
+    }
 }

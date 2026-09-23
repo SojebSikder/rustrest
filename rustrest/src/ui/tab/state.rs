@@ -38,7 +38,7 @@ pub struct Tab {
     pub request_headers_values: Vec<text_editor::Content>,
     pub request_cookies: Vec<KeyValuePair>,
     pub request_cookies_values: Vec<text_editor::Content>,
-    pub request_auth: text_editor::Content,
+    pub request_auth: super::auth_form::AuthFormState,
     pub request_body: text_editor::Content,
     pub script_tab: ScriptTab,
     pub pre_request_script: text_editor::Content,
@@ -100,7 +100,7 @@ impl Tab {
             request_headers,
             request_cookies_values: contents_for(&request_cookies),
             request_cookies,
-            request_auth: text_editor::Content::with_text("Bearer your_token_here"),
+            request_auth: super::auth_form::AuthFormState::default(),
             request_body: text_editor::Content::with_text("{\n  \"key\": \"value\"\n}"),
             script_tab: ScriptTab::PreRequest,
             pre_request_script: text_editor::Content::with_text(
@@ -135,6 +135,7 @@ impl Tab {
         on_resize_start: Message,
         multiline_height: impl Fn(MultilineFieldKind) -> f32 + Copy + 'a,
         on_multiline_resize_start: impl Fn(MultilineFieldKind) -> Message + Copy + 'a,
+        spinner_tick: u64,
     ) -> Element<'a, Message>
     where
         Message: Clone + 'static,
@@ -145,6 +146,7 @@ impl Tab {
             wrap_msg,
             multiline_height,
             on_multiline_resize_start,
+            spinner_tick,
         );
         let response_content = views::response::render_response_pane(self, wrap_msg);
 
@@ -270,7 +272,7 @@ impl Tab {
 
             TabMessage::SubTabSelected(sub_tab) => self.active_sub_tab = sub_tab,
             TabMessage::ResponseSubTabSelected(resp_tab) => self.active_response_tab = resp_tab,
-            TabMessage::AuthChanged(action) => self.request_auth.perform(action),
+            TabMessage::Auth(auth_msg) => self.request_auth.update(auth_msg),
             TabMessage::BodyTypeChanged(body_type) => self.body_type = body_type,
             TabMessage::RawTypeChanged(raw_type) => self.raw_type = raw_type,
             TabMessage::ResponseViewChanged(view) => self.response_view = view,
@@ -483,14 +485,16 @@ impl Tab {
         &self,
         env: &Option<Environment>,
         collection_vars: Option<&[KeyValuePair]>, // fallback variables parsed from the Postman Collection
-    ) -> (
-        String,                // URL
-        String,                // Raw Body
-        Vec<FormDataRow>,      // Form Data
-        Vec<(String, String)>, // Headers
-        Vec<(String, String)>, // Cookies
-        String,                // Auth
-    ) {
+    ) -> Result<
+        (
+            String,                // URL
+            String,                // Raw Body
+            Vec<FormDataRow>,      // Form Data
+            Vec<(String, String)>, // Headers
+            Vec<(String, String)>, // Cookies
+        ),
+        String,
+    > {
         let resolve = |val: &str| -> String {
             if let Some(e) = env {
                 // pass collection variables into the environment to allow tiered variable parsing
@@ -510,8 +514,7 @@ impl Tab {
             }
         };
 
-        let resolved_url = resolve(&self.url);
-        let resolved_auth = resolve(&self.request_auth.text());
+        let mut resolved_url = resolve(&self.url);
         let mut resolved_body = resolve(&self.request_body.text());
 
         // strip out comment lines if the body is Raw JSON
@@ -523,7 +526,7 @@ impl Tab {
             resolved_body = build_graphql_body(&query, &variables);
         }
 
-        let resolved_headers = self
+        let mut resolved_headers: Vec<(String, String)> = self
             .request_headers
             .iter()
             .filter(|h| h.is_active)
@@ -548,14 +551,62 @@ impl Tab {
             })
             .collect();
 
-        (
+        // every secret-ish auth field gets the same {{var}} interpolation
+        // as headers/body before being applied.
+        let auth_form = self.request_auth.to_core();
+        let resolved_auth = rustrest_core::RequestAuth {
+            custom_raw: resolve(&auth_form.custom_raw),
+            bearer_token: resolve(&auth_form.bearer_token),
+            api_key_key: resolve(&auth_form.api_key_key),
+            api_key_value: resolve(&auth_form.api_key_value),
+            basic_username: resolve(&auth_form.basic_username),
+            basic_password: resolve(&auth_form.basic_password),
+            jwt_secret: resolve(&auth_form.jwt_secret),
+            jwt_payload: resolve(&auth_form.jwt_payload),
+            oauth1_consumer_key: resolve(&auth_form.oauth1_consumer_key),
+            oauth1_consumer_secret: resolve(&auth_form.oauth1_consumer_secret),
+            oauth1_token: resolve(&auth_form.oauth1_token),
+            oauth1_token_secret: resolve(&auth_form.oauth1_token_secret),
+            oauth2_access_token: resolve(&auth_form.oauth2_access_token),
+            oauth2_client_id: resolve(&auth_form.oauth2_client_id),
+            oauth2_client_secret: resolve(&auth_form.oauth2_client_secret),
+            oauth2_scope: resolve(&auth_form.oauth2_scope),
+            oauth2_token_url: resolve(&auth_form.oauth2_token_url),
+            ..auth_form
+        };
+
+        let applied = resolved_auth.apply(&self.method.to_string(), &resolved_url)?;
+        resolved_headers.extend(applied.headers);
+        if !applied.query_params.is_empty() {
+            resolved_url = append_query_params(&resolved_url, &applied.query_params);
+        }
+
+        Ok((
             resolved_url,
             resolved_body,
             resolved_form_data,
             resolved_headers,
             resolved_cookies,
-            resolved_auth,
-        )
+        ))
+    }
+}
+
+/// appends extra query params onto an already-resolved URL (used for
+/// query-placed auth, e.g. an API key sent as `?api_key=...`). Leaves a
+/// malformed URL untouched - `send_request` will surface the real parse
+/// error once it tries to actually send it.
+fn append_query_params(url_str: &str, params: &[(String, String)]) -> String {
+    match url::Url::parse(url_str) {
+        Ok(mut parsed) => {
+            {
+                let mut query = parsed.query_pairs_mut();
+                for (key, value) in params {
+                    query.append_pair(key, value);
+                }
+            }
+            parsed.to_string()
+        }
+        Err(_) => url_str.to_string(),
     }
 }
 

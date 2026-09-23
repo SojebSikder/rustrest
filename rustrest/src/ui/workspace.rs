@@ -180,6 +180,7 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
             move |kind: MultilineFieldKind| {
                 Message::ResizeDragStarted(ResizeKind::MultilineField(kind))
             },
+            app.spinner_tick,
         ),
 
         WorkspaceContent::CollectionRoot {

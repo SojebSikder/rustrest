@@ -172,11 +172,11 @@ impl RequestNodeTabExt for PostmanRequestNode {
         };
 
         // sync authorization
-        let auth_text = tab.request_auth.text();
-        self.request.auth = if auth_text.trim().is_empty() {
+        let auth = tab.request_auth.to_core();
+        self.request.auth = if auth.auth_type == rustrest_core::AuthType::NoAuth {
             None
         } else {
-            Some(auth_text)
+            Some(auth)
         };
 
         // sync scripts into postman events
@@ -283,7 +283,7 @@ pub fn create_tab_from_request(
     }
 
     if let Some(auth) = &node.request.auth {
-        tab.request_auth = iced::widget::text_editor::Content::with_text(auth);
+        tab.request_auth.load_from(auth);
     }
 
     if let Some(body) = &node.request.body {

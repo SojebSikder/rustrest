@@ -1,3 +1,4 @@
+pub mod auth_form;
 pub mod components;
 pub mod graphql;
 pub mod grpc;
