@@ -26,6 +26,7 @@ pub enum ResizeKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MultilineFieldKind {
     Auth(usize),
+    AuthJwtPayload(usize),
     RawBody(usize),
     GraphQlQuery(usize),
     GraphQlVariables(usize),

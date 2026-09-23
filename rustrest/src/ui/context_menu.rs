@@ -13,7 +13,8 @@ use std::sync::Arc;
 pub enum TabFieldTarget {
     Url,
     CustomMethod,
-    Auth,
+    AuthCustom,
+    AuthJwtPayload,
     HeaderKey(usize),
     HeaderValue(usize),
     ParamKey(usize),
@@ -421,9 +422,16 @@ pub fn apply_field_paste(app: &mut Rustrest, target: FieldTarget, text: String) 
                 TabFieldTarget::CustomMethod => {
                     tab.update(TabMessage::MethodChanged(HttpMethod::Custom(text)))
                 }
-                TabFieldTarget::Auth => tab.update(TabMessage::AuthChanged(Action::Edit(
-                    Edit::Paste(Arc::new(text)),
-                ))),
+                TabFieldTarget::AuthCustom => tab.update(TabMessage::Auth(
+                    crate::ui::tab::messages::AuthMessage::CustomRawAction(Action::Edit(
+                        Edit::Paste(Arc::new(text)),
+                    )),
+                )),
+                TabFieldTarget::AuthJwtPayload => tab.update(TabMessage::Auth(
+                    crate::ui::tab::messages::AuthMessage::JwtPayloadAction(Action::Edit(
+                        Edit::Paste(Arc::new(text)),
+                    )),
+                )),
 
                 TabFieldTarget::HeaderKey(idx) => {
                     if let Some(updated) = kv_key_paste(&tab.request_headers, idx, text) {
