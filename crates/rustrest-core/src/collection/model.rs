@@ -149,6 +149,13 @@ pub struct CollectionInfo {
     #[serde(rename = "_postman_id")]
     pub postman_id: Option<String>,
     pub schema: String,
+    /// markdown documentation for the collection as a whole.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_description"
+    )]
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -158,6 +165,8 @@ pub struct PostmanFolder {
     pub protocol_profile_behavior: Option<PostmanProtocolProfileBehavior>,
     pub item: Vec<CollectionItem>,
     pub event: Option<Vec<PostmanEvent>>,
+    /// markdown documentation for this folder.
+    #[serde(default, deserialize_with = "deserialize_description")]
     pub description: Option<String>,
 
     /// true when this folder was added/renamed since the last save.
@@ -311,15 +320,38 @@ pub struct PostmanRequestDetails {
         deserialize_with = "deserialize_auth"
     )]
     pub auth: Option<crate::auth::RequestAuth>,
+    /// markdown documentation for this request.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_description"
+    )]
+    pub description: Option<String>,
+}
+
+/// accepts either a plain markdown string or Postman's `{ "content": ...,
+/// "type": "text/markdown" }` object form, so imported Postman collections
+/// keep their docs.
+pub(crate) fn deserialize_description<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value: Option<serde_json::Value> = Option::deserialize(deserializer)?;
+    Ok(match value {
+        Some(serde_json::Value::String(s)) => Some(s),
+        Some(serde_json::Value::Object(obj)) => obj
+            .get("content")
+            .and_then(|c| c.as_str())
+            .map(str::to_string),
+        _ => None,
+    })
 }
 
 /// accepts either the structured `RequestAuth` object, or a plain string -
 /// collections saved before structured auth existed have `"auth"` as a raw
 /// `Authorization` header value, which loads as `AuthType::Custom` so
 /// nothing is lost.
-fn deserialize_auth<'de, D>(
-    deserializer: D,
-) -> Result<Option<crate::auth::RequestAuth>, D::Error>
+fn deserialize_auth<'de, D>(deserializer: D) -> Result<Option<crate::auth::RequestAuth>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
@@ -414,11 +446,25 @@ mod auth_backcompat_tests {
             header: None,
             body: None,
             auth: Some(auth),
+            description: None,
         };
         let json = serde_json::to_string(&details).unwrap();
         let round_tripped: PostmanRequestDetails = serde_json::from_str(&json).unwrap();
         let auth = round_tripped.auth.expect("auth present");
         assert_eq!(auth.auth_type, AuthType::Bearer);
         assert_eq!(auth.bearer_token, "abc");
+    }
+
+    #[test]
+    fn description_accepts_string_and_postman_object() {
+        let json =
+            r##"{"method":"GET","url":null,"header":null,"body":null,"description":"# Hi"}"##;
+        let details: PostmanRequestDetails = serde_json::from_str(json).unwrap();
+        assert_eq!(details.description.as_deref(), Some("# Hi"));
+
+        let json = r#"{"method":"GET","url":null,"header":null,"body":null,
+            "description":{"content":"**bold**","type":"text/markdown"}}"#;
+        let details: PostmanRequestDetails = serde_json::from_str(json).unwrap();
+        assert_eq!(details.description.as_deref(), Some("**bold**"));
     }
 }

@@ -109,6 +109,7 @@ pub fn render_configuration_pane<'a, Message>(
     multiline_height: impl Fn(MultilineFieldKind) -> f32 + Copy + 'a,
     on_multiline_resize_start: impl Fn(MultilineFieldKind) -> Message + Copy + 'a,
     spinner_tick: u64,
+    theme: &iced::Theme,
 ) -> Element<'a, Message>
 where
     Message: Clone + 'static,
@@ -393,6 +394,33 @@ where
             };
 
             column![radio_bar, body_input].spacing(10).into()
+        }
+
+        RequestSubTab::Docs => {
+            use crate::ui::docs_view::{DocsMode, markdown_doc_view, mode_bar};
+            column![
+                mode_bar(
+                    tab.docs.mode,
+                    &[DocsMode::Edit, DocsMode::Preview],
+                    move |m| { wrap_msg(TabMessage::DocsModeSelected(m)) }
+                ),
+                markdown_doc_view(
+                    &tab.docs,
+                    theme,
+                    move |action| wrap_msg(TabMessage::DocsAction(action)),
+                    move |uri| wrap_msg(TabMessage::DocsLinkClicked(uri)),
+                    move |field, value| {
+                        let target = match field {
+                            crate::ui::docs_view::DocsField::Editor => TabFieldTarget::DocsEditor,
+                            crate::ui::docs_view::DocsField::Preview => TabFieldTarget::DocsPreview,
+                        };
+                        wrap_msg(TabMessage::ShowFieldContextMenu(target, value))
+                    },
+                ),
+            ]
+            .spacing(10)
+            .height(Length::Fill)
+            .into()
         }
 
         RequestSubTab::Scripts => {

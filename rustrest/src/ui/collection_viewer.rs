@@ -1,16 +1,18 @@
 use crate::app::{CollectionSubTab, Rustrest};
 use crate::message::Message;
 use crate::ui::context_menu::{FieldTarget, with_context_menu};
+use crate::ui::docs_view::DocsState;
 use crate::ui::git_panel::{render_git_bar, render_git_panel};
 use iced::widget::{button, checkbox, column, container, row, scrollable, text, text_input};
 use iced::{Alignment, Element, Length, Theme};
 
-pub fn render_collection_root(
+pub fn render_collection_root<'a>(
     collection_id: usize,
     collection_name: &str,
     active_sub_tab: &CollectionSubTab,
-    app: &Rustrest,
-) -> Element<'static, Message, Theme, iced::Renderer> {
+    docs: Option<&'a DocsState>,
+    app: &'a Rustrest,
+) -> Element<'a, Message, Theme, iced::Renderer> {
     let collections = &app.collections;
     // find current live collection data
     let target_collection = collections.iter().find(|c| c.id == collection_id);
@@ -20,7 +22,7 @@ pub fn render_collection_root(
 
     // tab headers bavigation bar
     let mut tabs_nav = row![
-        button(text("Overview"))
+        button(text("Docs"))
             .style(if *active_sub_tab == CollectionSubTab::Documentation {
                 button::primary
             } else {
@@ -54,7 +56,7 @@ pub fn render_collection_root(
     }
 
     // content pane layout
-    let content_pane: Element<'static, Message, Theme, iced::Renderer> = match active_sub_tab {
+    let content_pane: Element<'a, Message, Theme, iced::Renderer> = match active_sub_tab {
         CollectionSubTab::Variables => {
             let mut vars_column: iced::widget::Column<'_, Message, Theme, iced::Renderer> =
                 column![
@@ -146,11 +148,15 @@ pub fn render_collection_root(
             .spacing(15)
             .into()
         }
-        CollectionSubTab::Documentation => column![text(format!(
-            "Documentation for collection: {}",
-            collection_name
-        ))]
-        .into(),
+        CollectionSubTab::Documentation => match docs {
+            Some(state) => crate::ui::docs_view::view(
+                state,
+                target_collection,
+                &app.settings.theme.to_iced(),
+                Message::Docs,
+            ),
+            None => column![].into(),
+        },
         CollectionSubTab::Git => {
             let snapshot = app.git.git_status_cache.get(&collection_id);
             let remote_op_running = app.git.git_remote_op_running.get(&collection_id).copied();
@@ -177,6 +183,33 @@ pub fn render_collection_root(
             .padding(10)
             .width(Length::Fill)
             .height(Length::Fill)
+    ]
+    .spacing(20)
+    .padding(20)
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .into()
+}
+
+/// a folder's tab
+pub fn render_folder_root<'a>(
+    folder_name: &str,
+    docs: &'a DocsState,
+    app: &'a Rustrest,
+) -> Element<'a, Message, Theme, iced::Renderer> {
+    let collection = app.collections.iter().find(|c| c.id == docs.collection_id);
+    column![
+        text(folder_name.to_string()).size(28),
+        row![button(text("Docs")).style(button::primary)].spacing(10),
+        container(crate::ui::docs_view::view(
+            docs,
+            collection,
+            &app.settings.theme.to_iced(),
+            Message::Docs,
+        ))
+        .padding(10)
+        .width(Length::Fill)
+        .height(Length::Fill)
     ]
     .spacing(20)
     .padding(20)

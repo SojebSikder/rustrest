@@ -44,7 +44,7 @@ fn find_folder_items_mut<'a>(
 /// Walks `path` through nested folders and returns the folder that `path`'s last
 /// segment names (used by rename, where the folder itself, not its children - is
 /// the target).
-fn find_folder_mut<'a>(
+pub fn find_folder_mut<'a>(
     items: &'a mut Vec<CollectionItem>,
     path: &[String],
 ) -> Option<&'a mut PostmanFolder> {
@@ -60,6 +60,33 @@ fn find_folder_mut<'a>(
         }
     }
     None
+}
+
+/// read-only counterpart of `find_folder_mut`.
+pub fn find_folder<'a>(items: &'a [CollectionItem], path: &[String]) -> Option<&'a PostmanFolder> {
+    let (head, rest) = path.split_first()?;
+    items.iter().find_map(|item| match item {
+        CollectionItem::Folder(folder) if folder.name == *head => {
+            if rest.is_empty() {
+                Some(folder)
+            } else {
+                find_folder(&folder.item, rest)
+            }
+        }
+        _ => None,
+    })
+}
+
+/// read-only counterpart of `find_request_mut`.
+pub fn find_request(
+    items: &[CollectionItem],
+    target_id: usize,
+) -> Option<&crate::collection::model::PostmanRequestNode> {
+    items.iter().find_map(|item| match item {
+        CollectionItem::Request(node) if node.id == target_id => Some(node),
+        CollectionItem::Folder(folder) => find_request(&folder.item, target_id),
+        _ => None,
+    })
 }
 
 /// inserts a nested folder into the collection at the specified path

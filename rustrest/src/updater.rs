@@ -51,8 +51,7 @@ fn latest_release_tag() -> Result<String, String> {
 
 /// check for updates on github
 pub fn check_for_update() -> Result<Option<UpdateInfo>, String> {
-    // let current_version = cargo_crate_version!();
-    let current_version = "0.1.12";
+    let current_version = cargo_crate_version!();
     let latest_version = latest_release_tag()?;
 
     if self_update::version::bump_is_greater(current_version, &latest_version)

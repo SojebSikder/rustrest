@@ -190,6 +190,7 @@ fn clear_tab_dirty_for_collection(app: &mut Rustrest, col_id: usize) {
             WorkspaceContent::RemoteFile { .. } => false,
             WorkspaceContent::Plugin { .. } => false,
             WorkspaceContent::PluginManager => false,
+            WorkspaceContent::Folder(_) => false,
             WorkspaceContent::WebSocket(_)
             | WorkspaceContent::GraphQl(_)
             | WorkspaceContent::Grpc(_) => false,
@@ -295,12 +296,26 @@ pub fn sub_tab_selected(app: &mut Rustrest, sub_tab: CollectionSubTab) -> Task<M
         if let WorkspaceContent::CollectionRoot {
             collection_id,
             ref mut active_sub_tab,
+            ref mut docs,
             ..
         } = tab_state.content
         {
             *active_sub_tab = sub_tab.clone();
             if sub_tab == CollectionSubTab::Git {
                 collection_id_for_git = Some(collection_id);
+            }
+            // reload on every visit so edits made from a Docs tab show up
+            if sub_tab == CollectionSubTab::Documentation {
+                *docs = app
+                    .collections
+                    .iter()
+                    .find(|c| c.id == collection_id)
+                    .map(|c| {
+                        Box::new(crate::ui::docs_view::DocsState::new(
+                            c,
+                            rustrest_core::docs::DocsTarget::Collection,
+                        ))
+                    });
             }
         }
     }
@@ -390,6 +405,7 @@ pub fn create_new_pressed(app: &mut Rustrest) -> Task<Message> {
             postman_id: None,
             schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
                 .to_string(),
+            description: None,
         },
         item: Vec::new(),
         variable: Some(Vec::new()),
@@ -410,6 +426,7 @@ pub fn create_new_pressed(app: &mut Rustrest) -> Task<Message> {
             collection_id: col_id,
             collection_name: col_name,
             active_sub_tab: CollectionSubTab::Variables,
+            docs: None,
         },
         is_editing_name: false,
     });
@@ -420,12 +437,10 @@ pub fn create_new_pressed(app: &mut Rustrest) -> Task<Message> {
 
 pub fn delete_pressed(app: &mut Rustrest, col_id: usize) -> Task<Message> {
     app.collections.retain(|c| c.id != col_id);
-    app.tabs.retain(|t| {
-        if let WorkspaceContent::CollectionRoot { collection_id, .. } = t.content {
-            collection_id != col_id
-        } else {
-            true
-        }
+    app.tabs.retain(|t| match &t.content {
+        WorkspaceContent::CollectionRoot { collection_id, .. } => *collection_id != col_id,
+        WorkspaceContent::Folder(docs) => docs.collection_id != col_id,
+        _ => true,
     });
     if app.active_tab_index >= app.tabs.len() && !app.tabs.is_empty() {
         app.active_tab_index = app.tabs.len() - 1;
@@ -489,6 +504,7 @@ pub fn add_request_pressed(
                 header: None,
                 body: None,
                 auth: None,
+                description: None,
             },
             event: None,
             unsaved: true,

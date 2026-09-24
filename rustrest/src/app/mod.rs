@@ -1,4 +1,5 @@
 mod collections;
+mod docs;
 mod environment;
 mod git;
 mod graphql;
@@ -48,7 +49,11 @@ pub enum WorkspaceContent {
         collection_id: usize,
         collection_name: String,
         active_sub_tab: CollectionSubTab,
+        /// built when the Docs sub-tab is opened
+        docs: Option<Box<crate::ui::docs_view::DocsState>>,
     },
+    /// a folder's own tab; currently just its docs
+    Folder(Box<crate::ui::docs_view::DocsState>),
     Terminal {
         terminal_id: u64,
         widget_id: iced::widget::Id,
@@ -175,6 +180,7 @@ impl Rustrest {
                 // nothing to persist.
                 WorkspaceContent::Plugin { .. } => None,
                 WorkspaceContent::PluginManager => None,
+                WorkspaceContent::Folder(_) => None,
                 WorkspaceContent::WebSocket(_)
                 | WorkspaceContent::GraphQl(_)
                 | WorkspaceContent::Grpc(_) => None,
@@ -331,6 +337,7 @@ impl Rustrest {
                 WorkspaceContent::RemoteFile { .. } => false,
                 WorkspaceContent::Plugin { .. } => false,
                 WorkspaceContent::PluginManager => false,
+                WorkspaceContent::Folder(_) => false,
             };
             if belongs {
                 self.sync_tab_to_collection(idx);
@@ -381,6 +388,7 @@ impl Rustrest {
                 WorkspaceContent::RemoteFile { .. } => {}
                 WorkspaceContent::Plugin { .. } => {}
                 WorkspaceContent::PluginManager => {}
+                WorkspaceContent::Folder(_) => {}
                 WorkspaceContent::WebSocket(_)
                 | WorkspaceContent::GraphQl(_)
                 | WorkspaceContent::Grpc(_) => {
@@ -744,6 +752,7 @@ fn placeholder_remote_collection(profile_id: usize, root: String) -> PostmanColl
             postman_id: None,
             schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
                 .to_string(),
+            description: None,
         },
         item: Vec::new(),
         variable: Some(Vec::new()),
@@ -779,6 +788,7 @@ fn restore_session_into_app(app: &mut Rustrest, saved: &SavedSession) {
                             collection_id,
                             collection_name: col.info.name.clone(),
                             active_sub_tab: CollectionSubTab::Variables,
+                            docs: None,
                         },
                         is_editing_name: false,
                     });
@@ -907,6 +917,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                                 WorkspaceContent::RemoteFile { .. } => false,
                                 WorkspaceContent::Plugin { .. } => false,
                                 WorkspaceContent::PluginManager => false,
+                                WorkspaceContent::Folder(_) => false,
                                 WorkspaceContent::WebSocket(_)
                                 | WorkspaceContent::GraphQl(_)
                                 | WorkspaceContent::Grpc(_) => false,
@@ -1209,6 +1220,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                         collection_id: col_id,
                         collection_name: col.info.name.clone(),
                         active_sub_tab: CollectionSubTab::Variables,
+                        docs: None,
                     },
                     is_editing_name: false,
                 });
@@ -1344,6 +1356,11 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         }
 
         Message::ActiveWsMessage(msg) => ws::active_ws_message(app, msg),
+        Message::SidebarFolderClicked {
+            collection_id,
+            folder_path,
+        } => docs::folder_clicked(app, collection_id, folder_path),
+        Message::Docs(msg) => docs::update(app, msg),
         Message::WsEvent(tab_id, event) => ws::ws_event(app, tab_id, event),
         Message::WsClosed(tab_id) => ws::ws_closed(app, tab_id),
 
@@ -1484,6 +1501,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         }
         Message::CopyToClipboard(text) => overlays::copy_to_clipboard(app, text),
         Message::PasteIntoField(target) => overlays::paste_into_field(app, target),
+        Message::CutFromField(target, text) => overlays::cut_from_field(app, target, text),
         Message::TextFieldPasteResolved(target, clipboard_text) => {
             overlays::text_field_paste_resolved(app, target, clipboard_text)
         }

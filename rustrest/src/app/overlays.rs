@@ -164,6 +164,17 @@ pub fn paste_into_field(app: &mut Rustrest, target: FieldTarget) -> Task<Message
         .map(move |clipboard_text| Message::TextFieldPasteResolved(target.clone(), clipboard_text))
 }
 
+pub fn cut_from_field(app: &mut Rustrest, target: FieldTarget, text: String) -> Task<Message> {
+    app.overlays.active_context_menu = None;
+    let delete = crate::ui::context_menu::docs_editor_action(
+        &target,
+        iced::widget::text_editor::Action::Edit(iced::widget::text_editor::Edit::Delete),
+    )
+    .map(|message| super::update(app, message))
+    .unwrap_or_else(Task::none);
+    Task::batch([iced::clipboard::write(text), delete])
+}
+
 pub fn text_field_paste_resolved(
     app: &mut Rustrest,
     target: FieldTarget,

@@ -4,7 +4,7 @@ use crate::message::{Message, SidebarItemKey};
 use crate::ui::tab::messages::{TabMessage, ValueField};
 use crate::ui::tab::types::{FormDataRow, KeyValuePair};
 use iced::widget::text_editor::{Action, Edit};
-use iced::widget::{button, column, container, mouse_area, opaque, row, text};
+use iced::widget::{button, column, container, mouse_area, opaque, row, text, text_editor};
 use iced::{Element, Length};
 use std::sync::Arc;
 
@@ -35,6 +35,10 @@ pub enum TabFieldTarget {
     /// read-only; a header/cookie key or value cell in the response pane.
     /// only "Copy" is offered for this target.
     ResponseField,
+    /// the request's markdown docs editor
+    DocsEditor,
+    /// read-only; the request's rendered docs preview.
+    DocsPreview,
 }
 
 impl TabFieldTarget {
@@ -42,7 +46,9 @@ impl TabFieldTarget {
     fn is_read_only(&self) -> bool {
         matches!(
             self,
-            TabFieldTarget::ResponseBodyEditor | TabFieldTarget::ResponseField
+            TabFieldTarget::ResponseBodyEditor
+                | TabFieldTarget::ResponseField
+                | TabFieldTarget::DocsPreview
         )
     }
 }
@@ -77,6 +83,54 @@ pub enum FieldTarget {
     },
     SaveRequestName,
     CommitMessage,
+    /// the active collection/folder tab's markdown docs editor
+    DocsEditor,
+    /// read-only; the active collection/folder tab's rendered docs.
+    DocsPreview,
+}
+
+impl FieldTarget {
+    /// read-only fields never offer "Paste" in their context menu.
+    fn is_read_only(&self) -> bool {
+        match self {
+            FieldTarget::Tab(t) => t.is_read_only(),
+            FieldTarget::DocsPreview => true,
+            _ => false,
+        }
+    }
+}
+
+/// the live editor behind a docs editor target in the active tab.
+fn docs_editor_content<'a>(
+    app: &'a Rustrest,
+    target: &FieldTarget,
+) -> Option<&'a text_editor::Content> {
+    let tab_state = app.tabs.get(app.active_tab_index)?;
+    match target {
+        FieldTarget::Tab(TabFieldTarget::DocsEditor) => Some(&tab_state.tab.docs.editor),
+        FieldTarget::DocsEditor => match &tab_state.content {
+            crate::app::WorkspaceContent::Folder(state)
+            | crate::app::WorkspaceContent::CollectionRoot {
+                docs: Some(state), ..
+            } => Some(&state.doc.editor),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// the message that applies `action` to a docs editor target, routed through
+/// the editor's own handler so unsaved tracking stays in one place.
+pub fn docs_editor_action(target: &FieldTarget, action: Action) -> Option<Message> {
+    match target {
+        FieldTarget::Tab(TabFieldTarget::DocsEditor) => {
+            Some(Message::ActiveTabMessage(TabMessage::DocsAction(action)))
+        }
+        FieldTarget::DocsEditor => Some(Message::Docs(
+            crate::ui::docs_view::DocsMessage::EditorAction(action),
+        )),
+        _ => None,
+    }
 }
 
 pub enum ContextMenu {
@@ -320,13 +374,32 @@ pub fn render_context_menu_overlay<'a>(app: &Rustrest) -> Option<Element<'a, Mes
                 ],
             }
         }
+        ContextMenu::TextField { target, .. } if docs_editor_content(app, target).is_some() => {
+            let editor = docs_editor_content(app, target).expect("checked by the guard");
+            let selection = editor.selection();
+            let mut opts = Vec::new();
+            if let Some(selected) = &selection {
+                opts.push((
+                    "Cut",
+                    Message::CutFromField(target.clone(), selected.clone()),
+                ));
+            }
+            opts.push((
+                "Copy",
+                Message::CopyToClipboard(selection.unwrap_or_else(|| editor.text())),
+            ));
+            opts.push(("Paste", Message::PasteIntoField(target.clone())));
+            if let Some(select_all) = docs_editor_action(target, Action::SelectAll) {
+                opts.push(("Select All", select_all));
+            }
+            opts
+        }
         ContextMenu::TextField {
             target,
             current_value,
         } => {
             let mut opts = vec![("Copy", Message::CopyToClipboard(current_value.clone()))];
-            let is_read_only = matches!(target, FieldTarget::Tab(t) if t.is_read_only());
-            if !is_read_only {
+            if !target.is_read_only() {
                 opts.push(("Paste", Message::PasteIntoField(target.clone())));
             }
             opts
@@ -410,6 +483,12 @@ fn render_dropdown<'a, S: Into<String>>(options: Vec<(S, Message)>) -> Element<'
 /// field's own `on_input` handler would take, so side effects (e.g. syncing
 /// query params back into the URL) stay in one place.
 pub fn apply_field_paste(app: &mut Rustrest, target: FieldTarget, text: String) {
+    if let Some(message) =
+        docs_editor_action(&target, Action::Edit(Edit::Paste(Arc::new(text.clone()))))
+    {
+        let _ = crate::app::update(app, message);
+        return;
+    }
     match target {
         FieldTarget::Tab(tab_target) => {
             let Some(tab_state) = app.tabs.get_mut(app.active_tab_index) else {
@@ -507,9 +586,13 @@ pub fn apply_field_paste(app: &mut Rustrest, target: FieldTarget, text: String) 
                         Edit::Paste(Arc::new(text)),
                     )))
                 }
-                TabFieldTarget::ResponseBodyEditor | TabFieldTarget::ResponseField => {
+                TabFieldTarget::ResponseBodyEditor
+                | TabFieldTarget::ResponseField
+                | TabFieldTarget::DocsPreview => {
                     // read-only; the menu never offers "Paste" for this target
                 }
+                // routed through `docs_editor_action` above
+                TabFieldTarget::DocsEditor => {}
             }
         }
 
@@ -582,6 +665,8 @@ pub fn apply_field_paste(app: &mut Rustrest, target: FieldTarget, text: String) 
                 },
             );
         }
+        // routed through `docs_editor_action` above / read-only
+        FieldTarget::DocsEditor | FieldTarget::DocsPreview => {}
         FieldTarget::CollectionVarValue {
             collection_id,
             index,

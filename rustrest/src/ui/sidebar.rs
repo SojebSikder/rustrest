@@ -1,6 +1,6 @@
 use crate::app::Rustrest;
 use crate::collection::collection::{CollectionItem, PostmanRequestNode, PostmanResponseExample};
-use crate::message::{Message, SidebarDragItem, SidebarDropTarget, SidebarItemKey};
+use crate::message::{Message, SidebarDropTarget, SidebarItemKey};
 use crate::ui::context_menu::{FieldTarget, with_context_menu};
 use crate::ui::spinner::spinner_with_label;
 use crate::ui::unsaved::{
@@ -509,10 +509,10 @@ fn render_sidebar_item<'a>(
                 .on_press(sidebar_click_message(
                     app,
                     folder_key,
-                    Message::SidebarDragStarted(SidebarDragItem::Folder {
+                    Message::SidebarFolderClicked {
                         collection_id,
-                        path: path_for_drag,
-                    }),
+                        folder_path: path_for_drag,
+                    },
                 ))
                 .on_right_press(Message::ShowFolderContextMenu {
                     collection_id,

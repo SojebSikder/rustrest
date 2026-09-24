@@ -152,6 +152,7 @@ pub fn sync_body_from_tab(node: &mut PostmanRequestNode, tab: &Tab) {
 impl RequestNodeTabExt for PostmanRequestNode {
     fn update_from_tab(&mut self, tab: &Tab) {
         self.name = tab.name.clone();
+        self.request.description = tab.docs.description();
         self.request.method = tab.method.to_string();
         self.request.url = Some(PostmanUrl::String(tab.url.clone()));
 
@@ -223,6 +224,8 @@ pub fn create_tab_from_request(
 ) -> Tab {
     let mut tab = Tab::new(id);
     tab.name = node.name.clone();
+    tab.docs =
+        crate::ui::docs_view::MarkdownDoc::new(node.request.description.as_deref().unwrap_or(""));
     tab.url = node
         .request
         .url
@@ -432,7 +435,9 @@ pub fn update_protocol_node_from_content(
         return false;
     };
     node.name = tab_name.to_string();
+    let description = node.request.description.take();
     node.request = request;
+    node.request.description = description;
     node.protocol_request = Some(protocol_request);
     true
 }
@@ -452,6 +457,7 @@ fn placeholder_request_details(
         },
         body: None,
         auth: None,
+        description: None,
     }
 }
 
