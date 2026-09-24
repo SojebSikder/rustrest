@@ -396,6 +396,8 @@ pub enum Message {
     ShowPluginTextContextMenu(String),
     CopyToClipboard(String),
     PasteIntoField(FieldTarget),
+    /// copies the given selection and deletes it from the field
+    CutFromField(FieldTarget, String),
     TextFieldPasteResolved(FieldTarget, Option<String>),
 
     MenuInteraction(DropdownMessage<MenuMessage>),
@@ -643,6 +645,14 @@ pub enum Message {
     GrpcDiscovered(usize, Result<rustrest_grpc::GrpcTarget, String>),
     GrpcResponse(usize, Result<String, String>),
     GrpcInvokeFinished(usize),
+
+    /// opens (or focuses) the folder's tab
+    SidebarFolderClicked {
+        collection_id: usize,
+        folder_path: Vec<String>,
+    },
+    /// routed to the active collection/folder tab's docs pane
+    Docs(crate::ui::docs_view::DocsMessage),
 
     AppExit,
     None,

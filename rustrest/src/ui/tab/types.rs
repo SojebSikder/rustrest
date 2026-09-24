@@ -8,10 +8,12 @@ pub enum RequestSubTab {
     Body,
     Cookies,
     Scripts,
+    Docs,
 }
 
 impl RequestSubTab {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
+        Self::Docs,
         Self::Params,
         Self::Auth,
         Self::Headers,
@@ -22,6 +24,7 @@ impl RequestSubTab {
 
     pub fn name(&self) -> &str {
         match self {
+            Self::Docs => "Docs",
             Self::Params => "Params",
             Self::Auth => "Authorization",
             Self::Headers => "Headers",

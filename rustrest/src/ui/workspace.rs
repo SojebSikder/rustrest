@@ -71,6 +71,7 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
             WorkspaceContent::RemoteFile { .. } => text("☁").size(11).into(),
             WorkspaceContent::Plugin { .. } => text("⚙").size(11).into(),
             WorkspaceContent::PluginManager => text("🧩").size(11).into(),
+            WorkspaceContent::Folder(_) => text("📁").size(11).into(),
             WorkspaceContent::WebSocket(_) => text("WS").size(11).into(),
             WorkspaceContent::GraphQl(_) => text("GQL").size(11).into(),
             WorkspaceContent::Grpc(_) => text("gRPC").size(11).into(),
@@ -181,18 +182,25 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
                 Message::ResizeDragStarted(ResizeKind::MultilineField(kind))
             },
             app.spinner_tick,
+            &app.settings.theme.to_iced(),
         ),
 
         WorkspaceContent::CollectionRoot {
             collection_id,
             collection_name,
             active_sub_tab,
+            docs,
         } => super::collection_viewer::render_collection_root(
             *collection_id,
             collection_name,
             active_sub_tab,
+            docs.as_deref(),
             app,
         ),
+
+        WorkspaceContent::Folder(state) => {
+            super::collection_viewer::render_folder_root(&active_tab_state.tab.name, state, app)
+        }
 
         WorkspaceContent::Terminal {
             terminal_id,

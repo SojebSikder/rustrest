@@ -15,6 +15,7 @@ members = [
     "crates/rustrest-graphql",
     "crates/rustrest-grpc",
 ]
+default-members = ["rustrest"]
 resolver = "2"
 
 [workspace.package]

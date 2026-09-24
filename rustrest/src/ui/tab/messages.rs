@@ -5,7 +5,9 @@ use super::types::{
 use crate::ui::context_menu::TabFieldTarget;
 use crate::{http_client::HttpMethod, ui::tab::types::ScriptTab};
 use iced::widget::text_editor;
-use rustrest_core::{AuthLocation, AuthType, ClientAuthStyle, JwtAlgorithm, OAuth1SignatureMethod, OAuth2GrantType};
+use rustrest_core::{
+    AuthLocation, AuthType, ClientAuthStyle, JwtAlgorithm, OAuth1SignatureMethod, OAuth2GrantType,
+};
 
 /// every field edit the Authorization tab can produce, grouped out of
 /// `TabMessage` since there's one per `RequestAuth` field.
@@ -138,6 +140,12 @@ pub enum TabMessage {
     /// in between (e.g. a row's "Copy" button); intercepted at the app level
     /// before reaching `Tab::update`.
     CopyToClipboard(String),
+
+    DocsAction(text_editor::Action),
+    DocsModeSelected(crate::ui::docs_view::DocsMode),
+    /// a link in the docs preview; intercepted at the app level before
+    /// reaching `Tab::update`.
+    DocsLinkClicked(String),
 }
 
 impl TabMessage {
@@ -178,7 +186,8 @@ impl TabMessage {
             | TabMessage::GraphQlQueryAction(action)
             | TabMessage::GraphQlVariablesAction(action)
             | TabMessage::PreRequestScriptChanged(action)
-            | TabMessage::PostResponseScriptChanged(action) => matches!(action, Action::Edit(_)),
+            | TabMessage::PostResponseScriptChanged(action)
+            | TabMessage::DocsAction(action) => matches!(action, Action::Edit(_)),
 
             TabMessage::ValueEditorAction(_, _, action) => matches!(action, Action::Edit(_)),
 
@@ -203,7 +212,9 @@ impl TabMessage {
             | TabMessage::ViewSavedResponse(_)
             | TabMessage::ShowFieldContextMenu(_, _)
             | TabMessage::ShowResponseTimingModal(_)
-            | TabMessage::CopyToClipboard(_) => false,
+            | TabMessage::CopyToClipboard(_)
+            | TabMessage::DocsModeSelected(_)
+            | TabMessage::DocsLinkClicked(_) => false,
         }
     }
 }

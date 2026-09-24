@@ -667,6 +667,7 @@ pub fn new_collection_pressed(app: &mut Rustrest, profile_id: usize) -> Task<Mes
             postman_id: None,
             schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
                 .to_string(),
+            description: None,
         },
         item: Vec::new(),
         variable: Some(Vec::new()),

@@ -166,11 +166,15 @@ pub fn folder_name_changed(
     folder_path: Vec<String>,
     new_name: String,
 ) -> Task<Message> {
-    if let Some(col) = app.collections.iter_mut().find(|c| c.id == collection_id) {
-        if rename_nested_folder(&mut col.item, &folder_path, &new_name) {
-            if let Some(last) = app.sidebar.editing_folder_path.last_mut() {
-                *last = new_name;
-            }
+    let renamed = app
+        .collections
+        .iter_mut()
+        .find(|c| c.id == collection_id)
+        .is_some_and(|col| rename_nested_folder(&mut col.item, &folder_path, &new_name));
+    if renamed {
+        super::docs::folder_renamed(app, collection_id, &folder_path, &new_name);
+        if let Some(last) = app.sidebar.editing_folder_path.last_mut() {
+            *last = new_name;
         }
     }
     Task::none()

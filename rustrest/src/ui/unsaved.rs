@@ -28,6 +28,7 @@ pub fn tab_is_unsaved(app: &Rustrest, tab_state: &TabState) -> bool {
         WorkspaceContent::RemoteFile { dirty, .. } => *dirty,
         WorkspaceContent::Plugin { .. } => false,
         WorkspaceContent::PluginManager => false,
+        WorkspaceContent::Folder(_) => false,
     }
 }
 

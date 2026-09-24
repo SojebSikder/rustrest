@@ -64,6 +64,8 @@ pub struct Tab {
     /// `text/event-stream`; while set, the Body tab shows `sse_log` instead of the plain response body editor.
     pub sse_active: bool,
     pub sse_log: Vec<crate::ui::tab::protocol_common::LogEntry>,
+    /// the request's markdown documentation (Docs sub-tab)
+    pub docs: crate::ui::docs_view::MarkdownDoc,
 }
 
 impl Tab {
@@ -123,6 +125,7 @@ impl Tab {
             dirty: false,
             sse_active: false,
             sse_log: Vec::new(),
+            docs: crate::ui::docs_view::MarkdownDoc::new(""),
         }
     }
 
@@ -136,6 +139,7 @@ impl Tab {
         multiline_height: impl Fn(MultilineFieldKind) -> f32 + Copy + 'a,
         on_multiline_resize_start: impl Fn(MultilineFieldKind) -> Message + Copy + 'a,
         spinner_tick: u64,
+        theme: &iced::Theme,
     ) -> Element<'a, Message>
     where
         Message: Clone + 'static,
@@ -147,6 +151,7 @@ impl Tab {
             multiline_height,
             on_multiline_resize_start,
             spinner_tick,
+            theme,
         );
         let response_content = views::response::render_response_pane(self, wrap_msg);
 
@@ -176,6 +181,7 @@ impl Tab {
                 header: None,
                 body: None,
                 auth: None,
+                description: None,
             },
             event: None,
             unsaved: false,
@@ -478,6 +484,12 @@ impl Tab {
             TabMessage::ShowFieldContextMenu(..) => {}
             TabMessage::ShowResponseTimingModal(_) => {}
             TabMessage::CopyToClipboard(_) => {}
+            TabMessage::DocsLinkClicked(_) => {}
+
+            TabMessage::DocsAction(action) => {
+                self.docs.perform(action);
+            }
+            TabMessage::DocsModeSelected(mode) => self.docs.mode = mode,
         }
     }
 

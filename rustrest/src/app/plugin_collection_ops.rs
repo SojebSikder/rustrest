@@ -50,6 +50,7 @@ pub fn apply(app: &mut Rustrest, op: CollectionOperation) -> Result<String, Stri
                     postman_id: None,
                     schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
                         .to_string(),
+                    description: None,
                 },
                 item: Vec::new(),
                 variable: Some(Vec::new()),
@@ -156,6 +157,7 @@ pub fn apply(app: &mut Rustrest, op: CollectionOperation) -> Result<String, Stri
                         header: None,
                         body: None,
                         auth: None,
+                        description: None,
                     },
                     event: None,
                     unsaved: true,

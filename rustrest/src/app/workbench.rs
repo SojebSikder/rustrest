@@ -40,6 +40,7 @@ fn finalize_tab_rename(app: &mut Rustrest, idx: usize) {
                 WorkspaceContent::RemoteFile { path, .. } => path.clone(),
                 WorkspaceContent::Plugin { panel_id, .. } => panel_id.clone(),
                 WorkspaceContent::PluginManager => "Manage Plugins".to_string(),
+                WorkspaceContent::Folder(_) => "Folder".to_string(),
                 WorkspaceContent::WebSocket(_) => "WebSocket Request".to_string(),
                 WorkspaceContent::GraphQl(_) => "GraphQL Request".to_string(),
                 WorkspaceContent::Grpc(_) => "gRPC Request".to_string(),
@@ -202,6 +203,9 @@ pub fn close_active_tab_shortcut(app: &mut Rustrest) -> Task<Message> {
 pub fn active_tab_message(app: &mut Rustrest, tab_msg: TabMessage) -> Task<Message> {
     if let TabMessage::CopyToClipboard(text) = tab_msg {
         return super::overlays::copy_to_clipboard(app, text);
+    }
+    if let TabMessage::DocsLinkClicked(uri) = tab_msg {
+        return super::docs::link_clicked(uri);
     }
     if let TabMessage::Auth(crate::ui::tab::messages::AuthMessage::OAuth2FetchToken) = &tab_msg {
         let Some(tab_state) = app.tabs.get_mut(app.active_tab_index) else {
@@ -1082,6 +1086,9 @@ pub fn save_active_request_shortcut(app: &mut Rustrest) -> Task<Message> {
             }
             WorkspaceContent::Plugin { .. } => Task::none(),
             WorkspaceContent::PluginManager => Task::none(),
+            WorkspaceContent::Folder(docs) => {
+                super::update(app, Message::SaveCollectionPressed(docs.collection_id))
+            }
             WorkspaceContent::WebSocket(_)
             | WorkspaceContent::GraphQl(_)
             | WorkspaceContent::Grpc(_) => {
