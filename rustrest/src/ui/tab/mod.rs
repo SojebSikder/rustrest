@@ -12,3 +12,4 @@ pub mod ws;
 
 pub use messages::TabMessage;
 pub use state::{Tab, contents_for, contents_for_form_data};
+pub use views::auth::{AuthFormContext, render_auth_form};

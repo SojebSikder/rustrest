@@ -58,6 +58,8 @@ pub fn apply(app: &mut Rustrest, op: CollectionOperation) -> Result<String, Stri
                 storage_dir: None,
                 remote_dir: None,
                 unsaved: false,
+                auth: None,
+                event: None,
             });
             Ok(format!("Created collection \"{name}\""))
         }

@@ -1,6 +1,7 @@
 //! The Authorization tab: a type dropdown, and the field set for whichever type is selected.
 
 use super::super::Tab;
+use super::super::auth_form::AuthFormState;
 use super::super::messages::{AuthMessage, TabMessage};
 use crate::message::MultilineFieldKind;
 use crate::ui::context_menu::TabFieldTarget;
@@ -31,7 +32,7 @@ fn hint<'a, Message: 'a>(text_str: &'a str) -> Element<'a, Message> {
         .into()
 }
 
-#[allow(clippy::too_many_arguments)]
+/// a request tab's Authorization pane.
 pub fn render_auth_pane<'a, Message>(
     tab: &'a Tab,
     wrap_msg: impl Fn(TabMessage) -> Message + Copy + 'static,
@@ -42,11 +43,48 @@ pub fn render_auth_pane<'a, Message>(
 where
     Message: Clone + 'a,
 {
-    let tab_id = tab.id;
-    let form = &tab.request_auth;
-    let wrap_auth = move |m: AuthMessage| wrap_msg(TabMessage::Auth(m));
+    render_auth_form(
+        &tab.request_auth,
+        AuthFormContext {
+            tab_id: tab.id,
+            auth_types: &AuthType::ALL,
+            no_auth_note: "This request does not use any authorization.",
+            inherit_note: "This request uses its collection's authorization.                            Set it on the collection's Authorization tab.",
+        },
+        move |m| wrap_msg(TabMessage::Auth(m)),
+        move |target, text| wrap_msg(TabMessage::ShowFieldContextMenu(target, text)),
+        multiline_height,
+        on_multiline_resize_start,
+        spinner_tick,
+    )
+}
 
-    let type_picker = pick_list(&AuthType::ALL[..], Some(form.auth_type), move |t| {
+/// what differs between the request and collection Authorization panes.
+pub struct AuthFormContext {
+    /// the tab showing the form, keying its resizable multiline fields
+    pub tab_id: usize,
+    pub auth_types: &'static [AuthType],
+    pub no_auth_note: &'static str,
+    pub inherit_note: &'static str,
+}
+
+/// the auth type picker plus the fields for the selected type, for any
+/// `AuthFormState` (a request's or a collection's).
+pub fn render_auth_form<'a, Message>(
+    form: &'a AuthFormState,
+    ctx: AuthFormContext,
+    wrap_auth: impl Fn(AuthMessage) -> Message + Copy + 'static,
+    on_context_menu: impl Fn(TabFieldTarget, String) -> Message + Copy + 'a,
+    multiline_height: impl Fn(MultilineFieldKind) -> f32 + Copy + 'a,
+    on_multiline_resize_start: impl Fn(MultilineFieldKind) -> Message + Copy + 'a,
+    spinner_tick: u64,
+) -> Element<'a, Message>
+where
+    Message: Clone + 'a,
+{
+    let tab_id = ctx.tab_id;
+
+    let type_picker = pick_list(ctx.auth_types, Some(form.auth_type), move |t| {
         wrap_auth(AuthMessage::TypeChanged(t))
     })
     .padding(8);
@@ -54,7 +92,11 @@ where
     let content = column![type_picker].spacing(14).width(Length::Fill);
 
     let fields: Element<'a, Message> = match form.auth_type {
-        AuthType::NoAuth => text("This request does not use any authorization.")
+        AuthType::Inherit => text(ctx.inherit_note)
+            .color(iced::Color::from_rgb(0.5, 0.5, 0.5))
+            .into(),
+
+        AuthType::NoAuth => text(ctx.no_auth_note)
             .color(iced::Color::from_rgb(0.5, 0.5, 0.5))
             .into(),
 
@@ -64,10 +106,7 @@ where
             10,
             multiline_height(MultilineFieldKind::Auth(tab_id)),
             move |action| wrap_auth(AuthMessage::CustomRawAction(action)),
-            wrap_msg(TabMessage::ShowFieldContextMenu(
-                TabFieldTarget::AuthCustom,
-                form.custom_raw.text(),
-            )),
+            on_context_menu(TabFieldTarget::AuthCustom, form.custom_raw.text()),
             on_multiline_resize_start(MultilineFieldKind::Auth(tab_id)),
         ),
 
@@ -135,10 +174,7 @@ where
                 10,
                 multiline_height(MultilineFieldKind::AuthJwtPayload(tab_id)),
                 move |action| wrap_auth(AuthMessage::JwtPayloadAction(action)),
-                wrap_msg(TabMessage::ShowFieldContextMenu(
-                    TabFieldTarget::AuthJwtPayload,
-                    form.jwt_payload.text(),
-                )),
+                on_context_menu(TabFieldTarget::AuthJwtPayload, form.jwt_payload.text()),
                 on_multiline_resize_start(MultilineFieldKind::AuthJwtPayload(tab_id)),
             );
 

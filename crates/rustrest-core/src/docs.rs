@@ -655,6 +655,8 @@ mod tests {
             storage_dir: None,
             remote_dir: None,
             unsaved: false,
+            auth: None,
+            event: None,
             info: CollectionInfo {
                 name: "Pet Store".to_string(),
                 postman_id: None,

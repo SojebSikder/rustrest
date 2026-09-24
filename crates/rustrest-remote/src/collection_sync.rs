@@ -85,6 +85,8 @@ async fn sync_collection_inner(
     let meta = CollectionMeta {
         info: collection.info.clone(),
         variable: collection.variable.clone(),
+        auth: collection.auth.clone(),
+        event: collection.event.clone(),
         order: order.clone(),
     };
     sync_json_file(
@@ -267,6 +269,8 @@ pub async fn load_collection_from_remote_dir(
         info: meta.info,
         item,
         variable: meta.variable,
+        auth: meta.auth,
+        event: meta.event,
     })
 }
 

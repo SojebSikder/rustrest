@@ -1,3 +1,4 @@
+mod collection_settings;
 mod collections;
 mod docs;
 mod environment;
@@ -38,6 +39,8 @@ use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CollectionSubTab {
+    Authorization,
+    Scripts,
     Variables,
     Documentation,
     Git,
@@ -52,6 +55,8 @@ pub enum WorkspaceContent {
         active_sub_tab: CollectionSubTab,
         /// built when the Docs sub-tab is opened
         docs: Option<Box<crate::ui::docs_view::DocsState>>,
+        /// built when the Authorization or Scripts sub-tab is opened
+        settings: Option<Box<crate::ui::collection_settings::CollectionSettingsState>>,
     },
     /// a folder's own tab; currently just its docs
     Folder(Box<crate::ui::docs_view::DocsState>),
@@ -139,6 +144,13 @@ impl Rustrest {
                 .tabs
                 .iter()
                 .any(|t| t.tab.request_auth.oauth2_fetching_token)
+            || self.tabs.iter().any(|t| {
+                matches!(
+                    &t.content,
+                    WorkspaceContent::CollectionRoot { settings: Some(s), .. }
+                        if s.auth.oauth2_fetching_token
+                )
+            })
             || self.git.commit_modal.as_ref().is_some_and(|m| m.committing)
             || self.plugins.plugin_manager_busy.is_some()
             || !self.git.git_remote_op_running.is_empty()
@@ -759,6 +771,8 @@ fn placeholder_remote_collection(profile_id: usize, root: String) -> PostmanColl
         storage_dir: None,
         remote_dir: Some(RemoteDirRef { profile_id, root }),
         unsaved: false,
+        auth: None,
+        event: None,
         info: CollectionInfo {
             name,
             postman_id: None,
@@ -801,6 +815,7 @@ fn restore_session_into_app(app: &mut Rustrest, saved: &SavedSession) {
                             collection_name: col.info.name.clone(),
                             active_sub_tab: CollectionSubTab::Variables,
                             docs: None,
+                            settings: None,
                         },
                         is_editing_name: false,
                     });
@@ -1234,6 +1249,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                         collection_name: col.info.name.clone(),
                         active_sub_tab: CollectionSubTab::Variables,
                         docs: None,
+                        settings: None,
                     },
                     is_editing_name: false,
                 });
@@ -1420,6 +1436,15 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         Message::DeleteEnvironmentPressed(idx) => environment::delete_pressed(app, idx),
 
         Message::CollectionSubTabSelected(sub_tab) => collections::sub_tab_selected(app, sub_tab),
+        Message::CollectionAuth(collection_id, msg) => {
+            collection_settings::auth_message(app, collection_id, msg)
+        }
+        Message::CollectionScriptTabChanged(collection_id, tab) => {
+            collection_settings::script_tab_changed(app, collection_id, tab)
+        }
+        Message::CollectionScriptAction(collection_id, tab, action) => {
+            collection_settings::script_action(app, collection_id, tab, action)
+        }
         Message::CollectionVariableChanged {
             collection_id,
             index,

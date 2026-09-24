@@ -13,7 +13,9 @@ use sha2::{Sha256, Sha384, Sha512};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum AuthType {
+    /// use the parent collection's auth, default for requests. resolved away before `apply`.
     #[default]
+    Inherit,
     NoAuth,
     /// a raw `Authorization` header value, sent verbatim - what every
     /// collection saved before structured auth existed used, so it's kept
@@ -28,7 +30,20 @@ pub enum AuthType {
 }
 
 impl AuthType {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
+        Self::Inherit,
+        Self::NoAuth,
+        Self::Bearer,
+        Self::ApiKey,
+        Self::Basic,
+        Self::JwtBearer,
+        Self::OAuth1,
+        Self::OAuth2,
+        Self::Custom,
+    ];
+
+    /// the types a collection (which has no parent) can use - `ALL` minus `Inherit`.
+    pub const PARENT: [Self; 8] = [
         Self::NoAuth,
         Self::Bearer,
         Self::ApiKey,
@@ -41,6 +56,7 @@ impl AuthType {
 
     pub fn label(&self) -> &'static str {
         match self {
+            Self::Inherit => "Inherit auth from parent",
             Self::NoAuth => "No Auth",
             Self::Custom => "Custom Header",
             Self::Bearer => "Bearer Token",
@@ -241,7 +257,7 @@ pub struct RequestAuth {
 impl Default for RequestAuth {
     fn default() -> Self {
         Self {
-            auth_type: AuthType::NoAuth,
+            auth_type: AuthType::Inherit,
             custom_raw: String::new(),
             bearer_token: String::new(),
             api_key_key: String::new(),
@@ -284,6 +300,21 @@ impl RequestAuth {
             ..Default::default()
         }
     }
+
+    /// the auth actually sent: `Inherit` takes the parent collection's auth,
+    /// falling back to No Auth when there's no parent (or it has none).
+    pub fn resolve_inherited(&self, parent: Option<&RequestAuth>) -> RequestAuth {
+        if self.auth_type != AuthType::Inherit {
+            return self.clone();
+        }
+        match parent {
+            Some(parent) if parent.auth_type != AuthType::Inherit => parent.clone(),
+            _ => RequestAuth {
+                auth_type: AuthType::NoAuth,
+                ..Default::default()
+            },
+        }
+    }
 }
 
 /// the extra headers/query params a `RequestAuth` contributes to a request.
@@ -303,7 +334,7 @@ impl RequestAuth {
     pub fn apply(&self, method: &str, url: &str) -> Result<AppliedAuth, String> {
         let mut applied = AppliedAuth::default();
         match self.auth_type {
-            AuthType::NoAuth => {}
+            AuthType::Inherit | AuthType::NoAuth => {}
             AuthType::Custom => {
                 let trimmed = self.custom_raw.trim();
                 if !trimmed.is_empty() {
@@ -631,6 +662,36 @@ pub async fn fetch_oauth2_client_credentials_token(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn inherit_resolves_to_parent_auth() {
+        let parent = RequestAuth {
+            auth_type: AuthType::Bearer,
+            bearer_token: "from-collection".to_string(),
+            ..Default::default()
+        };
+        let resolved = RequestAuth::default().resolve_inherited(Some(&parent));
+        assert_eq!(resolved, parent);
+    }
+
+    #[test]
+    fn inherit_without_parent_is_no_auth() {
+        let resolved = RequestAuth::default().resolve_inherited(None);
+        assert_eq!(resolved.auth_type, AuthType::NoAuth);
+    }
+
+    #[test]
+    fn explicit_auth_ignores_parent() {
+        let own = RequestAuth {
+            auth_type: AuthType::NoAuth,
+            ..Default::default()
+        };
+        let parent = RequestAuth {
+            auth_type: AuthType::Bearer,
+            ..Default::default()
+        };
+        assert_eq!(own.resolve_inherited(Some(&parent)), own);
+    }
 
     #[test]
     fn no_auth_produces_nothing() {

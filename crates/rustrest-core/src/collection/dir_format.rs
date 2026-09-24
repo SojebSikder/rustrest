@@ -15,6 +15,10 @@ pub const FOLDER_META_FILE: &str = "_folder.json";
 pub struct CollectionMeta {
     pub info: CollectionInfo,
     pub variable: Option<Vec<PostmanVariable>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth: Option<crate::auth::RequestAuth>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub event: Option<Vec<PostmanEvent>>,
     /// ordered list of child entry names (file or directory names,
     /// relative to this directory).
     pub order: Vec<String>,

@@ -195,9 +195,9 @@ impl RequestNodeTabExt for PostmanRequestNode {
             Some(headers)
         };
 
-        // sync authorization
+        // sync authorization. a missing `auth` means inherit, so an explicit No Auth is persisted as such.
         let auth = tab.request_auth.to_core();
-        self.request.auth = if auth.auth_type == rustrest_core::AuthType::NoAuth {
+        self.request.auth = if auth.auth_type == rustrest_core::AuthType::Inherit {
             None
         } else {
             Some(auth)

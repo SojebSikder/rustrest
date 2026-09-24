@@ -297,10 +297,25 @@ pub fn sub_tab_selected(app: &mut Rustrest, sub_tab: CollectionSubTab) -> Task<M
             collection_id,
             ref mut active_sub_tab,
             ref mut docs,
+            ref mut settings,
             ..
         } = tab_state.content
         {
             *active_sub_tab = sub_tab.clone();
+            // edits write straight through, so rebuilding loses nothing and
+            // picks up changes from disk (e.g. a git pull)
+            if matches!(
+                sub_tab,
+                CollectionSubTab::Authorization | CollectionSubTab::Scripts
+            ) {
+                *settings = app
+                    .collections
+                    .iter()
+                    .find(|c| c.id == collection_id)
+                    .map(|c| {
+                        Box::new(crate::ui::collection_settings::CollectionSettingsState::from_collection(c))
+                    });
+            }
             if sub_tab == CollectionSubTab::Git {
                 collection_id_for_git = Some(collection_id);
             }
@@ -413,6 +428,8 @@ pub fn create_new_pressed(app: &mut Rustrest) -> Task<Message> {
         storage_dir: None,
         remote_dir: None,
         unsaved: false,
+        auth: None,
+        event: None,
     };
     app.collections.push(new_col);
 
@@ -427,6 +444,7 @@ pub fn create_new_pressed(app: &mut Rustrest) -> Task<Message> {
             collection_name: col_name,
             active_sub_tab: CollectionSubTab::Variables,
             docs: None,
+            settings: None,
         },
         is_editing_name: false,
     });
