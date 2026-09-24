@@ -192,11 +192,14 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
             collection_name,
             active_sub_tab,
             docs,
+            settings,
         } => super::collection_viewer::render_collection_root(
+            active_tab_state.tab.id,
             *collection_id,
             collection_name,
             active_sub_tab,
             docs.as_deref(),
+            settings.as_deref(),
             app,
         ),
 

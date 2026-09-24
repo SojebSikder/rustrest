@@ -358,11 +358,12 @@ pub fn send_pressed(app: &mut Rustrest) -> Task<Message> {
             })
             .unwrap_or_default();
 
-        if let Some(c_id) = tab.collection_id {
-            if let Some(col) = app.collections.iter().find(|c| c.id == c_id) {
-                for kv in col.get_native_variables() {
-                    script_vars.insert(kv.key, kv.value);
-                }
+        let collection = tab
+            .collection_id
+            .and_then(|c_id| app.collections.iter().find(|c| c.id == c_id));
+        if let Some(col) = collection {
+            for kv in col.get_native_variables() {
+                script_vars.insert(kv.key, kv.value);
             }
         }
 
@@ -383,15 +384,30 @@ pub fn send_pressed(app: &mut Rustrest) -> Task<Message> {
 
         let script_vars_snapshot = script_vars.clone();
 
-        let pre_script_text = tab.pre_request_script.text();
-        match crate::script_engine::ScriptRunner::run_pre_request(
-            &pre_script_text,
-            &mut script_vars,
-            &mut script_headers,
-            &mut script_globals,
-        ) {
-            Ok(logs) => app.layout.console_logs.extend(logs),
-            Err(e) => return Task::done(Message::ShowToast(e, ToastStatus::Error)),
+        // collection script first, then the request's own,
+        // sharing variables/headers/globals between them
+        let collection_pre_script = collection
+            .map(|c| crate::collection::collection::event_script(&c.event, "prerequest"))
+            .unwrap_or_default();
+        let pre_scripts = [
+            ("Collection ", collection_pre_script),
+            ("", tab.pre_request_script.text()),
+        ];
+        for (source, script) in &pre_scripts {
+            match crate::script_engine::ScriptRunner::run_pre_request(
+                script,
+                &mut script_vars,
+                &mut script_headers,
+                &mut script_globals,
+            ) {
+                Ok(logs) => app.layout.console_logs.extend(logs),
+                Err(e) => {
+                    return Task::done(Message::ShowToast(
+                        format!("{source}{e}"),
+                        ToastStatus::Error,
+                    ));
+                }
+            }
         }
 
         for (k, v) in &script_globals {
@@ -457,13 +473,18 @@ pub fn send_pressed(app: &mut Rustrest) -> Task<Message> {
         tab.sse_active = false;
         tab.sse_log.clear();
 
-        let collection_vars = tab
+        let collection = tab
             .collection_id
-            .and_then(|c_id| app.collections.iter().find(|c| c.id == c_id))
-            .map(|c| c.get_native_variables());
+            .and_then(|c_id| app.collections.iter().find(|c| c.id == c_id));
+        let collection_vars = collection.map(|c| c.get_native_variables());
+        let collection_auth = collection.and_then(|c| c.auth.as_ref());
 
         let (final_url, compiled_body, compiled_form_data, mut filtered_headers, filtered_cookies) =
-            match tab.compile_request_fields(&Some(effective_env), collection_vars.as_deref()) {
+            match tab.compile_request_fields(
+                &Some(effective_env),
+                collection_vars.as_deref(),
+                collection_auth,
+            ) {
                 Ok(compiled) => compiled,
                 Err(e) => {
                     tab.is_loading = false;
@@ -666,8 +687,17 @@ pub fn response_received(
 
         let mut test_results = Vec::new();
         if let Ok(resp) = &res {
-            let script_text = tab.post_response_script.text();
-            if !script_text.trim().is_empty() {
+            let collection_script = tab
+                .collection_id
+                .and_then(|c_id| app.collections.iter().find(|c| c.id == c_id))
+                .map(|c| crate::collection::collection::event_script(&c.event, "test"))
+                .unwrap_or_default();
+            let scripts = [
+                ("Collection ", collection_script),
+                ("", tab.post_response_script.text()),
+            ];
+
+            if scripts.iter().any(|(_, s)| !s.trim().is_empty()) {
                 let mut base_vars: std::collections::HashMap<String, String> = app
                     .env
                     .active_env_index
@@ -699,7 +729,7 @@ pub fn response_received(
                     .map(|v| (v.key.clone(), v.value.clone()))
                     .collect();
 
-                let exec_ctx = crate::script_engine::ScriptExecutionContext {
+                let mut exec_ctx = crate::script_engine::ScriptExecutionContext {
                     variables: base_vars,
                     globals: base_globals,
                     response_status: resp.status,
@@ -707,7 +737,28 @@ pub fn response_received(
                     response_headers: resp.headers.clone(),
                 };
 
-                match crate::script_engine::ScriptRunner::run_post_response(&script_text, &exec_ctx)
+                // each script sees the variables the previous one set; test
+                // results and logs accumulate across both
+                let mut outcome = Ok((Vec::new(), Vec::new()));
+                for (source, script) in &scripts {
+                    match crate::script_engine::ScriptRunner::run_post_response(script, &exec_ctx) {
+                        Ok((vars, globals, results, logs)) => {
+                            exec_ctx.variables = vars;
+                            exec_ctx.globals = globals;
+                            if let Ok((all_results, all_logs)) = &mut outcome {
+                                all_results.extend(results);
+                                all_logs.extend(logs);
+                            }
+                        }
+                        Err(e) => {
+                            outcome = Err(format!("{source}{e}"));
+                            break;
+                        }
+                    }
+                }
+
+                match outcome
+                    .map(|(results, logs)| (exec_ctx.variables, exec_ctx.globals, results, logs))
                 {
                     Ok((updated_vars, updated_globals, results, logs)) => {
                         app.layout.console_logs.extend(logs);

@@ -287,6 +287,14 @@ pub enum Message {
 
     // collection viewer actions
     CollectionSubTabSelected(CollectionSubTab),
+    /// an edit in a collection root tab's Authorization sub-tab
+    CollectionAuth(usize, crate::ui::tab::messages::AuthMessage),
+    CollectionScriptTabChanged(usize, crate::ui::tab::types::ScriptTab),
+    CollectionScriptAction(
+        usize,
+        crate::ui::tab::types::ScriptTab,
+        iced::widget::text_editor::Action,
+    ),
     CollectionVariableChanged {
         collection_id: usize,
         index: usize,

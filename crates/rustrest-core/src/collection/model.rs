@@ -26,6 +26,17 @@ pub struct PostmanCollection {
     pub info: CollectionInfo,
     pub item: Vec<CollectionItem>,
     pub variable: Option<Vec<PostmanVariable>>,
+    /// collection-wide auth, used by every request set to `AuthType::Inherit`.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_auth"
+    )]
+    pub auth: Option<crate::auth::RequestAuth>,
+    /// collection-level scripts, run before each request's own
+    /// pre-request/post-response script.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub event: Option<Vec<PostmanEvent>>,
 }
 
 /// identifies the remote host + directory a collection is synced against,
@@ -221,6 +232,37 @@ pub struct PostmanScript {
 pub enum PostmanScriptExec {
     List(Vec<String>),
     Single(String),
+}
+
+/// the script text for `listen` ("prerequest" or "test"), empty if none.
+pub fn event_script(events: &Option<Vec<PostmanEvent>>, listen: &str) -> String {
+    events
+        .iter()
+        .flatten()
+        .find(|e| e.listen == listen)
+        .and_then(|e| e.script.as_ref())
+        .and_then(|s| s.exec.as_ref())
+        .map(PostmanScriptExec::to_string_contents)
+        .unwrap_or_default()
+}
+
+/// replaces the `listen` script with `script`; a blank script drops the event
+/// (and the whole list once it's empty) so unused scripts aren't persisted.
+pub fn set_event_script(events: &mut Option<Vec<PostmanEvent>>, listen: &str, script: &str) {
+    let list = events.get_or_insert_with(Vec::new);
+    list.retain(|e| e.listen != listen);
+    if !script.trim().is_empty() {
+        list.push(PostmanEvent {
+            listen: listen.to_string(),
+            script: Some(PostmanScript {
+                r#type: Some("text/javascript".to_string()),
+                exec: Some(PostmanScriptExec::from_string(script)),
+            }),
+        });
+    }
+    if list.is_empty() {
+        *events = None;
+    }
 }
 
 impl PostmanScriptExec {
@@ -534,5 +576,49 @@ mod auth_backcompat_tests {
         assert_eq!(json, serde_json::json!(["/tmp/x.txt", "/tmp/y.txt"]));
         let json = serde_json::to_value(PostmanFileSrc::from_paths(&paths[..1])).unwrap();
         assert_eq!(json, serde_json::json!("/tmp/x.txt"));
+    }
+
+    #[test]
+    fn collection_without_auth_or_scripts_still_loads() {
+        let json =
+            r#"{"info":{"name":"c","_postman_id":null,"schema":""},"item":[],"variable":null}"#;
+        let col: PostmanCollection = serde_json::from_str(json).unwrap();
+        assert!(col.auth.is_none());
+        assert!(col.event.is_none());
+        // and nothing new is written back for it
+        let out = serde_json::to_string(&col).unwrap();
+        assert!(!out.contains("\"auth\"") && !out.contains("\"event\""));
+    }
+
+    #[test]
+    fn collection_auth_and_scripts_round_trip() {
+        let mut col: PostmanCollection = serde_json::from_str(
+            r#"{"info":{"name":"c","_postman_id":null,"schema":""},"item":[],"variable":null}"#,
+        )
+        .unwrap();
+        col.auth = Some(crate::auth::RequestAuth {
+            auth_type: AuthType::Bearer,
+            bearer_token: "{{token}}".to_string(),
+            ..Default::default()
+        });
+        set_event_script(&mut col.event, "prerequest", "pm.variables.set('a', '1');");
+        set_event_script(&mut col.event, "test", "console.log('done');");
+
+        let back: PostmanCollection =
+            serde_json::from_str(&serde_json::to_string(&col).unwrap()).unwrap();
+        assert_eq!(back.auth, col.auth);
+        assert_eq!(
+            event_script(&back.event, "prerequest"),
+            "pm.variables.set('a', '1');"
+        );
+        assert_eq!(event_script(&back.event, "test"), "console.log('done');");
+    }
+
+    #[test]
+    fn blank_script_removes_the_event() {
+        let mut events = None;
+        set_event_script(&mut events, "test", "x");
+        set_event_script(&mut events, "test", "   ");
+        assert!(events.is_none());
     }
 }

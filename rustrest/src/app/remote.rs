@@ -662,6 +662,8 @@ pub fn new_collection_pressed(app: &mut Rustrest, profile_id: usize) -> Task<Mes
         storage_dir: None,
         remote_dir: None,
         unsaved: false,
+        auth: None,
+        event: None,
         info: CollectionInfo {
             name: name.clone(),
             postman_id: None,

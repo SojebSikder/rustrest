@@ -1,4 +1,5 @@
 pub mod about_modal;
+pub mod collection_settings;
 pub mod collection_viewer;
 pub mod command_palette;
 pub mod commit_modal;

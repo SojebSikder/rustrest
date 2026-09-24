@@ -1,16 +1,122 @@
 use crate::app::{CollectionSubTab, Rustrest};
-use crate::message::Message;
+use crate::message::{Message, MultilineFieldKind, ResizeKind};
+use crate::ui::collection_settings::CollectionSettingsState;
 use crate::ui::context_menu::{FieldTarget, with_context_menu};
 use crate::ui::docs_view::DocsState;
 use crate::ui::git_panel::{render_git_bar, render_git_panel};
-use iced::widget::{button, checkbox, column, container, row, scrollable, text, text_input};
+use crate::ui::modal::muted_text_color;
+use crate::ui::tab::types::ScriptTab;
+use crate::ui::tab::{AuthFormContext, render_auth_form};
+use iced::widget::{
+    button, checkbox, column, container, radio, row, scrollable, text, text_editor, text_input,
+};
 use iced::{Alignment, Element, Length, Theme};
 
+fn hint(label: &str) -> Element<'_, Message> {
+    text(label)
+        .size(12)
+        .style(|theme: &Theme| text::Style {
+            color: Some(muted_text_color(theme)),
+        })
+        .into()
+}
+
+/// Authorization sub-tab: the auth every request set to "Inherit auth from
+/// parent" uses.
+fn render_collection_auth<'a>(
+    tab_id: usize,
+    collection_id: usize,
+    settings: &'a CollectionSettingsState,
+    app: &'a Rustrest,
+) -> Element<'a, Message> {
+    let form = render_auth_form(
+        &settings.auth,
+        AuthFormContext {
+            tab_id,
+            auth_types: &rustrest_core::AuthType::PARENT,
+            no_auth_note: "This collection does not use any authorization.",
+            inherit_note: "",
+        },
+        move |msg| Message::CollectionAuth(collection_id, msg),
+        // paste targets are per request tab, so these fields get Copy only
+        |_, text| Message::ShowPluginTextContextMenu(text),
+        move |kind: MultilineFieldKind| app.layout.multiline_height(kind),
+        |kind| Message::ResizeDragStarted(ResizeKind::MultilineField(kind)),
+        app.spinner_tick,
+    );
+
+    scrollable(
+        column![
+            hint(
+                "Used by every request in this collection that is set to \"Inherit auth \
+                 from parent\". A request can override it on its own Authorization tab."
+            ),
+            form,
+        ]
+        .spacing(14),
+    )
+    .height(Length::Fill)
+    .into()
+}
+
+/// Scripts sub-tab: run before each request's own pre-request / post-response script.
+fn render_collection_scripts(
+    collection_id: usize,
+    settings: &CollectionSettingsState,
+) -> Element<'_, Message> {
+    let mut radio_bar = row![].spacing(15).align_y(Alignment::Center);
+    for variant in ScriptTab::ALL {
+        radio_bar = radio_bar.push(radio(
+            variant.label(),
+            variant,
+            Some(settings.script_tab),
+            move |s| Message::CollectionScriptTabChanged(collection_id, s),
+        ));
+    }
+
+    let (content, note) = match settings.script_tab {
+        ScriptTab::PreRequest => (
+            &settings.pre_request_script,
+            "Runs before every request in this collection, ahead of the request's own \
+             pre-request script.",
+        ),
+        ScriptTab::PostResponse => (
+            &settings.post_response_script,
+            "Runs after every response in this collection, ahead of the request's own \
+             post-response script.",
+        ),
+    };
+    let script_tab = settings.script_tab;
+    let editor = with_context_menu(
+        text_editor(content)
+            .on_action(move |action| {
+                Message::CollectionScriptAction(collection_id, script_tab, action)
+            })
+            .height(Length::Fill)
+            .padding(10),
+        Message::ShowPluginTextContextMenu(content.selection().unwrap_or_else(|| content.text())),
+    );
+
+    column![
+        radio_bar,
+        hint(note),
+        container(editor)
+            .height(Length::Fill)
+            .style(container::bordered_box),
+    ]
+    .spacing(10)
+    .height(Length::Fill)
+    .into()
+}
+
+#[allow(clippy::too_many_arguments)]
 pub fn render_collection_root<'a>(
+    tab_id: usize,
     collection_id: usize,
     collection_name: &str,
     active_sub_tab: &CollectionSubTab,
     docs: Option<&'a DocsState>,
+    settings: Option<&'a CollectionSettingsState>,
     app: &'a Rustrest,
 ) -> Element<'a, Message, Theme, iced::Renderer> {
     let collections = &app.collections;
@@ -31,6 +137,15 @@ pub fn render_collection_root<'a>(
             .on_press(Message::CollectionSubTabSelected(
                 CollectionSubTab::Documentation
             )),
+        button(text("Authorization"))
+            .style(if *active_sub_tab == CollectionSubTab::Authorization {
+                button::primary
+            } else {
+                button::secondary
+            })
+            .on_press(Message::CollectionSubTabSelected(
+                CollectionSubTab::Authorization
+            )),
         button(text("Variables"))
             .style(if *active_sub_tab == CollectionSubTab::Variables {
                 button::primary
@@ -40,6 +155,13 @@ pub fn render_collection_root<'a>(
             .on_press(Message::CollectionSubTabSelected(
                 CollectionSubTab::Variables
             )),
+        button(text("Scripts"))
+            .style(if *active_sub_tab == CollectionSubTab::Scripts {
+                button::primary
+            } else {
+                button::secondary
+            })
+            .on_press(Message::CollectionSubTabSelected(CollectionSubTab::Scripts)),
     ]
     .spacing(10);
 
@@ -57,6 +179,14 @@ pub fn render_collection_root<'a>(
 
     // content pane layout
     let content_pane: Element<'a, Message, Theme, iced::Renderer> = match active_sub_tab {
+        CollectionSubTab::Authorization => match settings {
+            Some(settings) => render_collection_auth(tab_id, collection_id, settings, app),
+            None => column![].into(),
+        },
+        CollectionSubTab::Scripts => match settings {
+            Some(settings) => render_collection_scripts(collection_id, settings),
+            None => column![].into(),
+        },
         CollectionSubTab::Variables => {
             let mut vars_column: iced::widget::Column<'_, Message, Theme, iced::Renderer> =
                 column![

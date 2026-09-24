@@ -507,6 +507,7 @@ impl Tab {
         &self,
         env: &Option<Environment>,
         collection_vars: Option<&[KeyValuePair]>, // fallback variables parsed from the Postman Collection
+        collection_auth: Option<&rustrest_core::RequestAuth>, // used when this request inherits auth
     ) -> Result<
         (
             String,                // URL
@@ -577,7 +578,10 @@ impl Tab {
 
         // every secret-ish auth field gets the same {{var}} interpolation
         // as headers/body before being applied.
-        let auth_form = self.request_auth.to_core();
+        let auth_form = self
+            .request_auth
+            .to_core()
+            .resolve_inherited(collection_auth);
         let resolved_auth = rustrest_core::RequestAuth {
             custom_raw: resolve(&auth_form.custom_raw),
             bearer_token: resolve(&auth_form.bearer_token),
