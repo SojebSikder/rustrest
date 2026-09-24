@@ -1,9 +1,9 @@
 use crate::app::WorkspaceContent;
 use crate::collection::collection::{
-    GraphQlRequestDetails, GrpcRequestDetails, PostmanBody, PostmanBodyRow, PostmanEvent,
-    PostmanGraphQlBody, PostmanHeader, PostmanRequestDetails, PostmanRequestNode,
-    PostmanResponseExample, PostmanScript, PostmanScriptExec, PostmanUrl, ProtocolRequestDetails,
-    WebSocketRequestDetails,
+    GraphQlRequestDetails, GrpcRequestDetails, PostmanBody, PostmanBodyFile, PostmanBodyRow,
+    PostmanEvent, PostmanFileSrc, PostmanGraphQlBody, PostmanHeader, PostmanRequestDetails,
+    PostmanRequestNode, PostmanResponseExample, PostmanScript, PostmanScriptExec, PostmanUrl,
+    ProtocolRequestDetails, WebSocketRequestDetails,
 };
 use crate::http_client::HttpMethod;
 use crate::ui::tab::Tab;
@@ -91,6 +91,7 @@ pub fn sync_body_from_tab(node: &mut PostmanRequestNode, tab: &Tab) {
                     formdata: None,
                     urlencoded: None,
                     graphql: None,
+                    file: None,
                 })
             }
         }
@@ -106,36 +107,54 @@ pub fn sync_body_from_tab(node: &mut PostmanRequestNode, tab: &Tab) {
                     query,
                     variables: (!variables.trim().is_empty()).then_some(variables),
                 }),
+                file: None,
             })
         }
         BodyType::FormData => Some(PostmanBody {
             mode: Some("formdata".to_string()),
             raw: None,
             graphql: None,
+            file: None,
             formdata: Some(
                 tab.body_form_data
                     .iter()
-                    .map(|r| PostmanBodyRow {
-                        key: r.key.clone(),
-                        value: Some(r.value.clone()),
-                        disabled: Some(!r.is_active),
-                        r#type: Some(match r.field_type {
-                            FormDataType::File => "file".to_string(),
-                            FormDataType::Text => "text".to_string(),
-                        }),
-                        content_type: (!r.content_type.trim().is_empty())
-                            .then(|| r.content_type.clone()),
+                    .map(|r| {
+                        let is_file = r.field_type == FormDataType::File;
+                        PostmanBodyRow {
+                            key: r.key.clone(),
+                            // file rows keep their paths in Postman's `src`
+                            value: (!is_file).then(|| r.value.clone()),
+                            disabled: Some(!r.is_active),
+                            r#type: Some(if is_file { "file" } else { "text" }.to_string()),
+                            content_type: (!r.content_type.trim().is_empty())
+                                .then(|| r.content_type.clone()),
+                            src: if is_file {
+                                PostmanFileSrc::from_paths(&r.files)
+                            } else {
+                                None
+                            },
+                        }
                     })
                     .collect(),
             ),
             urlencoded: None,
         }),
-        // handle urlencoded and binary if types parse it natively or fall back safely
-        BodyType::XWwwFormUrlencoded | BodyType::Binary => Some(PostmanBody {
+        BodyType::Binary => Some(PostmanBody {
+            mode: Some("file".to_string()),
+            raw: None,
+            formdata: None,
+            urlencoded: None,
+            graphql: None,
+            file: Some(PostmanBodyFile {
+                src: tab.binary_file_path.clone(),
+            }),
+        }),
+        BodyType::XWwwFormUrlencoded => Some(PostmanBody {
             mode: Some("urlencoded".to_string()),
             raw: None,
             formdata: None,
             graphql: None,
+            file: None,
             urlencoded: Some(
                 tab.body_urlencoded
                     .iter()
@@ -145,6 +164,7 @@ pub fn sync_body_from_tab(node: &mut PostmanRequestNode, tab: &Tab) {
                         disabled: Some(!u.is_active),
                         r#type: Some("text".to_string()),
                         content_type: None,
+                        src: None,
                     })
                     .collect(),
             ),
@@ -313,11 +333,21 @@ pub fn create_tab_from_request(
                                     Some("file") => FormDataType::File,
                                     _ => FormDataType::Text,
                                 };
-                                let mut row = FormDataRow::new(
-                                    &r.key,
-                                    &r.value.clone().unwrap_or_default(),
-                                    f_type,
-                                );
+                                let value = r.value.clone().unwrap_or_default();
+                                let mut row = match f_type {
+                                    FormDataType::Text => FormDataRow::new(&r.key, &value, f_type),
+                                    FormDataType::File => {
+                                        let mut row = FormDataRow::new(&r.key, "", f_type);
+                                        // collections saved before multi-file support
+                                        // kept the single path in `value`
+                                        row.files = match &r.src {
+                                            Some(src) => src.paths(),
+                                            None if !value.is_empty() => vec![value],
+                                            None => Vec::new(),
+                                        };
+                                        row
+                                    }
+                                };
                                 row.is_active = !r.disabled.unwrap_or(false);
                                 row.content_type = r.content_type.clone().unwrap_or_default();
                                 row
@@ -338,6 +368,15 @@ pub fn create_tab_from_request(
                                 iced::widget::text_editor::Content::with_text(variables);
                         }
                     }
+                }
+                "file" => {
+                    tab.body_type = BodyType::Binary;
+                    tab.active_sub_tab = RequestSubTab::Body;
+                    tab.binary_file_path = body
+                        .file
+                        .as_ref()
+                        .and_then(|f| f.src.clone())
+                        .filter(|src| !src.is_empty());
                 }
                 "urlencoded" => {
                     tab.body_type = BodyType::Raw; // default to raw fallback safely
@@ -564,5 +603,71 @@ fn grpc_state_from_details(details: &GrpcRequestDetails) -> GrpcTabState {
         selected_method: (!details.method.is_empty()).then(|| details.method.clone()),
         request_json: text_editor::Content::with_text(&details.request_json),
         ..GrpcTabState::default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn node_with_saved_body(tab: &Tab) -> PostmanRequestNode {
+        let mut node = PostmanRequestNode {
+            id: 1,
+            name: "req".to_string(),
+            event: None,
+            request: placeholder_request_details("POST", "http://localhost", Vec::new()),
+            unsaved: false,
+            response: None,
+            protocol_request: None,
+        };
+        sync_body_from_tab(&mut node, tab);
+        // go through JSON so the on-disk shape is what's being tested
+        let json = serde_json::to_string(&node).unwrap();
+        serde_json::from_str(&json).unwrap()
+    }
+
+    #[test]
+    fn binary_body_file_survives_save_and_reload() {
+        let mut tab = Tab::new(0);
+        tab.body_type = BodyType::Binary;
+        tab.binary_file_path = Some("/tmp/upload.bin".to_string());
+
+        let node = node_with_saved_body(&tab);
+        let body = node.request.body.as_ref().unwrap();
+        assert_eq!(body.mode.as_deref(), Some("file"));
+
+        let reloaded = create_tab_from_request(0, &node, None);
+        assert_eq!(reloaded.body_type, BodyType::Binary);
+        assert_eq!(
+            reloaded.binary_file_path.as_deref(),
+            Some("/tmp/upload.bin")
+        );
+    }
+
+    #[test]
+    fn multi_file_form_data_row_survives_save_and_reload() {
+        let mut tab = Tab::new(0);
+        tab.body_type = BodyType::FormData;
+        let mut row = FormDataRow::new("docs", "", FormDataType::File);
+        row.files = vec!["/tmp/a.txt".to_string(), "/tmp/b.txt".to_string()];
+        tab.body_form_data = vec![row];
+
+        let node = node_with_saved_body(&tab);
+        let reloaded = create_tab_from_request(0, &node, None);
+        assert_eq!(reloaded.body_type, BodyType::FormData);
+        assert_eq!(
+            reloaded.body_form_data[0].files,
+            vec!["/tmp/a.txt", "/tmp/b.txt"]
+        );
+    }
+
+    #[test]
+    fn legacy_single_file_form_data_row_loads_from_value() {
+        let json = r#"{"name":"req","request":{"method":"POST","url":"http://x",
+            "body":{"mode":"formdata","formdata":[
+                {"key":"avatar","value":"/tmp/old.png","type":"file"}]}}}"#;
+        let node: PostmanRequestNode = serde_json::from_str(json).unwrap();
+        let tab = create_tab_from_request(0, &node, None);
+        assert_eq!(tab.body_form_data[0].files, vec!["/tmp/old.png"]);
     }
 }

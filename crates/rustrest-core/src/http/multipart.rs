@@ -18,10 +18,9 @@ pub(crate) async fn encode(
     let mut body = Vec::new();
 
     for row in active_rows {
-        body.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
-
         match row.field_type {
             FormDataType::Text => {
+                body.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
                 body.extend_from_slice(
                     format!("Content-Disposition: form-data; name=\"{}\"\r\n", row.key).as_bytes(),
                 );
@@ -34,36 +33,40 @@ pub(crate) async fn encode(
                 body.extend_from_slice(b"\r\n");
             }
             FormDataType::File => {
-                if row.value.trim().is_empty() {
-                    continue;
-                }
-                let path = Path::new(&row.value);
-                if !path.exists() {
-                    continue;
-                }
-                let file_bytes = tokio::fs::read(path)
-                    .await
-                    .map_err(|e| format!("Form File Read Failure: {}", e))?;
-                let file_name = path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("file")
-                    .to_string();
+                // one part per file, all sharing the row's field name
+                for file in &row.files {
+                    if file.trim().is_empty() {
+                        continue;
+                    }
+                    let path = Path::new(file);
+                    if !path.exists() {
+                        continue;
+                    }
+                    let file_bytes = tokio::fs::read(path)
+                        .await
+                        .map_err(|e| format!("Form File Read Failure: {}", e))?;
+                    let file_name = path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("file")
+                        .to_string();
 
-                let content_type = match row.content_type.trim() {
-                    "" => guess_mime(&file_name),
-                    explicit => explicit,
-                };
-                body.extend_from_slice(
-                    format!(
-                        "Content-Disposition: form-data; name=\"{}\"; filename=\"{}\"\r\n\
-                         Content-Type: {}\r\n\r\n",
-                        row.key, file_name, content_type
-                    )
-                    .as_bytes(),
-                );
-                body.extend_from_slice(&file_bytes);
-                body.extend_from_slice(b"\r\n");
+                    let content_type = match row.content_type.trim() {
+                        "" => guess_mime(&file_name),
+                        explicit => explicit,
+                    };
+                    body.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
+                    body.extend_from_slice(
+                        format!(
+                            "Content-Disposition: form-data; name=\"{}\"; filename=\"{}\"\r\n\
+                             Content-Type: {}\r\n\r\n",
+                            row.key, file_name, content_type
+                        )
+                        .as_bytes(),
+                    );
+                    body.extend_from_slice(&file_bytes);
+                    body.extend_from_slice(b"\r\n");
+                }
             }
         }
     }
@@ -129,7 +132,8 @@ mod tests {
         let mut json = FormDataRow::new("data", r#"{"a":1}"#, FormDataType::Text);
         json.content_type = "application/json".to_string();
         let plain = FormDataRow::new("note", "hi", FormDataType::Text);
-        let file = FormDataRow::new("avatar", path.to_str().unwrap(), FormDataType::File);
+        let mut file = FormDataRow::new("avatar", "", FormDataType::File);
+        file.files = vec![path.to_str().unwrap().to_string()];
 
         let (_, body) = encode(vec![json, plain, file]).await.unwrap().unwrap();
         let body = String::from_utf8(body).unwrap();
@@ -142,5 +146,34 @@ mod tests {
         assert!(body.contains(
             "filename=\"rustrest-multipart-test.png\"\r\nContent-Type: image/png\r\n\r\nPNGDATA\r\n"
         ));
+    }
+
+    #[tokio::test]
+    async fn file_row_with_several_files_sends_one_part_each_under_the_same_key() {
+        let dir = std::env::temp_dir();
+        let a = dir.join("rustrest-multipart-multi-a.txt");
+        let b = dir.join("rustrest-multipart-multi-b.json");
+        std::fs::write(&a, b"AAA").unwrap();
+        std::fs::write(&b, b"{}").unwrap();
+
+        let mut row = FormDataRow::new("docs", "", FormDataType::File);
+        row.files = vec![
+            a.to_str().unwrap().to_string(),
+            b.to_str().unwrap().to_string(),
+        ];
+
+        let (boundary, body) = encode(vec![row]).await.unwrap().unwrap();
+        let body = String::from_utf8(body).unwrap();
+        std::fs::remove_file(&a).ok();
+        std::fs::remove_file(&b).ok();
+
+        assert_eq!(body.matches(&format!("--{boundary}\r\n")).count(), 2);
+        assert!(body.contains(
+            "name=\"docs\"; filename=\"rustrest-multipart-multi-a.txt\"\r\nContent-Type: text/plain\r\n\r\nAAA\r\n"
+        ));
+        assert!(body.contains(
+            "name=\"docs\"; filename=\"rustrest-multipart-multi-b.json\"\r\nContent-Type: application/json\r\n\r\n{}\r\n"
+        ));
+        assert!(body.ends_with(&format!("--{boundary}--\r\n")));
     }
 }

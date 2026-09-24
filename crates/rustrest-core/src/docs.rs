@@ -389,6 +389,26 @@ fn request_body(out: &mut String, body: &PostmanBody) {
                 table(out, &["Key", "Value", "Type"], &rows);
             }
         }
+        Some("file") => {
+            let file_name = body
+                .file
+                .as_ref()
+                .and_then(|f| f.src.as_deref())
+                .filter(|src| !src.is_empty())
+                .map(|src| {
+                    std::path::Path::new(src)
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or(src)
+                });
+            if let Some(file_name) = file_name {
+                let _ = writeln!(
+                    out,
+                    "**Body** (`binary`): `{file_name}`
+"
+                );
+            }
+        }
         Some("graphql") => {
             if let Some(gql) = &body.graphql {
                 graphql_body(out, &gql.query, gql.variables.as_deref());
@@ -402,7 +422,23 @@ fn body_rows(rows: &[PostmanBodyRow], with_type: bool) -> Vec<Vec<String>> {
     rows.iter()
         .filter(|r| r.disabled != Some(true) && !r.key.is_empty())
         .map(|r| {
-            let mut cells = vec![r.key.clone(), r.value.clone().unwrap_or_default()];
+            // file rows show their file names rather than full local paths
+            let value = match &r.src {
+                Some(src) if r.r#type.as_deref() == Some("file") => src
+                    .paths()
+                    .iter()
+                    .map(|p| {
+                        std::path::Path::new(p)
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or(p)
+                            .to_string()
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                _ => r.value.clone().unwrap_or_default(),
+            };
+            let mut cells = vec![r.key.clone(), value];
             if with_type {
                 let kind = r.r#type.clone().unwrap_or_else(|| "text".to_string());
                 cells.push(match r.content_type.as_deref().filter(|c| !c.is_empty()) {

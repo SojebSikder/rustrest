@@ -365,6 +365,7 @@ impl Tab {
                 if let Some(row) = self.body_form_data.get_mut(index) {
                     row.field_type = new_type;
                     row.value.clear();
+                    row.files.clear();
                 }
                 if let Some(content) = self.body_form_data_values.get_mut(index) {
                     *content = text_editor::Content::new();
@@ -441,9 +442,15 @@ impl Tab {
                 self.binary_file_path = Some(path);
             }
             TabMessage::SelectFormDataFile(index) => {
-                if let Some(path) = rfd::FileDialog::new().pick_file() {
-                    if let Some(row) = self.body_form_data.get_mut(index) {
-                        row.value = path.display().to_string();
+                // appends, so files from different folders can share one key
+                if let Some(paths) = rfd::FileDialog::new().pick_files()
+                    && let Some(row) = self.body_form_data.get_mut(index)
+                {
+                    for path in paths {
+                        let path = path.display().to_string();
+                        if !row.files.contains(&path) {
+                            row.files.push(path);
+                        }
                     }
                 }
             }
@@ -563,6 +570,7 @@ impl Tab {
                 key: resolve(&row.key),
                 value: resolve(&row.value),
                 field_type: row.field_type,
+                files: row.files.iter().map(|f| resolve(f)).collect(),
                 content_type: resolve(&row.content_type),
             })
             .collect();
