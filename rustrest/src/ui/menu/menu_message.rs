@@ -6,6 +6,7 @@ pub enum MenuMessage {
     FileExit,
     CommandPalette,
     HelpAbout,
+    ViewReleaseNotes,
     CheckForUpdate,
     OpenPluginManager,
     OpenSettings,

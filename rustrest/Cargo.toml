@@ -29,6 +29,7 @@ url = "2.5.8"
 rfd = "0.17.2"
 self_update = { version = "1.2.0", default-features = false, features = ["rustls", "reqwest", "archive-tar", "compression-tar-xz", "archive-zip", "compression-zip-deflate"] }
 sha2 = "0.10"
+htmd = "0.5"
 dirs = "7.0.0"
 mimalloc = "0.1.52"
 

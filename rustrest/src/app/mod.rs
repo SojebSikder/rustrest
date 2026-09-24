@@ -8,6 +8,7 @@ mod layout;
 mod overlays;
 mod plugin_collection_ops;
 mod plugins;
+mod release_notes;
 mod remote;
 mod settings;
 mod sidebar;
@@ -71,6 +72,8 @@ pub enum WorkspaceContent {
         panel_id: String,
     },
     PluginManager,
+    /// Help > View Release Notes: the running version's notes, fetched from GitHub
+    ReleaseNotes(crate::ui::release_notes::ReleaseNotesState),
     WebSocket(crate::ui::tab::ws::WsTabState),
     GraphQl(crate::ui::tab::graphql::GraphQlTabState),
     Grpc(crate::ui::tab::grpc::GrpcTabState),
@@ -143,6 +146,14 @@ impl Rustrest {
             || self.status_bar.has_active_spinner()
             || self.tabs.iter().any(|t| {
                 matches!(
+                    t.content,
+                    WorkspaceContent::ReleaseNotes(
+                        crate::ui::release_notes::ReleaseNotesState::Loading
+                    )
+                )
+            })
+            || self.tabs.iter().any(|t| {
+                matches!(
                     &t.content,
                     WorkspaceContent::CollectionRoot { collection_id, active_sub_tab, .. }
                         if *active_sub_tab == CollectionSubTab::Git
@@ -179,7 +190,7 @@ impl Rustrest {
                 // plugin panels are re-derived from the plugin on demand;
                 // nothing to persist.
                 WorkspaceContent::Plugin { .. } => None,
-                WorkspaceContent::PluginManager => None,
+                WorkspaceContent::PluginManager | WorkspaceContent::ReleaseNotes(_) => None,
                 WorkspaceContent::Folder(_) => None,
                 WorkspaceContent::WebSocket(_)
                 | WorkspaceContent::GraphQl(_)
@@ -336,7 +347,7 @@ impl Rustrest {
                 WorkspaceContent::Terminal { .. } => false,
                 WorkspaceContent::RemoteFile { .. } => false,
                 WorkspaceContent::Plugin { .. } => false,
-                WorkspaceContent::PluginManager => false,
+                WorkspaceContent::PluginManager | WorkspaceContent::ReleaseNotes(_) => false,
                 WorkspaceContent::Folder(_) => false,
             };
             if belongs {
@@ -387,7 +398,7 @@ impl Rustrest {
                 WorkspaceContent::Terminal { .. } => {}
                 WorkspaceContent::RemoteFile { .. } => {}
                 WorkspaceContent::Plugin { .. } => {}
-                WorkspaceContent::PluginManager => {}
+                WorkspaceContent::PluginManager | WorkspaceContent::ReleaseNotes(_) => {}
                 WorkspaceContent::Folder(_) => {}
                 WorkspaceContent::WebSocket(_)
                 | WorkspaceContent::GraphQl(_)
@@ -917,7 +928,8 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                                 WorkspaceContent::Terminal { .. } => false,
                                 WorkspaceContent::RemoteFile { .. } => false,
                                 WorkspaceContent::Plugin { .. } => false,
-                                WorkspaceContent::PluginManager => false,
+                                WorkspaceContent::PluginManager
+                                | WorkspaceContent::ReleaseNotes(_) => false,
                                 WorkspaceContent::Folder(_) => false,
                                 WorkspaceContent::WebSocket(_)
                                 | WorkspaceContent::GraphQl(_)
@@ -1587,6 +1599,9 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         Message::ShowAboutModal => overlays::show_about_modal(app),
         Message::CloseAboutModal => overlays::close_about_modal(app),
         Message::AboutModalAction(action) => overlays::about_modal_action(app, action),
+        Message::ViewReleaseNotes => release_notes::view_release_notes(app),
+        Message::ReleaseNotesLoaded(result) => release_notes::release_notes_loaded(app, result),
+        Message::ReleaseNotesLinkClicked(uri) => docs::link_clicked(uri),
         Message::SaveRequestConfirmed => workbench::save_request_confirmed(app),
         Message::SaveActiveRequestShortcut => workbench::save_active_request_shortcut(app), // end save_request_model actions
 

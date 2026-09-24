@@ -466,6 +466,7 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
             "Help",
             vec![
                 DropdownItem::new("Check for Updates", MenuMessage::CheckForUpdate),
+                DropdownItem::new("View Release Notes", MenuMessage::ViewReleaseNotes),
                 DropdownItem::new("About", MenuMessage::HelpAbout),
             ],
         ),

@@ -380,6 +380,11 @@ pub enum Message {
     CloseAboutModal,
     AboutModalAction(iced::widget::text_editor::Action),
 
+    // Help > View Release Notes tab
+    ViewReleaseNotes,
+    ReleaseNotesLoaded(Result<String, String>),
+    ReleaseNotesLinkClicked(String),
+
     //
     ShowCollectionContextMenu(usize),
     ShowGitActionsMenu(usize),

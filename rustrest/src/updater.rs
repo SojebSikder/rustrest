@@ -252,3 +252,75 @@ async fn perform_update_into_with_progress(
 
     Ok(version)
 }
+
+/// markdown notes of the GitHub release for `version`
+pub async fn fetch_release_notes(version: &str) -> Result<String, String> {
+    let url = format!("https://github.com/{REPO_OWNER}/{REPO_NAME}/releases/tag/v{version}");
+    let response = reqwest::Client::new()
+        .get(&url)
+        .header(reqwest::header::USER_AGENT, BIN_NAME)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
+        return Err(format!("no GitHub release found for v{version}"));
+    }
+    if !response.status().is_success() {
+        return Err(format!("GitHub returned HTTP {}", response.status()));
+    }
+
+    let html = response.text().await.map_err(|e| e.to_string())?;
+    // a release published without notes has no body element at all
+    let Some(body) = extract_release_body(&html) else {
+        return Ok(String::new());
+    };
+    htmd::convert(body).map_err(|e| e.to_string())
+}
+
+/// inner HTML of the release page's rendered-notes `<div>`, matched up to
+/// its own closing tag by counting nested `<div>`s.
+fn extract_release_body(html: &str) -> Option<&str> {
+    const MARKER: &str = r#"data-test-selector="body-content""#;
+    let marker = html.find(MARKER)?;
+    let start = marker + html[marker..].find('>')? + 1;
+
+    let mut depth = 1;
+    let mut pos = start;
+    loop {
+        let rest = &html[pos..];
+        let close = rest.find("</div")?;
+        match rest.find("<div") {
+            Some(open) if open < close => {
+                depth += 1;
+                pos += open + "<div".len();
+            }
+            _ => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&html[start..pos + close]);
+                }
+                pos += close + "</div".len();
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_release_body;
+
+    #[test]
+    fn extracts_nested_release_body() {
+        let html = r#"<div class="box"><div data-pjax="true" data-test-selector="body-content" class="markdown-body"><h2>Changelog</h2><div class="snippet"><pre>x</pre></div><p>end</p></div><div>footer</div></div>"#;
+        assert_eq!(
+            extract_release_body(html),
+            Some(r#"<h2>Changelog</h2><div class="snippet"><pre>x</pre></div><p>end</p>"#)
+        );
+    }
+
+    #[test]
+    fn missing_body_is_none() {
+        assert_eq!(extract_release_body("<div>no notes</div>"), None);
+    }
+}
