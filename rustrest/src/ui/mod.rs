@@ -15,6 +15,7 @@ pub mod multiline_input;
 pub mod plugin_manager;
 pub mod plugin_panel;
 pub mod progress_ring;
+pub mod release_notes;
 pub mod remote;
 pub mod resize_handle;
 pub mod response_timing_modal;

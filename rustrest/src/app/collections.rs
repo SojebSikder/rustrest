@@ -189,7 +189,7 @@ fn clear_tab_dirty_for_collection(app: &mut Rustrest, col_id: usize) {
             WorkspaceContent::Terminal { .. } => false,
             WorkspaceContent::RemoteFile { .. } => false,
             WorkspaceContent::Plugin { .. } => false,
-            WorkspaceContent::PluginManager => false,
+            WorkspaceContent::PluginManager | WorkspaceContent::ReleaseNotes(_) => false,
             WorkspaceContent::Folder(_) => false,
             WorkspaceContent::WebSocket(_)
             | WorkspaceContent::GraphQl(_)

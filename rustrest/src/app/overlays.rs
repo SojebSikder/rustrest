@@ -252,6 +252,9 @@ pub fn menu_interaction(
             MenuMessage::CheckForUpdate => {
                 return super::update(app, Message::CheckForUpdate);
             }
+            MenuMessage::ViewReleaseNotes => {
+                return super::update(app, Message::ViewReleaseNotes);
+            }
             MenuMessage::HelpAbout => {
                 return super::update(app, Message::ShowAboutModal);
             }

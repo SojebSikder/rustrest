@@ -71,6 +71,7 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
             WorkspaceContent::RemoteFile { .. } => text("☁").size(11).into(),
             WorkspaceContent::Plugin { .. } => text("⚙").size(11).into(),
             WorkspaceContent::PluginManager => text("🧩").size(11).into(),
+            WorkspaceContent::ReleaseNotes(_) => text("📄").size(11).into(),
             WorkspaceContent::Folder(_) => text("📁").size(11).into(),
             WorkspaceContent::WebSocket(_) => text("WS").size(11).into(),
             WorkspaceContent::GraphQl(_) => text("GQL").size(11).into(),
@@ -259,6 +260,11 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
         }
 
         WorkspaceContent::PluginManager => super::plugin_manager::render_plugin_manager_tab(app),
+        WorkspaceContent::ReleaseNotes(state) => super::release_notes::render_release_notes_tab(
+            state,
+            &app.settings.theme.to_iced(),
+            app.spinner_tick,
+        ),
 
         WorkspaceContent::WebSocket(state) => super::tab::ws::view(
             state,

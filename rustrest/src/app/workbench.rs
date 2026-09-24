@@ -40,6 +40,7 @@ fn finalize_tab_rename(app: &mut Rustrest, idx: usize) {
                 WorkspaceContent::RemoteFile { path, .. } => path.clone(),
                 WorkspaceContent::Plugin { panel_id, .. } => panel_id.clone(),
                 WorkspaceContent::PluginManager => "Manage Plugins".to_string(),
+                WorkspaceContent::ReleaseNotes(_) => "Release Notes".to_string(),
                 WorkspaceContent::Folder(_) => "Folder".to_string(),
                 WorkspaceContent::WebSocket(_) => "WebSocket Request".to_string(),
                 WorkspaceContent::GraphQl(_) => "GraphQL Request".to_string(),
@@ -1088,7 +1089,7 @@ pub fn save_active_request_shortcut(app: &mut Rustrest) -> Task<Message> {
                 super::update(app, Message::RemoteFileSavePressed(tab_id))
             }
             WorkspaceContent::Plugin { .. } => Task::none(),
-            WorkspaceContent::PluginManager => Task::none(),
+            WorkspaceContent::PluginManager | WorkspaceContent::ReleaseNotes(_) => Task::none(),
             WorkspaceContent::Folder(docs) => {
                 super::update(app, Message::SaveCollectionPressed(docs.collection_id))
             }
