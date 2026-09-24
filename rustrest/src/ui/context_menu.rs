@@ -555,10 +555,8 @@ pub fn apply_field_paste(app: &mut Rustrest, target: FieldTarget, text: String) 
                 TabFieldTarget::FormDataKey(idx) => {
                     if let Some(row) = tab.body_form_data.get(idx) {
                         let updated = FormDataRow {
-                            is_active: row.is_active,
                             key: text,
-                            value: row.value.clone(),
-                            field_type: row.field_type,
+                            ..row.clone()
                         };
                         tab.update(TabMessage::FormDataRowChanged(idx, updated));
                     }

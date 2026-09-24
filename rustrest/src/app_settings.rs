@@ -7,6 +7,8 @@ pub struct PersistedSettings {
     pub theme: AppTheme,
     #[serde(default = "default_true")]
     pub close_on_outside_click: bool,
+    #[serde(default)]
+    pub show_form_data_content_type: bool,
 }
 
 fn default_true() -> bool {
@@ -18,6 +20,7 @@ impl Default for PersistedSettings {
         Self {
             theme: AppTheme::default(),
             close_on_outside_click: true,
+            show_form_data_content_type: false,
         }
     }
 }

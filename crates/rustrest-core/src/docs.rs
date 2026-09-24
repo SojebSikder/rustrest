@@ -404,7 +404,11 @@ fn body_rows(rows: &[PostmanBodyRow], with_type: bool) -> Vec<Vec<String>> {
         .map(|r| {
             let mut cells = vec![r.key.clone(), r.value.clone().unwrap_or_default()];
             if with_type {
-                cells.push(r.r#type.clone().unwrap_or_else(|| "text".to_string()));
+                let kind = r.r#type.clone().unwrap_or_else(|| "text".to_string());
+                cells.push(match r.content_type.as_deref().filter(|c| !c.is_empty()) {
+                    Some(content_type) => format!("{kind} ({content_type})"),
+                    None => kind,
+                });
             }
             cells
         })

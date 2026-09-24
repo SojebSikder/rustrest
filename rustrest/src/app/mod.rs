@@ -573,6 +573,7 @@ pub fn init() -> (Rustrest, Task<Message>) {
             settings_tab: SettingsTab::default(),
             theme: persisted_settings.theme,
             close_on_outside_click: persisted_settings.close_on_outside_click,
+            show_form_data_content_type: persisted_settings.show_form_data_content_type,
         },
         status_bar: crate::ui::status_bar::StatusBarState::default(),
     };

@@ -96,6 +96,9 @@ pub enum TabMessage {
 
     FormDataRowChanged(usize, FormDataRow),
     AddFormDataRow,
+    /// shows/hides the Content-Type column of every form-data table (an app preference);
+    /// intercepted at the app level before reaching `Tab::update`.
+    ToggleFormDataContentType,
     RemoveFormDataRow(usize),
 
     UrlencodedRowChanged(usize, KeyValuePair),
@@ -204,6 +207,7 @@ impl TabMessage {
             },
 
             TabMessage::SubTabSelected(_)
+            | TabMessage::ToggleFormDataContentType
             | TabMessage::ResponseViewChanged(_)
             | TabMessage::ResponseSubTabSelected(_)
             | TabMessage::ResponseBodyEditorAction(_)

@@ -13,12 +13,15 @@ pub struct SettingsState {
     pub theme: AppTheme,
     /// whether clicking outside an open modal/command palette dismisses it
     pub close_on_outside_click: bool,
+    /// whether form-data tables show the per-field Content-Type column
+    pub show_form_data_content_type: bool,
 }
 
 pub(super) fn persist(app: &Rustrest) {
     crate::app_settings::save(&crate::app_settings::PersistedSettings {
         theme: app.settings.theme,
         close_on_outside_click: app.settings.close_on_outside_click,
+        show_form_data_content_type: app.settings.show_form_data_content_type,
     });
 }
 
@@ -39,6 +42,12 @@ pub fn tab_selected(app: &mut Rustrest, tab: SettingsTab) -> Task<Message> {
 
 pub fn theme_selected(app: &mut Rustrest, theme: AppTheme) -> Task<Message> {
     app.settings.theme = theme;
+    persist(app);
+    Task::none()
+}
+
+pub fn form_data_content_type_toggled(app: &mut Rustrest) -> Task<Message> {
+    app.settings.show_form_data_content_type = !app.settings.show_form_data_content_type;
     persist(app);
     Task::none()
 }

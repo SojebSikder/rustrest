@@ -3,6 +3,7 @@ mod stream;
 mod timed_client;
 mod tls;
 
+pub use multipart::guess_mime;
 pub use stream::{StreamingResponse, open_stream};
 pub use tls::client_config;
 
@@ -340,13 +341,12 @@ async fn prepare(spec: RequestSpec) -> Result<PreparedRequest, String> {
     )
     .await?;
 
+    // the body encoding's own header (the multipart boundary) always wins: a
+    // user-set `Content-Type`, e.g. the default `application/json` on a new
+    // tab, would otherwise hide the boundary and the server couldn't parse it.
     if let Some((key, val)) = extra_header {
-        if !header_list
-            .iter()
-            .any(|(k, _)| k.eq_ignore_ascii_case(&key))
-        {
-            header_list.push((key, val));
-        }
+        header_list.retain(|(k, _)| !k.eq_ignore_ascii_case(&key));
+        header_list.push((key, val));
     }
 
     Ok(PreparedRequest {
@@ -495,4 +495,33 @@ pub async fn send_request_auto(
         prepared.prepare,
         process_start,
     )))
+}
+
+#[cfg(test)]
+mod prepare_tests {
+    use super::*;
+    use crate::common::FormDataType;
+
+    #[tokio::test]
+    async fn multipart_content_type_replaces_a_user_set_one() {
+        let spec = RequestSpec::new("http://localhost/upload", HttpMethod::POST)
+            .body_type(BodyType::FormData)
+            .form_data(vec![FormDataRow::new("data", "{}", FormDataType::Text)])
+            .headers(vec![
+                ("content-type".to_string(), "application/json".to_string()),
+                ("Accept".to_string(), "*/*".to_string()),
+            ]);
+
+        let prepared = prepare(spec).await.unwrap();
+        let content_types: Vec<&str> = prepared
+            .headers
+            .iter()
+            .filter(|(k, _)| k.eq_ignore_ascii_case("content-type"))
+            .map(|(_, v)| v.as_str())
+            .collect();
+
+        assert_eq!(content_types.len(), 1);
+        assert!(content_types[0].starts_with("multipart/form-data; boundary="));
+        assert!(prepared.headers.iter().any(|(k, _)| k == "Accept"));
+    }
 }
