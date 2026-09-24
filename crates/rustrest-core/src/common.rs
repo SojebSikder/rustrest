@@ -53,8 +53,11 @@ impl std::fmt::Display for FormDataType {
 pub struct FormDataRow {
     pub is_active: bool,
     pub key: String,
+    /// text parts only; file parts use `files`
     pub value: String,
     pub field_type: FormDataType,
+    /// file parts only: every path is sent as its own part under `key`
+    pub files: Vec<String>,
     /// the part's `Content-Type`; empty means none for text parts and a type
     /// guessed from the file extension for file parts.
     pub content_type: String,
@@ -67,6 +70,7 @@ impl FormDataRow {
             key: String::from(key),
             value: String::from(value),
             field_type,
+            files: Vec::new(),
             content_type: String::new(),
         }
     }

@@ -148,21 +148,54 @@ where
                 None => text_input("Value", &item.value).padding(8).into(),
             },
             FormDataType::File => {
-                let display_path = if item.value.is_empty() {
-                    "No file selected"
+                let pick_label = if item.files.is_empty() {
+                    "Select Files"
                 } else {
-                    &item.value
+                    "Add Files"
                 };
-                row![
-                    button(text("Select File").size(12))
-                        .padding(6)
-                        .on_press(on_file_pick(idx)),
-                    text(display_path).size(12).width(Length::Fill)
-                ]
-                .spacing(10)
-                .align_y(Alignment::Center)
-                .width(Length::Fill)
-                .into()
+                let pick_btn = button(text(pick_label).size(12))
+                    .padding(6)
+                    .on_press(on_file_pick(idx));
+
+                if item.files.is_empty() {
+                    row![pick_btn, text("No files selected").size(12)]
+                        .spacing(10)
+                        .align_y(Alignment::Center)
+                        .width(Length::Fill)
+                        .into()
+                } else {
+                    // one line per file, each removable on its own
+                    let mut files_list = column![].spacing(4).width(Length::Fill);
+                    for (file_idx, path) in item.files.iter().enumerate() {
+                        let file_row_item = item.clone();
+                        files_list = files_list.push(
+                            row![
+                                text(path).size(12).width(Length::Fill),
+                                button(text("\u{2715}").size(11))
+                                    .padding([2, 6])
+                                    .style(button::text)
+                                    .on_press_with(move || {
+                                        let mut files = file_row_item.files.clone();
+                                        files.remove(file_idx);
+                                        on_change(
+                                            idx,
+                                            FormDataRow {
+                                                files,
+                                                ..file_row_item.clone()
+                                            },
+                                        )
+                                    }),
+                            ]
+                            .spacing(6)
+                            .align_y(Alignment::Center),
+                        );
+                    }
+                    row![pick_btn, files_list]
+                        .spacing(10)
+                        .align_y(Alignment::Center)
+                        .width(Length::Fill)
+                        .into()
+                }
             }
         };
 
@@ -206,12 +239,25 @@ where
         // text, a type guessed from the extension for files, the placeholder shows which.
         if show_content_type {
             let placeholder = match item.field_type {
-                FormDataType::File if !item.value.is_empty() => {
-                    let file_name = std::path::Path::new(&item.value)
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or_default();
-                    format!("Auto ({})", rustrest_core::http::guess_mime(file_name))
+                FormDataType::File if !item.files.is_empty() => {
+                    let mut mimes: Vec<&str> = item
+                        .files
+                        .iter()
+                        .map(|path| {
+                            let file_name = std::path::Path::new(path)
+                                .file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or_default();
+                            rustrest_core::http::guess_mime(file_name)
+                        })
+                        .collect();
+                    mimes.sort_unstable();
+                    mimes.dedup();
+                    if mimes.len() == 1 {
+                        format!("Auto ({})", mimes[0])
+                    } else {
+                        "Auto (per file)".to_string()
+                    }
                 }
                 _ => "Auto".to_string(),
             };

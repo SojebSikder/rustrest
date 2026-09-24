@@ -394,6 +394,14 @@ pub struct PostmanBody {
     pub urlencoded: Option<Vec<PostmanBodyRow>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub graphql: Option<PostmanGraphQlBody>,
+    /// a binary body's file (Postman's `mode: "file"`)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<PostmanBodyFile>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PostmanBodyFile {
+    pub src: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -415,6 +423,35 @@ pub struct PostmanBodyRow {
         skip_serializing_if = "Option::is_none"
     )]
     pub content_type: Option<String>,
+    /// a form-data file row's path(s) (Postman's `src`)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub src: Option<PostmanFileSrc>,
+}
+
+/// Postman writes a single-file `src` as a string and a multi-file one as an array
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum PostmanFileSrc {
+    One(String),
+    Many(Vec<String>),
+}
+
+impl PostmanFileSrc {
+    pub fn from_paths(paths: &[String]) -> Option<Self> {
+        match paths {
+            [] => None,
+            [one] => Some(Self::One(one.clone())),
+            many => Some(Self::Many(many.to_vec())),
+        }
+    }
+
+    pub fn paths(&self) -> Vec<String> {
+        match self {
+            Self::One(path) if path.is_empty() => Vec::new(),
+            Self::One(path) => vec![path.clone()],
+            Self::Many(paths) => paths.clone(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -473,5 +510,29 @@ mod auth_backcompat_tests {
             "description":{"content":"**bold**","type":"text/markdown"}}"#;
         let details: PostmanRequestDetails = serde_json::from_str(json).unwrap();
         assert_eq!(details.description.as_deref(), Some("**bold**"));
+    }
+
+    #[test]
+    fn form_data_file_src_accepts_a_string_or_an_array_and_round_trips() {
+        let rows: Vec<PostmanBodyRow> = serde_json::from_str(
+            r#"[{"key":"a","type":"file","src":"/tmp/one.png"},
+                {"key":"b","type":"file","src":["/tmp/x.txt","/tmp/y.txt"]},
+                {"key":"c","type":"file","src":""},
+                {"key":"d","type":"text","value":"hi"}]"#,
+        )
+        .unwrap();
+        assert_eq!(rows[0].src.as_ref().unwrap().paths(), vec!["/tmp/one.png"]);
+        assert_eq!(
+            rows[1].src.as_ref().unwrap().paths(),
+            vec!["/tmp/x.txt", "/tmp/y.txt"]
+        );
+        assert!(rows[2].src.as_ref().unwrap().paths().is_empty());
+        assert!(rows[3].src.is_none());
+
+        let paths = vec!["/tmp/x.txt".to_string(), "/tmp/y.txt".to_string()];
+        let json = serde_json::to_value(PostmanFileSrc::from_paths(&paths)).unwrap();
+        assert_eq!(json, serde_json::json!(["/tmp/x.txt", "/tmp/y.txt"]));
+        let json = serde_json::to_value(PostmanFileSrc::from_paths(&paths[..1])).unwrap();
+        assert_eq!(json, serde_json::json!("/tmp/x.txt"));
     }
 }
