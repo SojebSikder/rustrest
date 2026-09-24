@@ -110,6 +110,7 @@ pub fn render_configuration_pane<'a, Message>(
     on_multiline_resize_start: impl Fn(MultilineFieldKind) -> Message + Copy + 'a,
     spinner_tick: u64,
     theme: &iced::Theme,
+    show_form_data_content_type: bool,
 ) -> Element<'a, Message>
 where
     Message: Clone + 'static,
@@ -259,6 +260,8 @@ where
                     tab_id,
                     multiline_height,
                     on_multiline_resize_start,
+                    show_form_data_content_type,
+                    wrap_msg(TabMessage::ToggleFormDataContentType),
                 ),
 
                 BodyType::XWwwFormUrlencoded => kv_editor_pane(

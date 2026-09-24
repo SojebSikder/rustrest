@@ -3,7 +3,7 @@ use crate::message::{KvValueField, MultilineFieldKind};
 use crate::ui::context_menu::with_context_menu;
 use crate::ui::multiline_input::multiline_input;
 use iced::widget::{
-    button, checkbox, column, pick_list, row, scrollable, text, text_editor, text_input,
+    button, checkbox, column, pick_list, row, scrollable, space, text, text_editor, text_input,
 };
 use iced::{Alignment, Element, Length};
 
@@ -115,6 +115,8 @@ pub fn form_data_editor_pane<'a, Message>(
     tab_id: usize,
     get_height: impl Fn(MultilineFieldKind) -> f32 + Copy + 'a,
     on_resize_start: impl Fn(MultilineFieldKind) -> Message + Copy + 'a,
+    show_content_type: bool,
+    on_toggle_content_type: Message,
 ) -> Element<'a, Message>
 where
     Message: Clone + 'a,
@@ -166,16 +168,15 @@ where
 
         let cb_item_clone = item.clone();
         let ki_item_clone = item.clone();
+        let ct_item_clone = item.clone();
 
-        let row_element = row![
+        let mut row_element = row![
             checkbox(item.is_active).on_toggle(move |checked| {
                 on_change(
                     idx,
                     FormDataRow {
                         is_active: checked,
-                        key: cb_item_clone.key.clone(),
-                        value: cb_item_clone.value.clone(),
-                        field_type: cb_item_clone.field_type,
+                        ..cb_item_clone.clone()
                     },
                 )
             }),
@@ -185,10 +186,8 @@ where
                         on_change(
                             idx,
                             FormDataRow {
-                                is_active: ki_item_clone.is_active,
                                 key: k,
-                                value: ki_item_clone.value.clone(),
-                                field_type: ki_item_clone.field_type,
+                                ..ki_item_clone.clone()
                             },
                         )
                     })
@@ -198,21 +197,67 @@ where
             ),
             type_picker,
             value_field,
-            button("Delete")
-                .on_press(on_remove(idx))
-                .padding(8)
-                .style(button::danger)
         ]
         .spacing(8)
         .align_y(Alignment::Center);
 
+        // per-part Content-Type, e.g. `application/json` for a JSON text
+        // field sent alongside files. blank means the default: no header for
+        // text, a type guessed from the extension for files, the placeholder shows which.
+        if show_content_type {
+            let placeholder = match item.field_type {
+                FormDataType::File if !item.value.is_empty() => {
+                    let file_name = std::path::Path::new(&item.value)
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or_default();
+                    format!("Auto ({})", rustrest_core::http::guess_mime(file_name))
+                }
+                _ => "Auto".to_string(),
+            };
+            row_element = row_element.push(
+                text_input(&placeholder, &item.content_type)
+                    .on_input(move |content_type| {
+                        on_change(
+                            idx,
+                            FormDataRow {
+                                content_type,
+                                ..ct_item_clone.clone()
+                            },
+                        )
+                    })
+                    .padding(8)
+                    .width(Length::Fixed(170.0)),
+            );
+        }
+
+        row_element = row_element.push(
+            button("Delete")
+                .on_press(on_remove(idx))
+                .padding(8)
+                .style(button::danger),
+        );
+
         content = content.push(row_element);
     }
 
+    let toggle_label = if show_content_type {
+        "Hide Content-Type"
+    } else {
+        "Show Content-Type"
+    };
+
     column![
+        row![
+            space::horizontal(),
+            button(text(toggle_label).size(12))
+                .on_press(on_toggle_content_type)
+                .padding([2, 8])
+                .style(button::text),
+        ],
         scrollable(content).height(Length::Fixed(150.0)),
         button("Add Form Field").on_press(on_add).padding(8)
     ]
-    .spacing(10)
+    .spacing(6)
     .into()
 }

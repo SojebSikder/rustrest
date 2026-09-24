@@ -123,6 +123,8 @@ pub fn sync_body_from_tab(node: &mut PostmanRequestNode, tab: &Tab) {
                             FormDataType::File => "file".to_string(),
                             FormDataType::Text => "text".to_string(),
                         }),
+                        content_type: (!r.content_type.trim().is_empty())
+                            .then(|| r.content_type.clone()),
                     })
                     .collect(),
             ),
@@ -142,6 +144,7 @@ pub fn sync_body_from_tab(node: &mut PostmanRequestNode, tab: &Tab) {
                         value: Some(u.value.clone()),
                         disabled: Some(!u.is_active),
                         r#type: Some("text".to_string()),
+                        content_type: None,
                     })
                     .collect(),
             ),
@@ -316,6 +319,7 @@ pub fn create_tab_from_request(
                                     f_type,
                                 );
                                 row.is_active = !r.disabled.unwrap_or(false);
+                                row.content_type = r.content_type.clone().unwrap_or_default();
                                 row
                             })
                             .collect();

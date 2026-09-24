@@ -55,6 +55,9 @@ pub struct FormDataRow {
     pub key: String,
     pub value: String,
     pub field_type: FormDataType,
+    /// the part's `Content-Type`; empty means none for text parts and a type
+    /// guessed from the file extension for file parts.
+    pub content_type: String,
 }
 
 impl FormDataRow {
@@ -64,6 +67,7 @@ impl FormDataRow {
             key: String::from(key),
             value: String::from(value),
             field_type,
+            content_type: String::new(),
         }
     }
 }

@@ -140,6 +140,7 @@ impl Tab {
         on_multiline_resize_start: impl Fn(MultilineFieldKind) -> Message + Copy + 'a,
         spinner_tick: u64,
         theme: &iced::Theme,
+        show_form_data_content_type: bool,
     ) -> Element<'a, Message>
     where
         Message: Clone + 'static,
@@ -152,6 +153,7 @@ impl Tab {
             on_multiline_resize_start,
             spinner_tick,
             theme,
+            show_form_data_content_type,
         );
         let response_content = views::response::render_response_pane(self, wrap_msg);
 
@@ -345,6 +347,7 @@ impl Tab {
                     *row = updated_row;
                 }
             }
+            TabMessage::ToggleFormDataContentType => {}
             TabMessage::AddFormDataRow => {
                 self.body_form_data
                     .push(FormDataRow::new("", "", FormDataType::Text));
@@ -560,6 +563,7 @@ impl Tab {
                 key: resolve(&row.key),
                 value: resolve(&row.value),
                 field_type: row.field_type,
+                content_type: resolve(&row.content_type),
             })
             .collect();
 

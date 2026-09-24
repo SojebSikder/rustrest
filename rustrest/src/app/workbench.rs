@@ -207,6 +207,9 @@ pub fn active_tab_message(app: &mut Rustrest, tab_msg: TabMessage) -> Task<Messa
     if let TabMessage::DocsLinkClicked(uri) = tab_msg {
         return super::docs::link_clicked(uri);
     }
+    if let TabMessage::ToggleFormDataContentType = tab_msg {
+        return super::settings::form_data_content_type_toggled(app);
+    }
     if let TabMessage::Auth(crate::ui::tab::messages::AuthMessage::OAuth2FetchToken) = &tab_msg {
         let Some(tab_state) = app.tabs.get_mut(app.active_tab_index) else {
             return Task::none();

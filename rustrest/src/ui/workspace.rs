@@ -183,6 +183,7 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
             },
             app.spinner_tick,
             &app.settings.theme.to_iced(),
+            app.settings.show_form_data_content_type,
         ),
 
         WorkspaceContent::CollectionRoot {

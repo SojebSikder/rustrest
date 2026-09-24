@@ -408,6 +408,13 @@ pub struct PostmanBodyRow {
     pub value: Option<String>,
     pub disabled: Option<bool>,
     pub r#type: Option<String>,
+    /// a form-data part's own `Content-Type` (Postman's `contentType`)
+    #[serde(
+        rename = "contentType",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub content_type: Option<String>,
 }
 
 #[cfg(test)]
