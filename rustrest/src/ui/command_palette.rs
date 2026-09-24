@@ -15,6 +15,7 @@ pub enum AppCommand {
     CreateNewCollection,
     ToggleConsolePanel,
     CheckForUpdate,
+    About,
     RemoteDevelopmentOverSsh,
     OpenPluginManager,
     /// plugin_id, command_id.
@@ -57,6 +58,7 @@ pub fn commands(app: &Rustrest) -> Vec<Command<AppCommand>> {
             "Check for Updates",
             AppCommand::CheckForUpdate,
         ),
+        Command::new("about", "About Rustrest", AppCommand::About),
         Command::new(
             "remote-development-over-ssh",
             "Remote Development over SSH",
@@ -95,6 +97,7 @@ pub fn to_message(action: AppCommand) -> Message {
         AppCommand::CreateNewCollection => Message::CreateNewCollectionPressed,
         AppCommand::ToggleConsolePanel => Message::ToggleConsolePanel,
         AppCommand::CheckForUpdate => Message::CheckForUpdate,
+        AppCommand::About => Message::ShowAboutModal,
         AppCommand::RemoteDevelopmentOverSsh => Message::OpenRemoteConfig,
         AppCommand::OpenPluginManager => Message::OpenPluginManagerPressed,
         AppCommand::Plugin(plugin_id, command_id) => Message::PluginCommand(plugin_id, command_id),

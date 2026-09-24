@@ -38,6 +38,9 @@ mod ui;
 // not needed) in a native build, since only a `wasm32` plugin crate ever
 // invokes that macro.
 #[doc(hidden)]
+/// version of this plugin SDK crate, as built into the host
+pub const API_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 #[cfg(target_arch = "wasm32")]
 pub mod _internal {
     pub use crate::runtime::{alloc, dealloc, dispatch};

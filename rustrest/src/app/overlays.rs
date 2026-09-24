@@ -1,7 +1,7 @@
 //! Cross-cutting UI chrome that can float above the main workbench: toasts,
 //! the top menu bar, the command palette, the generic confirm dialog, the
-//! right-click/paste context menu, the response-timing modal, and the
-//! self-update flow.
+//! right-click/paste context menu, the response-timing and about modals, and
+//! the self-update flow.
 
 use super::Rustrest;
 use crate::message::{Message, SidebarItemKey};
@@ -11,7 +11,6 @@ use crate::ui::menu::menu::DropdownMenuState;
 use crate::ui::menu::menu_message::MenuMessage;
 use crate::ui::toast::toast::{ToastManager, ToastStatus};
 use crate::updater::{self, UpdateInfo};
-use crate::{APP_NAME, APP_VERSION};
 use iced::Task;
 
 #[derive(Default)]
@@ -22,6 +21,7 @@ pub struct OverlaysState {
     pub update_toast_id: Option<usize>,
     pub download_toast_id: Option<usize>,
     pub response_timing_modal: Option<crate::ui::response_timing_modal::ResponseTimingModalState>,
+    pub about_modal: Option<crate::ui::about_modal::AboutModalState>,
     pub confirm_dialog: Option<ConfirmDialogState>,
     pub active_context_menu: Option<ContextMenu>,
     pub context_menu_position: iced::Point,
@@ -191,6 +191,29 @@ pub fn close_response_timing_modal(app: &mut Rustrest) -> Task<Message> {
     Task::none()
 }
 
+pub fn show_about_modal(app: &mut Rustrest) -> Task<Message> {
+    app.overlays.about_modal = Some(crate::ui::about_modal::AboutModalState::new());
+    Task::none()
+}
+
+pub fn close_about_modal(app: &mut Rustrest) -> Task<Message> {
+    app.overlays.about_modal = None;
+    Task::none()
+}
+
+/// selection/navigation only - the about text is read-only
+pub fn about_modal_action(
+    app: &mut Rustrest,
+    action: iced::widget::text_editor::Action,
+) -> Task<Message> {
+    if let Some(modal) = app.overlays.about_modal.as_mut()
+        && !action.is_edit()
+    {
+        modal.content.perform(action);
+    }
+    Task::none()
+}
+
 pub fn show_toast(app: &mut Rustrest, msg: String, status: ToastStatus) -> Task<Message> {
     crate::ui::toast::toast::show_and_schedule(
         &mut app.overlays.toast_manager,
@@ -230,8 +253,7 @@ pub fn menu_interaction(
                 return super::update(app, Message::CheckForUpdate);
             }
             MenuMessage::HelpAbout => {
-                let version_info = format!("{} v{}", APP_NAME, APP_VERSION);
-                return super::update(app, Message::ShowToast(version_info, ToastStatus::Info));
+                return super::update(app, Message::ShowAboutModal);
             }
             MenuMessage::OpenPluginManager => {
                 return super::update(app, Message::OpenPluginManagerPressed);

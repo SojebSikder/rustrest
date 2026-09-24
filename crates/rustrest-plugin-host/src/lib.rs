@@ -19,7 +19,7 @@ pub use manager::{PluginManager, PreparedPlugin};
 pub use wasmtime::{Engine, Module};
 
 pub use rustrest_plugin_api::{
-    Capability, CollectionOperation, CollectionSummary, CommandDef, EnvSummary, FormatDef,
+    API_VERSION as PLUGIN_API_VERSION, CURRENT_SCHEMA_VERSION as PLUGIN_SCHEMA_VERSION, Capability, CollectionOperation, CollectionSummary, CommandDef, EnvSummary, FormatDef,
     HttpResponseData, MenuItemDef, PanelDef, PickFilesResult, PickedFile, PluginManifest,
     ProcessStream, RequestContext, RequestPatch, RequestSummary, ResponseContext, RightPanelAction,
     RightPanelContext, StatusBarItemDef, UiEvent, UiNode,

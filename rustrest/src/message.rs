@@ -375,6 +375,11 @@ pub enum Message {
     // response timing modal
     CloseResponseTimingModal,
 
+    // Help > About modal
+    ShowAboutModal,
+    CloseAboutModal,
+    AboutModalAction(iced::widget::text_editor::Action),
+
     //
     ShowCollectionContextMenu(usize),
     ShowGitActionsMenu(usize),

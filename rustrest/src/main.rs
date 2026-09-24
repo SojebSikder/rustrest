@@ -16,6 +16,7 @@ mod updater;
 mod utils;
 mod workspace;
 
+use crate::ui::about_modal::view_about_modal;
 use crate::ui::command_palette::view as view_command_palette;
 use crate::ui::commit_modal::view_commit_modal;
 use crate::ui::confirm_dialog::view_confirm_dialog;
@@ -41,7 +42,6 @@ use iced::window;
 use iced::{Alignment, Element, Length, Padding};
 use iced::{Event, Subscription, event};
 use message::{Message, MultilineFieldKind, ResizeKind};
-use self_update::cargo_crate_version;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -51,7 +51,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 // static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 const APP_NAME: &str = "Rustrest";
-const APP_VERSION: &str = cargo_crate_version!();
+const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const APP_ICON: &[u8] = include_bytes!("../../assets/images/logo-transparent.png");
 
@@ -87,6 +87,7 @@ enum ActiveOverlay {
     RemoteConnect,
     CommandPalette,
     ResponseTiming,
+    About,
 }
 
 macro_rules! outside_click_sub {
@@ -140,6 +141,8 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         Some(ActiveOverlay::Settings)
     } else if app.git.commit_modal.is_some() {
         Some(ActiveOverlay::Commit)
+    } else if app.overlays.about_modal.is_some() {
+        Some(ActiveOverlay::About)
     } else if app.overlays.response_timing_modal.is_some() {
         Some(ActiveOverlay::ResponseTiming)
     } else if app.workbench.save_request_model.is_some() {
@@ -162,6 +165,7 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
             Some(ActiveOverlay::ResponseTiming) => {
                 outside_click_sub!(Message::CloseResponseTimingModal)
             }
+            Some(ActiveOverlay::About) => outside_click_sub!(Message::CloseAboutModal),
             Some(ActiveOverlay::ConfirmDialog) => {
                 outside_click_sub!(Message::ConfirmDialogCancelled)
             }
@@ -203,6 +207,7 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         Some(ActiveOverlay::ResponseTiming) => {
             escape_close_sub!(Message::CloseResponseTimingModal)
         }
+        Some(ActiveOverlay::About) => escape_close_sub!(Message::CloseAboutModal),
         Some(ActiveOverlay::ConfirmDialog) => {
             escape_close_sub!(Message::ConfirmDialogCancelled)
         }
@@ -608,6 +613,16 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
             .align_x(Alignment::Center)
             .align_y(Alignment::Center);
         main_interface_stack = main_interface_stack.push(timing_overlay);
+    }
+
+    // about modal overlay
+    if let Some(about_modal) = app.overlays.about_modal.as_ref() {
+        let about_overlay = container(view_about_modal(about_modal))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(Alignment::Center)
+            .align_y(Alignment::Center);
+        main_interface_stack = main_interface_stack.push(about_overlay);
     }
 
     // settings modal overlay

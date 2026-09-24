@@ -1584,6 +1584,9 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         Message::SaveRequestNameChanged(name) => workbench::save_request_name_changed(app, name),
         Message::CloseSaveRequestModal => workbench::close_save_request_modal(app),
         Message::CloseResponseTimingModal => overlays::close_response_timing_modal(app),
+        Message::ShowAboutModal => overlays::show_about_modal(app),
+        Message::CloseAboutModal => overlays::close_about_modal(app),
+        Message::AboutModalAction(action) => overlays::about_modal_action(app, action),
         Message::SaveRequestConfirmed => workbench::save_request_confirmed(app),
         Message::SaveActiveRequestShortcut => workbench::save_active_request_shortcut(app), // end save_request_model actions
 
