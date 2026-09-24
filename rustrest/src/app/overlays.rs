@@ -340,6 +340,7 @@ pub fn update_check_result(
     match result {
         Ok(Some(info)) => {
             let msg = format!("Update available: v{}", info.version);
+            show_update_status_item(app, &info);
             app.overlays.available_update = Some(info);
             let (id, task) = crate::ui::toast::toast::show_with_action_and_schedule(
                 &mut app.overlays.toast_manager,
@@ -375,7 +376,27 @@ pub fn toast_action_pressed(app: &mut Rustrest, id: usize) -> Task<Message> {
     Task::none()
 }
 
+/// status bar id for the persistent "update available" button
+const UPDATE_STATUS_ID: &str = "update-available";
+
+fn show_update_status_item(app: &mut Rustrest, info: &UpdateInfo) {
+    app.status_bar.set_with_action(
+        UPDATE_STATUS_ID,
+        format!("Update to v{}", info.version),
+        false,
+        Some(Message::InstallUpdate),
+    );
+}
+
 pub fn install_update(app: &mut Rustrest) -> Task<Message> {
+    // already downloading (e.g. clicked both the toast and the status bar)
+    if app.overlays.download_toast_id.is_some() {
+        return Task::none();
+    }
+    app.status_bar.clear(UPDATE_STATUS_ID);
+    if let Some(id) = app.overlays.update_toast_id.take() {
+        app.overlays.toast_manager.dismiss(id);
+    }
     let id = crate::ui::toast::toast::show_sticky_pending(
         &mut app.overlays.toast_manager,
         "Downloading update…".to_string(),
@@ -441,11 +462,17 @@ pub fn update_install_result(app: &mut Rustrest, result: Result<String, String>)
             format!("Updated to v{version}. Please restart the app."),
             ToastStatus::Success,
         ),
-        Err(e) => crate::ui::toast::toast::show_and_schedule(
-            &mut app.overlays.toast_manager,
-            format!("Update failed: {e}"),
-            ToastStatus::Error,
-            crate::ui::toast::toast::TOAST_DURATION,
-        ),
+        Err(e) => {
+            // put the button back so the user can retry
+            if let Some(info) = app.overlays.available_update.clone() {
+                show_update_status_item(app, &info);
+            }
+            crate::ui::toast::toast::show_and_schedule(
+                &mut app.overlays.toast_manager,
+                format!("Update failed: {e}"),
+                ToastStatus::Error,
+                crate::ui::toast::toast::TOAST_DURATION,
+            )
+        }
     }
 }
