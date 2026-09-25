@@ -276,6 +276,7 @@ pub fn render_context_menu_overlay<'a>(app: &Rustrest) -> Option<Element<'a, Mes
                     Message::ExportViaPluginPressed(col_id),
                 ));
             }
+            opts.push(("Duplicate", Message::DuplicateCollectionPressed(col_id)));
             opts.push(("Delete", Message::DeleteCollectionPressed(col_id)));
             opts
         }
@@ -304,6 +305,13 @@ pub fn render_context_menu_overlay<'a>(app: &Rustrest) -> Option<Element<'a, Mes
                     },
                 ),
                 (
+                    "Duplicate",
+                    Message::DuplicateFolderPressed {
+                        collection_id,
+                        folder_path: path.clone(),
+                    },
+                ),
+                (
                     "Delete",
                     Message::DeleteFolderPressed {
                         collection_id,
@@ -321,6 +329,14 @@ pub fn render_context_menu_overlay<'a>(app: &Rustrest) -> Option<Element<'a, Mes
                 "Rename",
                 Message::RenameRequestPressed {
                     collection_id: *col_id,
+                    request_id: *req_id,
+                },
+            ),
+            (
+                "Duplicate",
+                Message::DuplicateRequestPressed {
+                    collection_id: *col_id,
+                    parent_folder_path: folder_path.clone(),
                     request_id: *req_id,
                 },
             ),

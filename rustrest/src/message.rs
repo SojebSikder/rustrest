@@ -312,6 +312,7 @@ pub enum Message {
     // collection CRUD actions
     CreateNewCollectionPressed,
     DeleteCollectionPressed(usize),
+    DuplicateCollectionPressed(usize),
 
     // folder CRUD actions
     AddFolderPressed {
@@ -322,6 +323,10 @@ pub enum Message {
         collection_id: usize,
         folder_path: Vec<String>,
     },
+    DuplicateFolderPressed {
+        collection_id: usize,
+        folder_path: Vec<String>,
+    },
 
     AddRequestPressed {
         collection_id: usize,
@@ -329,6 +334,11 @@ pub enum Message {
     },
 
     DeleteRequestPressed {
+        collection_id: usize,
+        request_id: usize,
+        parent_folder_path: Vec<String>,
+    },
+    DuplicateRequestPressed {
         collection_id: usize,
         request_id: usize,
         parent_folder_path: Vec<String>,
