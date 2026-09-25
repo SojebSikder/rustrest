@@ -1464,6 +1464,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         }
         Message::CreateNewCollectionPressed => collections::create_new_pressed(app),
         Message::DeleteCollectionPressed(col_id) => collections::delete_pressed(app, col_id),
+        Message::DuplicateCollectionPressed(col_id) => collections::duplicate_pressed(app, col_id),
 
         Message::RenameCollectionPressed(col_id) => sidebar::rename_collection_pressed(app, col_id),
         Message::CollectionNameChanged(col_id, new_name) => {
@@ -1489,6 +1490,10 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             collection_id,
             folder_path,
         } => collections::delete_folder_pressed(app, collection_id, folder_path),
+        Message::DuplicateFolderPressed {
+            collection_id,
+            folder_path,
+        } => collections::duplicate_folder_pressed(app, collection_id, folder_path),
         Message::AddRequestPressed {
             collection_id,
             parent_folder_path,
@@ -1500,6 +1505,16 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         } => {
             collections::delete_request_pressed(app, collection_id, parent_folder_path, request_id)
         }
+        Message::DuplicateRequestPressed {
+            collection_id,
+            parent_folder_path,
+            request_id,
+        } => collections::duplicate_request_pressed(
+            app,
+            collection_id,
+            parent_folder_path,
+            request_id,
+        ),
 
         // request rename actions
         Message::RenameRequestPressed {

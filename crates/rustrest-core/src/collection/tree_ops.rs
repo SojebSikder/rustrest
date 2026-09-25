@@ -231,3 +231,180 @@ pub fn find_request_mut(
     }
     None
 }
+
+/// gives every request under `items` a fresh id from `next_id` and flags every
+/// node as unsaved, so a cloned subtree doesn't alias the ids of its original.
+fn reassign_ids_as_unsaved(items: &mut [CollectionItem], next_id: &mut usize) {
+    for item in items {
+        match item {
+            CollectionItem::Request(node) => {
+                node.id = *next_id;
+                *next_id += 1;
+                node.unsaved = true;
+            }
+            CollectionItem::Folder(folder) => {
+                folder.unsaved = true;
+                reassign_ids_as_unsaved(&mut folder.item, next_id);
+            }
+        }
+    }
+}
+
+/// "<name> Copy", or "<name> Copy N" when that's already taken by `taken`.
+pub fn copy_name(name: &str, taken: impl Fn(&str) -> bool) -> String {
+    let base = format!("{name} Copy");
+    if !taken(&base) {
+        return base;
+    }
+    (2..)
+        .map(|n| format!("{base} {n}"))
+        .find(|candidate| !taken(candidate))
+        .unwrap_or(base)
+}
+
+/// clones the request `req_id` living directly under `path` and inserts the
+/// copy (renamed "<name> Copy", with a fresh id from `next_id`) right after
+/// the original. returns the copy's id.
+pub fn duplicate_request(
+    items: &mut Vec<CollectionItem>,
+    path: &[String],
+    req_id: usize,
+    next_id: &mut usize,
+) -> Option<usize> {
+    let target = find_folder_items_mut(items, path)?;
+    let idx = target
+        .iter()
+        .position(|item| matches!(item, CollectionItem::Request(req) if req.id == req_id))?;
+    let CollectionItem::Request(original) = &target[idx] else {
+        return None;
+    };
+
+    let mut copy = original.clone();
+    copy.name = format!("{} Copy", original.name);
+    copy.id = *next_id;
+    *next_id += 1;
+    copy.unsaved = true;
+
+    let new_id = copy.id;
+    target.insert(idx + 1, CollectionItem::Request(copy));
+    Some(new_id)
+}
+
+/// clones the folder named by `path`'s last segment (with all its descendants)
+/// and inserts the copy right after the original under a sibling-unique
+/// "<name> Copy" name, since folders are addressed by name. every request in
+/// the copy gets a fresh id from `next_id`. returns the copy's name.
+pub fn duplicate_folder(
+    items: &mut Vec<CollectionItem>,
+    path: &[String],
+    next_id: &mut usize,
+) -> Option<String> {
+    let (last, parent_path) = path.split_last()?;
+    let target = find_folder_items_mut(items, parent_path)?;
+    let idx = target
+        .iter()
+        .position(|item| matches!(item, CollectionItem::Folder(folder) if folder.name == *last))?;
+    let CollectionItem::Folder(original) = &target[idx] else {
+        return None;
+    };
+
+    let mut copy = original.clone();
+    copy.name = copy_name(&original.name, |candidate| {
+        target
+            .iter()
+            .any(|item| matches!(item, CollectionItem::Folder(f) if f.name == candidate))
+    });
+    copy.unsaved = true;
+    reassign_ids_as_unsaved(&mut copy.item, next_id);
+    let new_name = copy.name.clone();
+    target.insert(idx + 1, CollectionItem::Folder(copy));
+    Some(new_name)
+}
+
+/// clones a whole collection's tree with fresh request ids from `next_id`,
+/// every node flagged unsaved (used when duplicating a collection).
+pub fn clone_items_with_new_ids(
+    items: &[CollectionItem],
+    next_id: &mut usize,
+) -> Vec<CollectionItem> {
+    let mut copy = items.to_vec();
+    reassign_ids_as_unsaved(&mut copy, next_id);
+    copy
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::collection::model::{PostmanRequestDetails, PostmanRequestNode};
+
+    fn request(id: usize, name: &str) -> CollectionItem {
+        CollectionItem::Request(PostmanRequestNode {
+            id,
+            name: name.to_string(),
+            event: None,
+            request: PostmanRequestDetails {
+                method: "GET".to_string(),
+                url: None,
+                header: None,
+                body: None,
+                auth: None,
+                description: None,
+            },
+            unsaved: false,
+            response: None,
+            protocol_request: None,
+        })
+    }
+
+    fn folder(name: &str, item: Vec<CollectionItem>) -> CollectionItem {
+        CollectionItem::Folder(PostmanFolder {
+            name: name.to_string(),
+            protocol_profile_behavior: None,
+            item,
+            event: None,
+            description: None,
+            unsaved: false,
+        })
+    }
+
+    #[test]
+    fn duplicates_request_after_original_with_new_id() {
+        let mut items = vec![request(1, "a"), request(2, "b")];
+        let mut next_id = 10;
+        assert_eq!(
+            duplicate_request(&mut items, &[], 1, &mut next_id),
+            Some(10)
+        );
+        assert_eq!(next_id, 11);
+        let CollectionItem::Request(copy) = &items[1] else {
+            panic!("expected request");
+        };
+        assert_eq!(
+            (copy.id, copy.name.as_str(), copy.unsaved),
+            (10, "a Copy", true)
+        );
+        assert_eq!(items.len(), 3);
+    }
+
+    #[test]
+    fn duplicates_folder_with_unique_name_and_fresh_ids() {
+        let mut items = vec![
+            folder(
+                "f",
+                vec![request(1, "a"), folder("sub", vec![request(2, "b")])],
+            ),
+            folder("f Copy", Vec::new()),
+        ];
+        let mut next_id = 10;
+        let name = duplicate_folder(&mut items, &["f".to_string()], &mut next_id);
+        assert_eq!(name.as_deref(), Some("f Copy 2"));
+        assert_eq!(next_id, 12);
+        let copy = find_folder(&items, &["f Copy 2".to_string()]).unwrap();
+        assert!(copy.unsaved);
+        assert!(find_request(&copy.item, 10).is_some());
+        assert!(find_request(&copy.item, 11).is_some());
+        // original is untouched
+        assert!(contains_request_node_by_id(&items[..1], 1));
+        assert!(contains_request_node_by_id(&items[..1], 2));
+    }
+}

@@ -14,7 +14,10 @@ use crate::collection_adapter::create_tab_from_request;
 use crate::message::Message;
 use crate::ui::tab::types::KeyValuePair;
 use crate::ui::toast::toast::ToastStatus;
-use crate::utils::{insert_nested, insert_nested_request, remove_nested, remove_nested_request};
+use crate::utils::{
+    clone_items_with_new_ids, copy_name, duplicate_folder, duplicate_request, insert_nested,
+    insert_nested_request, remove_nested, remove_nested_request,
+};
 use crate::{APP_NAME, APP_VERSION};
 use iced::Task;
 
@@ -466,6 +469,40 @@ pub fn delete_pressed(app: &mut Rustrest, col_id: usize) -> Task<Message> {
     Task::none()
 }
 
+/// adds an in-memory copy of `col_id` (named "<name> Copy") right after it.
+/// the copy has no save location, so saving it prompts for one instead of
+/// overwriting the original's file/folder.
+pub fn duplicate_pressed(app: &mut Rustrest, col_id: usize) -> Task<Message> {
+    // pick up edits still sitting in open tabs
+    app.sync_collection_tabs(col_id);
+
+    let Some(idx) = app.collections.iter().position(|c| c.id == col_id) else {
+        return Task::none();
+    };
+    let original = &app.collections[idx];
+    let name = copy_name(&original.info.name, |candidate| {
+        app.collections.iter().any(|c| c.info.name == candidate)
+    });
+
+    let mut copy = original.clone();
+    copy.id = app.next_tab_id;
+    app.next_tab_id += 1;
+    copy.info.name = name.clone();
+    copy.info.postman_id = None;
+    copy.item = clone_items_with_new_ids(&original.item, &mut app.next_request_id);
+    copy.file_path = None;
+    copy.storage_dir = None;
+    copy.remote_dir = None;
+    copy.unsaved = true;
+
+    app.collections.insert(idx + 1, copy);
+
+    Task::done(Message::ShowToast(
+        format!("Duplicated collection as '{}'", name),
+        ToastStatus::Success,
+    ))
+}
+
 pub fn add_folder_pressed(
     app: &mut Rustrest,
     collection_id: usize,
@@ -500,6 +537,21 @@ pub fn delete_folder_pressed(
         if let Some(col) = app.collections.iter_mut().find(|c| c.id == collection_id) {
             remove_nested(&mut col.item, &folder_path);
         }
+    }
+    Task::none()
+}
+
+pub fn duplicate_folder_pressed(
+    app: &mut Rustrest,
+    collection_id: usize,
+    folder_path: Vec<String>,
+) -> Task<Message> {
+    if folder_path.is_empty() {
+        return Task::none();
+    }
+    app.sync_collection_tabs(collection_id);
+    if let Some(col) = app.collections.iter_mut().find(|c| c.id == collection_id) {
+        duplicate_folder(&mut col.item, &folder_path, &mut app.next_request_id);
     }
     Task::none()
 }
@@ -574,6 +626,29 @@ pub fn delete_request_pressed(
         if app.active_tab_index >= app.tabs.len() && !app.tabs.is_empty() {
             app.active_tab_index = app.tabs.len() - 1;
         }
+    }
+    Task::none()
+}
+
+pub fn duplicate_request_pressed(
+    app: &mut Rustrest,
+    collection_id: usize,
+    parent_folder_path: Vec<String>,
+    request_id: usize,
+) -> Task<Message> {
+    // pick up edits still sitting in the request's open tab
+    if let Some(idx) = app.tabs.iter().position(|t| {
+        t.tab.collection_id == Some(collection_id) && t.tab.request_id == Some(request_id)
+    }) {
+        app.sync_tab_to_collection(idx);
+    }
+    if let Some(col) = app.collections.iter_mut().find(|c| c.id == collection_id) {
+        duplicate_request(
+            &mut col.item,
+            &parent_folder_path,
+            request_id,
+            &mut app.next_request_id,
+        );
     }
     Task::none()
 }
