@@ -6,9 +6,8 @@ use crate::http_client::HttpMethod;
 use crate::message::{KvValueField, MultilineFieldKind};
 use crate::ui::context_menu::{TabFieldTarget, with_context_menu};
 use crate::ui::multiline_input::multiline_input;
-use iced::widget::{
-    button, column, container, pick_list, radio, row, text, text_editor, text_input,
-};
+use crate::ui::script_editor::script_editor;
+use iced::widget::{button, column, container, pick_list, radio, row, text, text_input};
 use iced::{Alignment, Element, Length};
 
 pub fn render_request_bar<'a, Message>(
@@ -435,57 +434,25 @@ where
                 radio_bar = radio_bar.push(radio_btn);
             }
 
-            let script_input: Element<Message> = match tab.script_tab {
-                ScriptTab::PreRequest => {
-                    let editor = with_context_menu(
-                        text_editor(&tab.pre_request_script)
-                            .on_action(move |action| {
-                                wrap_msg(TabMessage::PreRequestScriptChanged(action))
-                            })
-                            .height(Length::Fill)
-                            .padding(10),
-                        wrap_msg(TabMessage::ShowFieldContextMenu(
-                            TabFieldTarget::PreRequestScriptEditor,
-                            tab.pre_request_script
-                                .selection()
-                                .unwrap_or_else(|| tab.pre_request_script.text()),
-                        )),
-                    );
-
-                    column![
-                        container(editor)
-                            .height(Length::Fill)
-                            .style(container::bordered_box)
-                    ]
-                    .spacing(8)
-                    .height(Length::Fill)
-                    .into()
-                }
-                ScriptTab::PostResponse => {
-                    let editor = with_context_menu(
-                        text_editor(&tab.post_response_script)
-                            .on_action(move |action| {
-                                wrap_msg(TabMessage::PostResponseScriptChanged(action))
-                            })
-                            .height(Length::Fill)
-                            .padding(10),
-                        wrap_msg(TabMessage::ShowFieldContextMenu(
-                            TabFieldTarget::PostResponseScriptEditor,
-                            tab.post_response_script
-                                .selection()
-                                .unwrap_or_else(|| tab.post_response_script.text()),
-                        )),
-                    );
-
-                    column![
-                        container(editor)
-                            .height(Length::Fill)
-                            .style(container::bordered_box)
-                    ]
-                    .spacing(8)
-                    .height(Length::Fill)
-                    .into()
-                }
+            let script_input = match tab.script_tab {
+                ScriptTab::PreRequest => script_editor(
+                    &tab.pre_request_script,
+                    theme,
+                    move |action| wrap_msg(TabMessage::PreRequestScriptChanged(action)),
+                    wrap_msg(TabMessage::ShowFieldContextMenu(
+                        TabFieldTarget::PreRequestScriptEditor,
+                        tab.pre_request_script.selection_or_text(),
+                    )),
+                ),
+                ScriptTab::PostResponse => script_editor(
+                    &tab.post_response_script,
+                    theme,
+                    move |action| wrap_msg(TabMessage::PostResponseScriptChanged(action)),
+                    wrap_msg(TabMessage::ShowFieldContextMenu(
+                        TabFieldTarget::PostResponseScriptEditor,
+                        tab.post_response_script.selection_or_text(),
+                    )),
+                ),
             };
 
             column![radio_bar, script_input]

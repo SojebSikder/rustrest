@@ -279,11 +279,11 @@ pub fn create_tab_from_request(
                     match event.listen.as_str() {
                         "prerequest" => {
                             tab.pre_request_script =
-                                iced::widget::text_editor::Content::with_text(&script_code);
+                                crate::ui::script_editor::ScriptContent::with_text(&script_code);
                         }
                         "test" => {
                             tab.post_response_script =
-                                iced::widget::text_editor::Content::with_text(&script_code);
+                                crate::ui::script_editor::ScriptContent::with_text(&script_code);
                         }
                         _ => {}
                     }

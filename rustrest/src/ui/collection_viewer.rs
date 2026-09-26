@@ -5,11 +5,10 @@ use crate::ui::context_menu::{FieldTarget, with_context_menu};
 use crate::ui::docs_view::DocsState;
 use crate::ui::git_panel::{render_git_bar, render_git_panel};
 use crate::ui::modal::muted_text_color;
+use crate::ui::script_editor::script_editor;
 use crate::ui::tab::types::ScriptTab;
 use crate::ui::tab::{AuthFormContext, render_auth_form};
-use iced::widget::{
-    button, checkbox, column, container, radio, row, scrollable, text, text_editor, text_input,
-};
+use iced::widget::{button, checkbox, column, container, radio, row, scrollable, text, text_input};
 use iced::{Alignment, Element, Length, Theme};
 
 fn hint(label: &str) -> Element<'_, Message> {
@@ -60,10 +59,11 @@ fn render_collection_auth<'a>(
 }
 
 /// Scripts sub-tab: run before each request's own pre-request / post-response script.
-fn render_collection_scripts(
+fn render_collection_scripts<'a>(
     collection_id: usize,
-    settings: &CollectionSettingsState,
-) -> Element<'_, Message> {
+    settings: &'a CollectionSettingsState,
+    theme: &Theme,
+) -> Element<'a, Message> {
     let mut radio_bar = row![].spacing(15).align_y(Alignment::Center);
     for variant in ScriptTab::ALL {
         radio_bar = radio_bar.push(radio(
@@ -87,26 +87,17 @@ fn render_collection_scripts(
         ),
     };
     let script_tab = settings.script_tab;
-    let editor = with_context_menu(
-        text_editor(content)
-            .on_action(move |action| {
-                Message::CollectionScriptAction(collection_id, script_tab, action)
-            })
-            .height(Length::Fill)
-            .padding(10),
-        Message::ShowPluginTextContextMenu(content.selection().unwrap_or_else(|| content.text())),
+    let editor = script_editor(
+        content,
+        theme,
+        move |action| Message::CollectionScriptAction(collection_id, script_tab, action),
+        Message::ShowPluginTextContextMenu(content.selection_or_text()),
     );
 
-    column![
-        radio_bar,
-        hint(note),
-        container(editor)
-            .height(Length::Fill)
-            .style(container::bordered_box),
-    ]
-    .spacing(10)
-    .height(Length::Fill)
-    .into()
+    column![radio_bar, hint(note), editor]
+        .spacing(10)
+        .height(Length::Fill)
+        .into()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -184,7 +175,9 @@ pub fn render_collection_root<'a>(
             None => column![].into(),
         },
         CollectionSubTab::Scripts => match settings {
-            Some(settings) => render_collection_scripts(collection_id, settings),
+            Some(settings) => {
+                render_collection_scripts(collection_id, settings, &app.settings.theme.to_iced())
+            }
             None => column![].into(),
         },
         CollectionSubTab::Variables => {

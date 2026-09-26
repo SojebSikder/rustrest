@@ -1241,3 +1241,48 @@ impl ScriptRunner {
         ))
     }
 }
+
+/// Parses `script` the same way `ScriptRunner` evaluates it, without running
+/// it, and returns the first syntax error (message includes line/column).
+pub fn check_syntax(script: &str) -> Result<(), String> {
+    use boa_engine::{
+        ast::scope::Scope,
+        interner::Interner,
+        parser::{Error, Parser},
+    };
+
+    Parser::new(Source::from_bytes(script))
+        .parse_script(&Scope::new_global(), &mut Interner::default())
+        .map(|_| ())
+        .map_err(|e| match e {
+            Error::AbruptEnd => {
+                "unexpected end of script (unclosed bracket or string?)".to_string()
+            }
+            e => e.to_string(),
+        })
+}
+
+#[cfg(test)]
+mod syntax_tests {
+    use super::check_syntax;
+
+    #[test]
+    fn accepts_valid_script() {
+        assert!(check_syntax("pm.test('ok', function () { pm.expect(1).to.eql(1); });").is_ok());
+        assert!(check_syntax("// only a comment").is_ok());
+    }
+
+    #[test]
+    fn reports_syntax_error() {
+        let err = check_syntax("pm.test('bad', function () {").unwrap_err();
+        assert!(err.contains("unexpected end"));
+        eprintln!(
+            "ERR: {}",
+            check_syntax(
+                "let x = ;
+foo("
+            )
+            .unwrap_err()
+        );
+    }
+}

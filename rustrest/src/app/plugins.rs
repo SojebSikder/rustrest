@@ -284,10 +284,10 @@ fn apply_request_patch_to_active_tab(
         tab.request_body = iced::widget::text_editor::Content::with_text(&body);
     }
     if let Some(script) = patch.pre_request_script {
-        tab.pre_request_script = iced::widget::text_editor::Content::with_text(&script);
+        tab.pre_request_script = crate::ui::script_editor::ScriptContent::with_text(&script);
     }
     if let Some(script) = patch.post_response_script {
-        tab.post_response_script = iced::widget::text_editor::Content::with_text(&script);
+        tab.post_response_script = crate::ui::script_editor::ScriptContent::with_text(&script);
     }
     tab.dirty = true;
 }
