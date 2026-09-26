@@ -451,6 +451,10 @@ pub enum Message {
     /// an import target an already-open collection's storage_dir; user must
     /// confirm before we discard in-memory state and reload from disk.
     ReplaceCollectionConfirmed(usize, Box<PostmanCollection>),
+    /// local collection files/folders changed on disk (from the file watcher)
+    CollectionFilesChanged(Vec<std::path::PathBuf>),
+    /// a collection re-read from disk after `CollectionFilesChanged`
+    CollectionDiskLoaded(usize, Result<Box<PostmanCollection>, String>),
 
     // git status/diff panel (collection root "Git" sub-tab)
     GitStatusRequested(usize),

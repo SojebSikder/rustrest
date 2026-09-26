@@ -2,6 +2,7 @@ mod collection_settings;
 mod collections;
 mod docs;
 mod environment;
+pub mod file_watch;
 mod git;
 mod graphql;
 mod grpc;
@@ -131,6 +132,8 @@ pub struct Rustrest {
     pub settings: settings::SettingsState,
 
     pub status_bar: crate::ui::status_bar::StatusBarState,
+
+    pub file_watch: file_watch::FileWatchState,
 }
 
 impl Rustrest {
@@ -320,6 +323,7 @@ impl Rustrest {
         self.sidebar.selected_sidebar_items.clear();
         self.sidebar.sidebar_selection_anchor = None;
 
+        self.file_watch.clear();
         let mut errors = Vec::new();
         for result in loaded {
             match result {
@@ -327,6 +331,7 @@ impl Rustrest {
                     collection.id = self.next_tab_id;
                     self.next_tab_id += 1;
                     collection.assign_request_ids(&mut self.next_request_id);
+                    file_watch::record_baseline(self, collection.id, &collection);
                     self.collections.push(collection);
                 }
                 Err(err) => errors.push(err),
@@ -599,6 +604,7 @@ pub fn init() -> (Rustrest, Task<Message>) {
             show_form_data_content_type: persisted_settings.show_form_data_content_type,
         },
         status_bar: crate::ui::status_bar::StatusBarState::default(),
+        file_watch: file_watch::FileWatchState::default(),
     };
     // ensure at least one tab exists right away - `view()` indexes
     // `app.tabs[app.active_tab_index]` unconditionally, and the real tabs
@@ -926,6 +932,8 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
 
         Message::GitCollectionDirChosen(col_id, Some(dir)) => {
             app.sync_collection_tabs(col_id);
+            file_watch::record_current_as_baseline(app, col_id);
+
             if let Some(collection) = app.collections.iter_mut().find(|c| c.id == col_id) {
                 collection.storage_dir = Some(dir.clone());
                 match crate::collection::dir_storage::save_collection_to_dir_clean(collection, &dir)
@@ -954,6 +962,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                                 tab_state.tab.dirty = false;
                             }
                         }
+
                         let was_already_repo = crate::collection::git_ops::is_git_repo(&dir);
                         if let Err(e) =
                             crate::collection::git_ops::write_default_gitignore_if_missing(&dir)
@@ -1062,6 +1071,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             collection.id = app.next_tab_id;
             app.next_tab_id += 1;
             collection.assign_request_ids(&mut app.next_request_id);
+            file_watch::record_baseline(app, collection.id, &collection);
             app.collections.push(collection);
 
             Task::done(Message::ShowToast(
@@ -1076,24 +1086,11 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         Message::GitCollectionLoaded(None, _) => Task::none(),
 
         Message::ReplaceCollectionConfirmed(col_id, new_collection) => {
-            app.tabs.retain(|t| {
-                !matches!(&t.content, WorkspaceContent::CollectionRoot { collection_id, .. } if *collection_id == col_id)
-            });
-            if app.active_tab_index >= app.tabs.len() {
-                app.active_tab_index = app.tabs.len().saturating_sub(1);
-            }
-
-            if let Some(existing) = app.collections.iter_mut().find(|c| c.id == col_id) {
-                let mut new_collection = *new_collection;
-                new_collection.id = col_id;
-                *existing = new_collection;
-            }
-            app.git.git_status_cache.remove(&col_id);
-
-            Task::done(Message::ShowToast(
-                "Collection reloaded from disk".to_string(),
-                ToastStatus::Success,
-            ))
+            file_watch::replace_confirmed(app, col_id, new_collection)
+        }
+        Message::CollectionFilesChanged(paths) => file_watch::files_changed(app, paths),
+        Message::CollectionDiskLoaded(col_id, result) => {
+            file_watch::disk_loaded(app, col_id, result)
         }
 
         // git status/diff panel

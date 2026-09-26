@@ -332,6 +332,92 @@ pub fn clone_items_with_new_ids(
     copy
 }
 
+/// pairs each of `new_names` with an index into `old_names`: first by equal
+/// name, then for what's left by equal position, so an item renamed in place
+/// still pairs with its old self. each old entry is used at most once.
+fn pair_by_name_then_position(old_names: &[&str], new_names: &[&str]) -> Vec<Option<usize>> {
+    let mut used = vec![false; old_names.len()];
+    let mut pairs = vec![None; new_names.len()];
+
+    for (k, name) in new_names.iter().enumerate() {
+        if let Some(j) = (0..old_names.len()).find(|&j| !used[j] && old_names[j] == *name) {
+            used[j] = true;
+            pairs[k] = Some(j);
+        }
+    }
+
+    for (k, pair) in pairs.iter_mut().enumerate() {
+        if pair.is_none() && k < old_names.len() && !used[k] {
+            used[k] = true;
+            *pair = Some(k);
+        }
+    }
+    pairs
+}
+
+/// assigns ids to every request in `new` (a freshly loaded copy of the tree `old` came from),
+/// reusing the old request's id wherever the same request can still be recognized (same folder, and same name or same position),
+/// so open tabs stay attached across a reload. requests that can't be matched get fresh ids from `next_id`.
+pub fn carry_over_request_ids(
+    old: &[CollectionItem],
+    new: &mut [CollectionItem],
+    next_id: &mut usize,
+) {
+    let old_reqs: Vec<_> = old
+        .iter()
+        .filter_map(|item| match item {
+            CollectionItem::Request(req) => Some(req),
+            _ => None,
+        })
+        .collect();
+    let old_folders: Vec<_> = old
+        .iter()
+        .filter_map(|item| match item {
+            CollectionItem::Folder(folder) => Some(folder),
+            _ => None,
+        })
+        .collect();
+
+    let old_req_names: Vec<&str> = old_reqs.iter().map(|r| r.name.as_str()).collect();
+    let old_folder_names: Vec<&str> = old_folders.iter().map(|f| f.name.as_str()).collect();
+    let mut new_req_names = Vec::new();
+    let mut new_folder_names = Vec::new();
+
+    for item in new.iter() {
+        match item {
+            CollectionItem::Request(req) => new_req_names.push(req.name.as_str()),
+            CollectionItem::Folder(folder) => new_folder_names.push(folder.name.as_str()),
+        }
+    }
+
+    let req_pairs = pair_by_name_then_position(&old_req_names, &new_req_names);
+    let folder_pairs = pair_by_name_then_position(&old_folder_names, &new_folder_names);
+
+    let (mut req_idx, mut folder_idx) = (0, 0);
+    for item in new.iter_mut() {
+        match item {
+            CollectionItem::Request(req) => {
+                req.id = match req_pairs[req_idx] {
+                    Some(j) => old_reqs[j].id,
+                    None => {
+                        let id = *next_id;
+                        *next_id += 1;
+                        id
+                    }
+                };
+                req_idx += 1;
+            }
+            CollectionItem::Folder(folder) => {
+                let old_children = folder_pairs[folder_idx]
+                    .map(|j| old_folders[j].item.as_slice())
+                    .unwrap_or(&[]);
+                carry_over_request_ids(old_children, &mut folder.item, next_id);
+                folder_idx += 1;
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -406,5 +492,63 @@ mod tests {
         // original is untouched
         assert!(contains_request_node_by_id(&items[..1], 1));
         assert!(contains_request_node_by_id(&items[..1], 2));
+    }
+
+    fn ids(items: &[CollectionItem]) -> Vec<(String, usize)> {
+        let mut out = Vec::new();
+        for item in items {
+            match item {
+                CollectionItem::Request(r) => out.push((r.name.clone(), r.id)),
+                CollectionItem::Folder(f) => out.extend(ids(&f.item)),
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn carries_ids_over_by_name_and_position() {
+        let old = vec![
+            request(1, "a"),
+            request(2, "b"),
+            folder("f", vec![request(3, "c")]),
+        ];
+        // reordered, "b" renamed in place, "d" added, folder kept
+        let mut new = vec![
+            request(0, "a"),
+            request(0, "b2"),
+            request(0, "d"),
+            folder("f", vec![request(0, "c")]),
+        ];
+        let mut next_id = 10;
+        carry_over_request_ids(&old, &mut new, &mut next_id);
+        assert_eq!(
+            ids(&new),
+            vec![
+                ("a".to_string(), 1),
+                ("b2".to_string(), 2),
+                ("d".to_string(), 10),
+                ("c".to_string(), 3),
+            ]
+        );
+        assert_eq!(next_id, 11);
+    }
+
+    #[test]
+    fn unmatched_folder_gets_fresh_ids() {
+        let old = vec![folder("f", vec![request(1, "a")]), folder("g", vec![])];
+        let mut new = vec![folder("g", vec![]), folder("h", vec![request(0, "a")])];
+        let mut next_id = 10;
+        carry_over_request_ids(&old, &mut new, &mut next_id);
+        // "f" was renamed *and* moved, so it can't be recognized
+        assert_eq!(ids(&new), vec![("a".to_string(), 10)]);
+    }
+
+    #[test]
+    fn folder_renamed_in_place_keeps_ids() {
+        let old = vec![folder("f", vec![request(1, "a")]), folder("g", vec![])];
+        let mut new = vec![folder("h", vec![request(0, "a")]), folder("g", vec![])];
+        let mut next_id = 10;
+        carry_over_request_ids(&old, &mut new, &mut next_id);
+        assert_eq!(ids(&new), vec![("a".to_string(), 1)]);
     }
 }
