@@ -19,6 +19,7 @@ iced = { version = "0.14", features = ["tokio", "image", "advanced", "canvas", "
 
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["compat"] }
+notify-debouncer-mini = "0.6.0"
 
 reqwest = { version = "0.12", default-features = false, features = ["multipart", "json", "rustls-tls", "blocking"] }
 

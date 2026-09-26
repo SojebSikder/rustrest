@@ -365,6 +365,14 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
     };
     let terminal_sub = Subscription::run_with(terminal_events_data, terminal_events_stream);
 
+    // reloads local collections edited by other programs
+    let watch_targets = app::file_watch::watch_targets(app);
+    let file_watch_sub = if watch_targets.is_empty() {
+        Subscription::none()
+    } else {
+        Subscription::run_with(watch_targets, app::file_watch::watch_stream)
+    };
+
     Subscription::batch([
         context_menu_sub,
         menu_bar_sub,
@@ -383,6 +391,7 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         tab_drag_sub,
         terminal_sub,
         command_palette_sub,
+        file_watch_sub,
     ])
 }
 

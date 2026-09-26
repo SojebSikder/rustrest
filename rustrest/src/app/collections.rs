@@ -65,6 +65,8 @@ pub fn loaded(
             collection.file_path = path;
             app.next_tab_id += 1;
             collection.assign_request_ids(&mut app.next_request_id);
+            // fingerprint what's on disk, before the default headers get merged in
+            super::file_watch::record_baseline(app, collection.id, &collection);
             collection.set_headers(default_headers());
             app.collections.push(collection);
 
@@ -94,6 +96,9 @@ pub fn persist_if_known_location(
     col_id: usize,
     success_msg: String,
 ) -> Task<Message> {
+    // what's about to be on disk, so the file watcher recognizes the write as ours
+    super::file_watch::record_current_as_baseline(app, col_id);
+
     if let Some(collection) = app.collections.iter().find(|c| c.id == col_id) {
         if let Some(remote) = &collection.remote_dir {
             let profile_id = remote.profile_id;
@@ -248,6 +253,7 @@ pub fn first_saved(app: &mut Rustrest, col_id: usize, path: std::path::PathBuf) 
         col.file_path = Some(path);
         col.clear_unsaved();
     }
+    super::file_watch::record_current_as_baseline(app, col_id);
     clear_tab_dirty_for_collection(app, col_id);
 
     Task::done(Message::ShowToast(
