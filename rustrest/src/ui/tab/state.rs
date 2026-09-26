@@ -9,6 +9,7 @@ use crate::collection_adapter::{RequestNodeTabExt, sync_body_from_tab};
 use crate::http_client::{HttpMethod, HttpResponse};
 use crate::message::MultilineFieldKind;
 use crate::ui::resize_handle::{DividerOrientation, resize_handle};
+use crate::ui::script_editor::ScriptContent;
 use crate::ui::tab::types::ScriptTab;
 use crate::ui::tab::views;
 use crate::{APP_NAME, APP_VERSION};
@@ -41,8 +42,8 @@ pub struct Tab {
     pub request_auth: super::auth_form::AuthFormState,
     pub request_body: text_editor::Content,
     pub script_tab: ScriptTab,
-    pub pre_request_script: text_editor::Content,
-    pub post_response_script: text_editor::Content,
+    pub pre_request_script: ScriptContent,
+    pub post_response_script: ScriptContent,
     pub body_form_data: Vec<FormDataRow>,
     pub body_form_data_values: Vec<text_editor::Content>,
     pub body_urlencoded: Vec<KeyValuePair>,
@@ -105,10 +106,10 @@ impl Tab {
             request_auth: super::auth_form::AuthFormState::default(),
             request_body: text_editor::Content::with_text("{\n  \"key\": \"value\"\n}"),
             script_tab: ScriptTab::PreRequest,
-            pre_request_script: text_editor::Content::with_text(
+            pre_request_script: ScriptContent::with_text(
                 "// Executed before the request is sent\n// e.g. pm.environment.set(\"timestamp\", Date.now());",
             ),
-            post_response_script: text_editor::Content::with_text(
+            post_response_script: ScriptContent::with_text(
                 "// Executed after receiving a response\n// e.g. pm.test(\"Status code is 200\", function () {\n//     pm.response.to.have.status(200);\n// });",
             ),
             body_form_data_values: contents_for_form_data(&body_form_data),
