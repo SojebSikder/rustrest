@@ -1,6 +1,7 @@
 use crate::app::Rustrest;
 use crate::http_client::HttpMethod;
 use crate::message::{Message, SidebarItemKey};
+use crate::ui::script_editor::ScriptEditorEvent;
 use crate::ui::tab::messages::{TabMessage, ValueField};
 use crate::ui::tab::types::{FormDataRow, KeyValuePair};
 use iced::widget::text_editor::{Action, Edit};
@@ -592,13 +593,15 @@ pub fn apply_field_paste(app: &mut Rustrest, target: FieldTarget, text: String) 
                 TabFieldTarget::GraphQlVariablesEditor => tab.update(
                     TabMessage::GraphQlVariablesAction(Action::Edit(Edit::Paste(Arc::new(text)))),
                 ),
-                TabFieldTarget::PreRequestScriptEditor => tab.update(
-                    TabMessage::PreRequestScriptChanged(Action::Edit(Edit::Paste(Arc::new(text)))),
-                ),
+                TabFieldTarget::PreRequestScriptEditor => {
+                    tab.update(TabMessage::PreRequestScriptChanged(
+                        ScriptEditorEvent::Action(Action::Edit(Edit::Paste(Arc::new(text)))),
+                    ))
+                }
                 TabFieldTarget::PostResponseScriptEditor => {
-                    tab.update(TabMessage::PostResponseScriptChanged(Action::Edit(
-                        Edit::Paste(Arc::new(text)),
-                    )))
+                    tab.update(TabMessage::PostResponseScriptChanged(
+                        ScriptEditorEvent::Action(Action::Edit(Edit::Paste(Arc::new(text)))),
+                    ))
                 }
                 TabFieldTarget::ResponseBodyEditor
                 | TabFieldTarget::ResponseField

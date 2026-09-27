@@ -17,3 +17,6 @@ dirs = "7.0.0"
 thiserror = "2"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
 rfd = "0.17.2"
+# same features the app already links for self-updates, so this adds no size
+self_update = { version = "1.2.0", default-features = false, features = ["rustls", "reqwest", "archive-tar", "compression-tar-xz", "archive-zip", "compression-zip-deflate"] }
+sha2 = "0.10"

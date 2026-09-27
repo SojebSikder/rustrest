@@ -18,6 +18,7 @@ This guide covers the fundamentals of Rustrest plugin development.
 - [Streaming HTTP responses](#streaming-http-responses)
 - [Picking files from disk](#picking-files-from-disk)
 - [The `ExternalProcess` capability](#the-externalprocess-capability)
+- [Language servers](#language-servers)
 - [Logging and debugging](#logging-and-debugging)
 - [Publishing to the plugin gallery](#publishing-to-the-plugin-gallery)
 - [Publishing checklist](#publishing-checklist)
@@ -201,6 +202,11 @@ schema_version = 1          # manifest schema version; omit to default to the cu
 request_hooks = true        # participate in every outgoing request / incoming response
 external_process = true     # unlock which/download_file/run_command/Process (see below)
 
+[[capabilities.language_servers]]  # a language server for the script editors (see below)
+id = "my-js-server"
+name = "My JavaScript Server"
+languages = ["javascript"]
+
 [[capabilities.commands]]   # command palette / menu entries, routed to `on_command`
 id = "say-hello"
 title = "Example: Say Hello"
@@ -250,22 +256,25 @@ Every table under `[capabilities]` is optional - only declare what you use. The 
 
 ## The `Plugin` trait
 
-| Method                                                           | Capability needed       | Purpose                                                                        |
-| ---------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------ |
-| `on_pre_request(ctx) -> ctx`                                     | `request_hooks`         | Mutate method/url/headers/body/variables before a request is sent.             |
-| `on_post_response(ctx) -> ctx`                                   | `request_hooks`         | Inspect/mutate status/headers/body/variables/test results after a response.    |
+| Method                                                           | Capability needed                          | Purpose                                                                                     |
+| ---------------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| `on_pre_request(ctx) -> ctx`                                     | `request_hooks`                            | Mutate method/url/headers/body/variables before a request is sent.                          |
+| `on_post_response(ctx) -> ctx`                                   | `request_hooks`                            | Inspect/mutate status/headers/body/variables/test results after a response.                 |
 | `on_command(id) -> Result<Option<String>, String>`               | `commands`/`menu_items`/`status_bar_items` | Handle a command-palette, menu, or status bar action; the returned string shows as a toast. |
-| `render_panel(panel_id) -> UiNode`                               | `sidebar_panel`         | Render (or re-render) your panel's declarative widget tree.                    |
-| `on_panel_event(panel_id, event) -> Option<UiNode>`              | `sidebar_panel`         | Handle a widget interaction; return `Some(tree)` to update the panel.          |
-| `import(format_id, bytes) -> Result<Value, String>`              | `import_formats`        | Decode into Rustrest's own collection JSON (Postman v2.1-shaped).              |
-| `export(format_id, collection) -> Result<Vec<u8>, String>`       | `export_formats`        | Encode Rustrest's collection JSON into your format.                            |
-| `on_process_output(handle, stream, chunk)`                       | `external_process`      | New stdout/stderr from a process you spawned via `Process::spawn`.             |
-| `on_process_exit(handle, code)`                                  | `external_process`      | A spawned process exited.                                                      |
-| `render_right_panel(panel_id, ctx) -> RightPanelAction`          | `right_panel`           | Render (or re-render) the right panel; `ctx` is the active request/response.   |
-| `on_right_panel_event(panel_id, ctx, event) -> RightPanelAction` | `right_panel`           | Handle a widget interaction in the right panel.                                |
-| `on_http_response(handle, result)`                               | `external_process`      | An outbound request started via `network::http_request` completed.             |
-| `on_http_response_chunk(handle, chunk)`                          | `external_process`      | One line of a response body, as it's read off the socket (before the final result). |
-| `on_files_picked(handle, result)`                                | `external_process`      | A `process::pick_files` dialog resolved (or was cancelled).                    |
+| `render_panel(panel_id) -> UiNode`                               | `sidebar_panel`                            | Render (or re-render) your panel's declarative widget tree.                                 |
+| `on_panel_event(panel_id, event) -> Option<UiNode>`              | `sidebar_panel`                            | Handle a widget interaction; return `Some(tree)` to update the panel.                       |
+| `import(format_id, bytes) -> Result<Value, String>`              | `import_formats`                           | Decode into Rustrest's own collection JSON (Postman v2.1-shaped).                           |
+| `export(format_id, collection) -> Result<Vec<u8>, String>`       | `export_formats`                           | Encode Rustrest's collection JSON into your format.                                         |
+| `on_process_output(handle, stream, chunk)`                       | `external_process`                         | New stdout/stderr from a process you spawned via `Process::spawn`.                          |
+| `on_process_exit(handle, code)`                                  | `external_process`                         | A spawned process exited.                                                                   |
+| `render_right_panel(panel_id, ctx) -> RightPanelAction`          | `right_panel`                              | Render (or re-render) the right panel; `ctx` is the active request/response.                |
+| `on_right_panel_event(panel_id, ctx, event) -> RightPanelAction` | `right_panel`                              | Handle a widget interaction in the right panel.                                             |
+| `on_http_response(handle, result)`                               | `external_process`                         | An outbound request started via `network::http_request` completed.                          |
+| `on_http_response_chunk(handle, chunk)`                          | `external_process`                         | One line of a response body, as it's read off the socket (before the final result).         |
+| `on_files_picked(handle, result)`                                | `external_process`                         | A `process::pick_files` dialog resolved (or was cancelled).                                 |
+| `on_download_finished(handle, result)`                           | `external_process`                         | A `process::download_archive` finished; `result` lists the extracted files.                 |
+| `language_server_command(server_id) -> Result<Option<LanguageServerCommand>, String>` | `language_servers` | How to launch the server; `Ok(None)` while it's still installing (the host asks again). |
+| `language_server_initialization_options(server_id) -> Option<Value>` | `language_servers` | `initializationOptions`, also used to answer `workspace/configuration`. |
 
 `RequestContext`/`ResponseContext` mirror the shape of Rustrest's built-in `pm.*` pre-request/test scripting context, so behavior is consistent between the two mechanisms.
 
@@ -340,7 +349,7 @@ struct EnvSummary {
 }
 ```
 
-`collections`/`environments` are always populated, regardless of what tab is active - only `active_request`/`active_response` depend on it. `EnvSummary.variables` includes actual variable *values*, which may be secrets (API keys, tokens); if your UI lets the user pick which environments to include, say so visibly rather than sending them silently - see `rustrest-plugin-ai-agent`'s context picker for a working example.
+`collections`/`environments` are always populated, regardless of what tab is active - only `active_request`/`active_response` depend on it. `EnvSummary.variables` includes actual variable _values_, which may be secrets (API keys, tokens); if your UI lets the user pick which environments to include, say so visibly rather than sending them silently - see `rustrest-plugin-ai-agent`'s context picker for a working example.
 
 Both hooks return a `RightPanelAction` rather than a plain tree, so a plugin can also ask the host to edit the active request, or propose a change to the collection tree itself - the mechanism an AI-assistant-style plugin uses to turn a natural-language instruction into request changes, a generated test script, or a create/rename/delete/move on a collection/folder/request:
 
@@ -551,7 +560,55 @@ impl Plugin for MyPlugin {
 
 `Process::write`/`kill`/`try_wait` are synchronous and cheap (they just touch a pipe or a handle). Output isn't polled - the host drains it on a timer and delivers it via `on_process_output`/`on_process_exit`, the same call path `on_command`/`on_panel_event` already use. There's no persistent-process cleanup you need to write yourself: disabling or uninstalling the plugin kills anything it spawned.
 
+To fetch a prebuilt tool without blocking the UI, `download_archive` downloads and extracts a `.zip`/`.tar.xz` on a host thread (optionally verifying a `<archive>.sha256` file), and `host_target()` tells you which target triple's asset to pick:
+
+```rust
+use rustrest_plugin_api::process::{download_archive, host_target};
+
+let target = host_target()?; // e.g. "x86_64-pc-windows-msvc"
+let url = format!("https://github.com/me/tool/releases/download/v1.0.0/tool-{target}.tar.xz");
+let handle = download_archive(&url, Some(&format!("{url}.sha256")), "bin")?;
+// later: Plugin::on_download_finished(handle, Ok(extracted_file_paths))
+```
+
 `rustrest-plugin-example` demonstrates the full spawn -> write -> streamed-output round trip using `cat` (or `findstr /R "^"` on Windows) as a network-free stand-in for a real downloaded tool - a good starting point to copy from.
+
+## Language servers
+
+Language support for the pre-request / post-response script editors works like Zed extensions: a plugin doesn't speak LSP itself, it declares a language server and tells the host how to launch it. The host runs the server and its built-in LSP client (`rustrest-lsp`) drives the editors: diagnostics under the editor, a completion popup (typing `.`, starting a word, or Ctrl+Space), and hover info for the symbol at the cursor. Without such a plugin the editors fall back to a built-in syntax check.
+
+```toml
+[[capabilities.language_servers]]
+id = "my-js-server"
+name = "My JavaScript Server"
+languages = ["javascript"]   # the script editors' language
+```
+
+```rust
+use rustrest_plugin_api::{LanguageServerCommand, Plugin};
+
+impl Plugin for MyPlugin {
+    fn language_server_command(
+        &mut self,
+        server_id: &str,
+    ) -> Result<Option<LanguageServerCommand>, String> {
+        // e.g. find it on PATH, or start a `download_archive` and return
+        // Ok(None) until `on_download_finished` has installed it
+        let command = rustrest_plugin_api::process::which("my-js-server")
+            .ok_or("my-js-server is not installed")?;
+        Ok(Some(LanguageServerCommand { command, ..Default::default() }))
+    }
+}
+```
+
+What the host's client does:
+
+- Speaks LSP over the server's stdio and offers the `utf-8` position encoding (converting if the server picks UTF-16).
+- Opens each script editor as `file:///rustrest/scripts/<id>/pre-request.js` or `.../post-response.js` (language id `javascript`) with full-text sync, so a server can tell which `pm` API applies from the file name.
+- Uses `textDocument/completion`, `textDocument/hover` and `textDocument/publishDiagnostics`, and answers `workspace/configuration` with your initialization options.
+- Restarts a crashed server up to 3 times. "Restart Language Server" in the command palette relaunches it. Its stderr and log messages show up in the console.
+
+`Ok(None)` means "not ready yet" and is asked again about once a second; an `Err` is logged to the console and retried after 30 seconds. If several plugins declare a server for the same language, the first active one is used. `rustrest-plugin-js-lsp` is a complete example: it finds or downloads the Rust `rustrest-js-lsp` server and returns its path.
 
 ## Logging and debugging
 

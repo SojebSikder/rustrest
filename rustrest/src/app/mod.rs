@@ -12,6 +12,7 @@ mod plugin_collection_ops;
 mod plugins;
 mod release_notes;
 mod remote;
+pub mod script_intel;
 mod settings;
 mod sidebar;
 mod terminal;
@@ -134,6 +135,7 @@ pub struct Rustrest {
     pub status_bar: crate::ui::status_bar::StatusBarState,
 
     pub file_watch: file_watch::FileWatchState,
+    pub script_intel: script_intel::ScriptIntelState,
 }
 
 impl Rustrest {
@@ -605,6 +607,7 @@ pub fn init() -> (Rustrest, Task<Message>) {
         },
         status_bar: crate::ui::status_bar::StatusBarState::default(),
         file_watch: file_watch::FileWatchState::default(),
+        script_intel: script_intel::ScriptIntelState::default(),
     };
     // ensure at least one tab exists right away - `view()` indexes
     // `app.tabs[app.active_tab_index]` unconditionally, and the real tabs
@@ -1857,7 +1860,8 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         Message::PluginPanelEvent(plugin_id, panel_id, event) => {
             plugins::panel_event(app, plugin_id, panel_id, event)
         }
-        Message::PluginProcessTick => plugins::process_tick(app),
+        Message::PluginProcessTick => script_intel::tick(app),
+        Message::RestartLanguageServer => script_intel::restart(app),
         Message::ToggleRightPanel(plugin_id, panel_id) => {
             plugins::toggle_right_panel(app, plugin_id, panel_id)
         }

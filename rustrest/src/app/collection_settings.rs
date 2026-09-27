@@ -4,11 +4,11 @@ use super::{Rustrest, WorkspaceContent};
 use crate::collection::collection::set_event_script;
 use crate::message::Message;
 use crate::ui::collection_settings::CollectionSettingsState;
+use crate::ui::script_editor::ScriptEditorEvent;
 use crate::ui::tab::messages::AuthMessage;
 use crate::ui::tab::types::ScriptTab;
 use crate::ui::toast::toast::ToastStatus;
 use iced::Task;
-use iced::widget::text_editor::Action;
 use rustrest_core::AuthType;
 
 /// the settings editor of `collection_id`'s root tab, if it's open.
@@ -113,18 +113,16 @@ pub fn script_action(
     app: &mut Rustrest,
     collection_id: usize,
     tab: ScriptTab,
-    action: Action,
+    event: ScriptEditorEvent,
 ) -> Task<Message> {
     let Some(settings) = settings_mut(app, collection_id) else {
         return Task::none();
     };
-    let is_edit = action.is_edit();
     let (editor, listen) = match tab {
         ScriptTab::PreRequest => (&mut settings.pre_request_script, "prerequest"),
         ScriptTab::PostResponse => (&mut settings.post_response_script, "test"),
     };
-    editor.perform(action);
-    if !is_edit {
+    if !editor.update(event) {
         return Task::none();
     }
 

@@ -51,6 +51,17 @@ pub struct FormatDef {
     pub extensions: Vec<String>,
 }
 
+/// A language server plugin, the plugin only says how to launch it,
+/// the host runs it and speaks LSP.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LanguageServerDef {
+    /// stable id, passed back to `Plugin::language_server_command`.
+    pub id: String,
+    pub name: String,
+    /// language ids it serves (e.g. `javascript` for the script editors).
+    pub languages: Vec<String>,
+}
+
 /// Declared once by `Plugin::manifest`; the host only ever calls into
 /// capabilities a plugin actually opted into.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -75,6 +86,9 @@ pub enum Capability {
     /// capabilities because it's the one that lets a plugin touch the
     /// outside world (network, filesystem under its storage dir, processes).
     ExternalProcess,
+    /// a language server the host launches (via `Plugin::language_server_command`)
+    /// to power the script editors for the languages it declares.
+    LanguageServer(LanguageServerDef),
 }
 
 /// manifest schema version

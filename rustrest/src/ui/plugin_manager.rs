@@ -52,6 +52,7 @@ fn capability_label(capability: &Capability) -> &'static str {
         Capability::ExportFormat(_) => "Export Format",
         Capability::StatusBarItem(_) => "Status Bar Item",
         Capability::ExternalProcess => "External Process",
+        Capability::LanguageServer(_) => "Language Server",
     }
 }
 

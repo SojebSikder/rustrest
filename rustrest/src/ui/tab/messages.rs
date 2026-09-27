@@ -3,6 +3,7 @@ use super::types::{
     ResponseView,
 };
 use crate::ui::context_menu::TabFieldTarget;
+use crate::ui::script_editor::ScriptEditorEvent;
 use crate::{http_client::HttpMethod, ui::tab::types::ScriptTab};
 use iced::widget::text_editor;
 use rustrest_core::{
@@ -125,8 +126,8 @@ pub enum TabMessage {
 
     // scripts
     ScriptTabChanged(ScriptTab),
-    PreRequestScriptChanged(text_editor::Action),
-    PostResponseScriptChanged(text_editor::Action),
+    PreRequestScriptChanged(ScriptEditorEvent),
+    PostResponseScriptChanged(ScriptEditorEvent),
 
     CancelRequest,
 
@@ -188,9 +189,10 @@ impl TabMessage {
             TabMessage::BodyChanged(action)
             | TabMessage::GraphQlQueryAction(action)
             | TabMessage::GraphQlVariablesAction(action)
-            | TabMessage::PreRequestScriptChanged(action)
-            | TabMessage::PostResponseScriptChanged(action)
             | TabMessage::DocsAction(action) => matches!(action, Action::Edit(_)),
+
+            TabMessage::PreRequestScriptChanged(event)
+            | TabMessage::PostResponseScriptChanged(event) => event.is_edit(),
 
             TabMessage::ValueEditorAction(_, _, action) => matches!(action, Action::Edit(_)),
 

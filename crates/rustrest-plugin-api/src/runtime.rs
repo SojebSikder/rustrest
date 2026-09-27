@@ -125,6 +125,25 @@ fn route<T: Plugin>(plugin: &mut T, input: &[u8]) -> Vec<u8> {
             Ok((handle, result)) => encode_ok(&plugin.on_files_picked(handle, result)),
             Err(bytes) => bytes,
         },
+        "on_download_finished" => {
+            match decode_payload::<(u32, Result<Vec<String>, String>)>(envelope.payload) {
+                Ok((handle, result)) => encode_ok(&plugin.on_download_finished(handle, result)),
+                Err(bytes) => bytes,
+            }
+        }
+        "language_server_command" => match decode_payload::<String>(envelope.payload) {
+            Ok(id) => match plugin.language_server_command(&id) {
+                Ok(command) => encode_ok(&command),
+                Err(e) => encode_err(&e),
+            },
+            Err(bytes) => bytes,
+        },
+        "language_server_initialization_options" => {
+            match decode_payload::<String>(envelope.payload) {
+                Ok(id) => encode_ok(&plugin.language_server_initialization_options(&id)),
+                Err(bytes) => bytes,
+            }
+        }
         other => encode_err(&format!("unknown plugin call: {other}")),
     }
 }

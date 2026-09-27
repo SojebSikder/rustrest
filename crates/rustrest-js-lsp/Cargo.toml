@@ -1,0 +1,31 @@
+[package]
+name = "rustrest-js-lsp"
+version.workspace = true
+edition = "2024"
+publish = false
+description = "Language server for Rustrest pre-request / post-response scripts"
+
+# the app never links this; like rustrest-remote-agent it's built and
+# published as a GitHub release artifact per target (see dist-workspace.toml)
+# alongside the main `rustrest` binary, and the js-lsp plugin downloads the one
+# matching the host. version is inherited from [workspace.package] so dist
+# always builds it with `rustrest` (it only builds packages whose version
+# matches the tag).
+[package.metadata.dist]
+dist = true
+
+[[bin]]
+name = "rustrest-js-lsp"
+path = "src/main.rs"
+
+[dependencies]
+lsp-server = "0.10"
+lsp-types = "0.97"
+serde = "1"
+serde_json = "1"
+oxc_allocator = "0.151"
+oxc_ast = "0.151"
+oxc_diagnostics = "0.151"
+oxc_parser = "0.151"
+oxc_semantic = "0.151"
+oxc_span = "0.151"

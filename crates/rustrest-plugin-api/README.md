@@ -104,12 +104,19 @@ Every method has a no-op default - only override what your declared capabilities
 | `on_http_response(handle, result)` | `external_process` | An outbound request started via `network::http_request` completed. |
 | `on_http_response_chunk(handle, chunk)` | `external_process` | One line of a response body, as it's read off the socket (before the final result) - for rendering a streamed reply incrementally. |
 | `on_files_picked(handle, result)` | `external_process` | A `process::pick_files` dialog resolved (or was cancelled). |
+| `on_download_finished(handle, result)` | `external_process` | A `process::download_archive` finished; `result` lists the extracted files. |
+| `language_server_command(server_id)` | `language_servers` | How to launch a declared language server; `Ok(None)` while it's still installing. |
+| `language_server_initialization_options(server_id)` | `language_servers` | `initializationOptions` (also the `workspace/configuration` answer). |
 
 `RequestContext`/`ResponseContext` mirror the shape of Rustrest's built-in `pm.*` pre-request/test scripting context, so behavior stays consistent between the two mechanisms.
 
 ## The `ExternalProcess` capability
 
-Declaring `external_process = true` in `plugin.toml` unlocks the [`process`] module: `which`, `download_file`, `make_executable`, `run_command` for one-shot commands, `Process` for spawning a long-lived child process whose output arrives through `Plugin::on_process_output`/`on_process_exit`, and `pick_files` for a native "choose files" dialog whose result arrives through `Plugin::on_files_picked`. It also unlocks `network::http_request` for outbound HTTPS requests (result via `Plugin::on_http_response`, optionally streamed line-by-line via `Plugin::on_http_response_chunk`) and `storage_read`/`storage_write` for persisting small bits of state in the plugin's private storage directory.
+Declaring `external_process = true` in `plugin.toml` unlocks the [`process`] module: `which`, `download_file`, `make_executable`, `run_command` for one-shot commands, `Process` for spawning a long-lived child process whose output arrives through `Plugin::on_process_output`/`on_process_exit`, `download_archive` for fetching and extracting a `.zip`/`.tar.xz` off the UI thread (result via `Plugin::on_download_finished`), `host_target` for picking a matching prebuilt binary, and `pick_files` for a native "choose files" dialog whose result arrives through `Plugin::on_files_picked`. It also unlocks `network::http_request` for outbound HTTPS requests (result via `Plugin::on_http_response`, optionally streamed line-by-line via `Plugin::on_http_response_chunk`) and `storage_read`/`storage_write` for persisting small bits of state in the plugin's private storage directory.
+
+## The `language_servers` capability
+
+Zed-style language servers for the pre-request / post-response script editors: the plugin declares a server (id, name, languages) in `plugin.toml` and returns how to launch it from `Plugin::language_server_command` (e.g. after locating or downloading the binary). The host runs it and its own LSP client provides completions, hover and diagnostics - the plugin never speaks LSP itself.
 
 ## The `right_panel` capability
 

@@ -22,6 +22,30 @@ pub fn which(name: &str) -> Option<String> {
     hostcall::call("which", name).ok().flatten()
 }
 
+/// starts downloading the `.zip` / `.tar.xz` archive at `url`
+/// on a background thread and extracts it into `<storage dir>/<dest_dir>`
+/// (replacing anything already there), returning a handle immediately.
+/// The result - every extracted file's absolute path - arrives via
+/// `Plugin::on_download_finished`. If `checksum_url` is given, it must
+/// point at a file whose first word is the archive's hex SHA-256
+/// (the `<archive>.sha256` files release tooling like cargo-dist publishes);
+/// a mismatch fails the download. `https` only, size-capped host-side.
+#[cfg(target_arch = "wasm32")]
+pub fn download_archive(
+    url: &str,
+    checksum_url: Option<&str>,
+    dest_dir: &str,
+) -> Result<u32, String> {
+    hostcall::call("download_archive", (url, checksum_url, dest_dir))
+}
+
+/// the Rust target triple the host app was built for (e.g. `x86_64-pc-windows-msvc`),
+/// for picking a matching prebuilt binary.
+#[cfg(target_arch = "wasm32")]
+pub fn host_target() -> Result<String, String> {
+    hostcall::call("host_target", ())
+}
+
 /// downloads `url` into this plugin's private storage directory under
 /// `filename`, returning the absolute path it was saved to. `https` only,
 /// size-capped host-side.

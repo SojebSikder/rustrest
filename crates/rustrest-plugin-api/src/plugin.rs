@@ -1,4 +1,5 @@
 use crate::hooks::{RequestContext, ResponseContext, RightPanelAction, RightPanelContext};
+use crate::language_server::LanguageServerCommand;
 use crate::network::HttpResponseData;
 use crate::process::{PickFilesResult, ProcessStream};
 use crate::ui::{UiEvent, UiNode};
@@ -97,4 +98,26 @@ pub trait Plugin: Default + Send + 'static {
     /// (or the user cancels, in which case `result.files` is empty).
     /// Requires `Capability::ExternalProcess`.
     fn on_files_picked(&mut self, _handle: u32, _result: PickFilesResult) {}
+
+    /// delivered once an archive started via `process::download_archive`
+    /// has been downloaded and extracted (or failed). On success, holds
+    /// the absolute paths of every extracted file. Requires `Capability::ExternalProcess`.
+    fn on_download_finished(&mut self, _handle: u32, _result: Result<Vec<String>, String>) {}
+
+    /// how to launch the language server `server_id`
+    fn language_server_command(
+        &mut self,
+        server_id: &str,
+    ) -> Result<Option<LanguageServerCommand>, String> {
+        Err(format!("language server '{server_id}' is not implemented"))
+    }
+
+    /// `initializationOptions` sent with `initialize`; also the answer to
+    /// the server's `workspace/configuration` requests.
+    fn language_server_initialization_options(
+        &mut self,
+        _server_id: &str,
+    ) -> Option<serde_json::Value> {
+        None
+    }
 }
