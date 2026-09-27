@@ -258,9 +258,10 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
     };
 
     // drains buffered stdout/stderr from any process a plugin spawned via
-    // the `ExternalProcess` capability.
-    // only runs while some active plugin actually declared that capability,
-    // same "don't tick the event loop for nothing" rule as `spinner_sub`.
+    // the `ExternalProcess` capability, and syncs the script editor with a `ScriptLanguage` plugin.
+    // only runs while some active plugin actually declared one of those,
+    // same "don't tick the event loop for nothing" rule as `spinner_sub`;
+    // ticks faster while a script edit/completion/hover is in flight.
     let plugin_process_sub = if app.plugins.plugin_manager.installed().iter().any(|p| {
         p.is_active()
             && p.manifest.as_ref().is_some_and(|m| {
@@ -268,8 +269,15 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
                     .iter()
                     .any(|c| matches!(c, rustrest_plugin_host::Capability::ExternalProcess))
             })
-    }) {
-        iced::time::every(std::time::Duration::from_millis(100)).map(|_| Message::PluginProcessTick)
+    }) || app::script_intel::has_language_plugin(app)
+    {
+        let interval = if app::script_intel::needs_fast_tick(app) {
+            25
+        } else {
+            100
+        };
+        iced::time::every(std::time::Duration::from_millis(interval))
+            .map(|_| Message::PluginProcessTick)
     } else {
         Subscription::none()
     };

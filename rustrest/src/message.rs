@@ -293,7 +293,7 @@ pub enum Message {
     CollectionScriptAction(
         usize,
         crate::ui::tab::types::ScriptTab,
-        iced::widget::text_editor::Action,
+        crate::ui::script_editor::ScriptEditorEvent,
     ),
     CollectionVariableChanged {
         collection_id: usize,
@@ -603,6 +603,8 @@ pub enum Message {
     /// owning plugin. Also drains any outbound HTTP requests started via
     /// `http_request` (same capability).
     PluginProcessTick,
+    /// relaunches the script editors' language server
+    RestartLanguageServer,
     /// opens the given plugin's right panel, or closes it if it's already
     /// the one open (a single generic toggle, not specific to any plugin).
     ToggleRightPanel(String, String),

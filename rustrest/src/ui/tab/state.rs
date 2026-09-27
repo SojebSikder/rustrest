@@ -292,11 +292,11 @@ impl Tab {
             TabMessage::ScriptTabChanged(script_tab) => {
                 self.script_tab = script_tab;
             }
-            TabMessage::PreRequestScriptChanged(action) => {
-                self.pre_request_script.perform(action);
+            TabMessage::PreRequestScriptChanged(event) => {
+                self.pre_request_script.update(event);
             }
-            TabMessage::PostResponseScriptChanged(action) => {
-                self.post_response_script.perform(action);
+            TabMessage::PostResponseScriptChanged(event) => {
+                self.post_response_script.update(event);
             }
 
             TabMessage::HeaderRowChanged(index, kv) => {

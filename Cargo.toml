@@ -14,6 +14,8 @@ members = [
     "crates/rustrest-sse",
     "crates/rustrest-graphql",
     "crates/rustrest-grpc",
+    "crates/rustrest-lsp",
+    "crates/rustrest-js-lsp",
 ]
 default-members = ["rustrest"]
 resolver = "2"

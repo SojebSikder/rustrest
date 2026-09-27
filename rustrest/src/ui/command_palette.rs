@@ -19,6 +19,7 @@ pub enum AppCommand {
     ViewReleaseNotes,
     RemoteDevelopmentOverSsh,
     OpenPluginManager,
+    RestartLanguageServer,
     /// plugin_id, command_id.
     Plugin(String, String),
 }
@@ -78,6 +79,17 @@ pub fn commands(app: &Rustrest) -> Vec<Command<AppCommand>> {
         ),
     ];
 
+    if crate::app::script_intel::has_language_plugin(app) {
+        list.push(
+            Command::new(
+                "restart-language-server",
+                "Restart Language Server",
+                AppCommand::RestartLanguageServer,
+            )
+            .with_subtitle("Script editors"),
+        );
+    }
+
     for (plugin_id, cmd) in app.plugins.plugin_manager.commands() {
         let mut entry = Command::new(
             format!("plugin:{}:{}", plugin_id, cmd.id),
@@ -107,6 +119,7 @@ pub fn to_message(action: AppCommand) -> Message {
         AppCommand::ViewReleaseNotes => Message::ViewReleaseNotes,
         AppCommand::RemoteDevelopmentOverSsh => Message::OpenRemoteConfig,
         AppCommand::OpenPluginManager => Message::OpenPluginManagerPressed,
+        AppCommand::RestartLanguageServer => Message::RestartLanguageServer,
         AppCommand::Plugin(plugin_id, command_id) => Message::PluginCommand(plugin_id, command_id),
     }
 }

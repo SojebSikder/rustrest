@@ -1,0 +1,20 @@
+[workspace]
+
+[package]
+name = "rustrest-plugin-js-lsp"
+version = "0.1.0"
+edition = "2024"
+description = "JavaScript language intelligence (completions, hover, diagnostics) for Rustrest's script editors, bridging the rustrest-js-lsp server"
+publish = false
+
+[lib]
+name = "rustrest_plugin_js_lsp"
+crate-type = ["cdylib"]
+
+[dependencies]
+rustrest-plugin-api = { path = "../rustrest-plugin-api" }
+
+[profile.release]
+panic = "abort"
+strip = true
+opt-level = "s"

@@ -5,8 +5,9 @@ use crate::manifest_toml::{self, MANIFEST_FILE_NAME, WASM_FILE_NAME};
 use crate::network::{NetworkEvent, NetworkTable};
 use crate::process::{ProcessEvent, ProcessTable};
 use rustrest_plugin_api::{
-    Capability, CommandDef, FormatDef, MenuItemDef, PanelDef, PluginManifest, RequestContext,
-    ResponseContext, RightPanelAction, RightPanelContext, StatusBarItemDef, UiEvent, UiNode,
+    Capability, CommandDef, FormatDef, LanguageServerCommand, LanguageServerDef, MenuItemDef,
+    PanelDef, PluginManifest, RequestContext, ResponseContext, RightPanelAction, RightPanelContext,
+    StatusBarItemDef, UiEvent, UiNode,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -476,6 +477,11 @@ impl PluginManager {
                         "on_http_response",
                         (handle, result),
                     ),
+                    NetworkEvent::Download(handle, result) => runtime.handles.call_json::<_, ()>(
+                        &mut runtime.store,
+                        "on_download_finished",
+                        (handle, result),
+                    ),
                 };
                 if let Err(e) = call_result {
                     log_hook_error(runtime, &dir_name, "http-response", &e);
@@ -706,6 +712,49 @@ impl PluginManager {
         runtime
             .handles
             .call_json(&mut runtime.store, "export", (format_id, collection))
+    }
+
+    /// every language server declared by an active plugin, as (plugin id, server).
+    pub fn language_servers(&self) -> Vec<(String, LanguageServerDef)> {
+        let mut out = Vec::new();
+        for plugin in self.plugins.iter().filter(|p| p.is_active()) {
+            let Some(manifest) = &plugin.manifest else {
+                continue;
+            };
+            for cap in &manifest.capabilities {
+                if let Capability::LanguageServer(server) = cap {
+                    out.push((plugin.id().to_string(), server.clone()));
+                }
+            }
+        }
+        out
+    }
+
+    /// asks the plugin how to launch `server_id`; `Ok(None)` while it's still being installed.
+    pub fn language_server_command(
+        &mut self,
+        plugin_id: &str,
+        server_id: &str,
+    ) -> Result<Option<LanguageServerCommand>, PluginError> {
+        let plugin = self.find_active(plugin_id)?;
+        let runtime = plugin.runtime.as_mut().expect("checked active");
+        runtime
+            .handles
+            .call_json(&mut runtime.store, "language_server_command", server_id)
+    }
+
+    pub fn language_server_initialization_options(
+        &mut self,
+        plugin_id: &str,
+        server_id: &str,
+    ) -> Result<Option<serde_json::Value>, PluginError> {
+        let plugin = self.find_active(plugin_id)?;
+        let runtime = plugin.runtime.as_mut().expect("checked active");
+        runtime.handles.call_json(
+            &mut runtime.store,
+            "language_server_initialization_options",
+            server_id,
+        )
     }
 
     /// runs every enabled `RequestHooks` plugin's pre-request hook in order,

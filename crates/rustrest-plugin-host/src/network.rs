@@ -2,12 +2,16 @@
 //! `ExternalProcess` capability's `http_request` host call.
 
 use rustrest_plugin_api::HttpResponseData;
-use std::io::{BufRead, BufReader};
+use sha2::{Digest, Sha256};
+use std::io::{BufRead, BufReader, Read, Write};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 const MAX_RESPONSE_BYTES: u64 = 20 * 1024 * 1024; // 20 MB
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
+pub const MAX_DOWNLOAD_BYTES: u64 = 200 * 1024 * 1024; // 200 MB
+const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(300);
 
 pub enum NetworkEvent {
     /// one line of the response body, delivered as soon as it's read off
@@ -16,6 +20,9 @@ pub enum NetworkEvent {
     /// instead of waiting for the whole body.
     Chunk(u32, Vec<u8>),
     Response(u32, Result<HttpResponseData, String>),
+    /// an archive started via `download_archive` finished downloading and
+    /// extracting, holds every extracted file's absolute path.
+    Download(u32, Result<Vec<String>, String>),
 }
 
 #[derive(Default)]
@@ -49,6 +56,50 @@ impl NetworkTable {
             let result = run_request(handle, &shared, &method, &url, &headers, body.as_deref());
             let mut table = shared.lock().expect("network table poisoned");
             table.events.push(NetworkEvent::Response(handle, result));
+        });
+
+        Ok(handle)
+    }
+
+    /// downloads the archive at `url` on a background thread, verifies it
+    /// against `checksum_url` (if given), and extracts it into `storage_dir/dest_dir`,
+    /// replacing that directory. Returns a handle immediately, and completion arrives as `NetworkEvent::Download`.
+    pub fn spawn_download(
+        shared: &Arc<Mutex<NetworkTable>>,
+        storage_dir: PathBuf,
+        url: String,
+        checksum_url: Option<String>,
+        dest_dir: String,
+    ) -> Result<u32, String> {
+        if !url.starts_with("https://")
+            || checksum_url
+                .as_ref()
+                .is_some_and(|u| !u.starts_with("https://"))
+        {
+            return Err("only https:// urls are allowed".to_string());
+        }
+        let dest_name = Path::new(&dest_dir)
+            .file_name()
+            .filter(|n| Path::new(n) == Path::new(&dest_dir))
+            .ok_or_else(|| "dest_dir must be a single directory name".to_string())?
+            .to_owned();
+
+        let handle = {
+            let mut table = shared.lock().expect("network table poisoned");
+            table.next_handle += 1;
+            table.next_handle
+        };
+
+        let shared = shared.clone();
+        std::thread::spawn(move || {
+            let result = download_archive(
+                &storage_dir,
+                &url,
+                checksum_url.as_deref(),
+                &storage_dir.join(dest_name),
+            );
+            let mut table = shared.lock().expect("network table poisoned");
+            table.events.push(NetworkEvent::Download(handle, result));
         });
 
         Ok(handle)
@@ -132,4 +183,126 @@ fn run_request(
         headers: response_headers,
         body: full_body,
     })
+}
+
+/// streams `url` into `dest`
+pub fn fetch_to_file(url: &str, dest: &Path) -> Result<(), String> {
+    if !url.starts_with("https://") {
+        return Err("only https:// urls are allowed".to_string());
+    }
+    let client = reqwest::blocking::Client::builder()
+        .timeout(DOWNLOAD_TIMEOUT)
+        .build()
+        .map_err(|e| e.to_string())?;
+    let mut response = client.get(url).send().map_err(|e| e.to_string())?;
+    if !response.status().is_success() {
+        return Err(format!(
+            "download failed: HTTP {} ({url})",
+            response.status()
+        ));
+    }
+    if response
+        .content_length()
+        .is_some_and(|len| len > MAX_DOWNLOAD_BYTES)
+    {
+        return Err("download exceeds maximum allowed size".to_string());
+    }
+
+    let mut file = std::fs::File::create(dest).map_err(|e| e.to_string())?;
+    let mut written: u64 = 0;
+    let mut buf = [0u8; 8192];
+    loop {
+        let n = response.read(&mut buf).map_err(|e| e.to_string())?;
+        if n == 0 {
+            break;
+        }
+        written += n as u64;
+        if written > MAX_DOWNLOAD_BYTES {
+            drop(file);
+            let _ = std::fs::remove_file(dest);
+            return Err("download exceeds maximum allowed size".to_string());
+        }
+        file.write_all(&buf[..n]).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+fn download_archive(
+    storage_dir: &Path,
+    url: &str,
+    checksum_url: Option<&str>,
+    dest: &Path,
+) -> Result<Vec<String>, String> {
+    // keep the archive's own file name so extraction can detect its format
+    let archive_name = url
+        .rsplit('/')
+        .next()
+        .filter(|n| !n.is_empty())
+        .ok_or_else(|| "url has no file name".to_string())?;
+    let tmp_dir = storage_dir.join(format!(".download-{}", std::process::id()));
+    std::fs::create_dir_all(&tmp_dir).map_err(|e| e.to_string())?;
+
+    let result = (|| {
+        let archive_path = tmp_dir.join(archive_name);
+        fetch_to_file(url, &archive_path)?;
+
+        if let Some(checksum_url) = checksum_url {
+            let checksum_path = tmp_dir.join("checksum");
+            fetch_to_file(checksum_url, &checksum_path)?;
+            verify_sha256(&archive_path, &checksum_path)?;
+        }
+
+        if dest.exists() {
+            std::fs::remove_dir_all(dest).map_err(|e| e.to_string())?;
+        }
+        std::fs::create_dir_all(dest).map_err(|e| e.to_string())?;
+        self_update::Extract::from_source(&archive_path)
+            .extract_into(dest)
+            .map_err(|e| format!("failed to extract {archive_name}: {e}"))?;
+
+        let mut files = Vec::new();
+        collect_files(dest, &mut files);
+        Ok(files)
+    })();
+
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+    result
+}
+
+/// `checksum_path` holds the expected hex digest as its first word
+/// (`sha256sum`-style `<hex>  <file>` lines are fine).
+fn verify_sha256(archive_path: &Path, checksum_path: &Path) -> Result<(), String> {
+    let expected = std::fs::read_to_string(checksum_path).map_err(|e| e.to_string())?;
+    let expected = expected
+        .split_whitespace()
+        .next()
+        .ok_or_else(|| "empty checksum file".to_string())?;
+
+    let mut file = std::fs::File::open(archive_path).map_err(|e| e.to_string())?;
+    let mut hasher = Sha256::new();
+
+    std::io::copy(&mut file, &mut hasher).map_err(|e| e.to_string())?;
+
+    let actual = format!("{:x}", hasher.finalize());
+    if actual.eq_ignore_ascii_case(expected) {
+        Ok(())
+    } else {
+        Err(format!(
+            "checksum mismatch: expected {expected}, got {actual}"
+        ))
+    }
+}
+
+fn collect_files(dir: &Path, out: &mut Vec<String>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_files(&path, out);
+        } else {
+            out.push(path.to_string_lossy().to_string());
+        }
+    }
 }

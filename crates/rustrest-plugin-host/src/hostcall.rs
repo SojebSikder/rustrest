@@ -4,17 +4,17 @@
 use crate::error::PluginError;
 use crate::files::FileTable;
 use crate::network::NetworkTable;
+use crate::platform::host_target;
 use crate::process::ProcessTable;
 use crate::state::PluginState;
 use rustrest_plugin_api::{CommandOutput, HttpRequestSpec};
 use serde::{Deserialize, Serialize};
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use wasmtime::{Caller, Extern, Linker, Memory};
 
-const MAX_DOWNLOAD_BYTES: u64 = 200 * 1024 * 1024; // 200 MB
 const DEFAULT_COMMAND_TIMEOUT_MS: u64 = 30_000;
 const MAX_COMMAND_TIMEOUT_MS: u64 = 5 * 60_000;
 
@@ -256,6 +256,24 @@ fn execute(
                 Err(e) => encode_err(&e),
             }
         }
+        "download_archive" => {
+            require_external_process!();
+            let (url, checksum_url, dest_dir): (String, Option<String>, String) = decode!();
+            match NetworkTable::spawn_download(
+                network,
+                storage_dir.to_path_buf(),
+                url,
+                checksum_url,
+                dest_dir,
+            ) {
+                Ok(handle) => encode_ok(&handle),
+                Err(e) => encode_err(&e),
+            }
+        }
+        "host_target" => {
+            require_external_process!();
+            encode_ok(&host_target())
+        }
         other => encode_err(&format!("unknown host call: {other}")),
     }
 }
@@ -283,48 +301,13 @@ fn which(name: &str) -> Option<String> {
 }
 
 fn download_file(storage_dir: &Path, url: &str, filename: &str) -> Result<String, String> {
-    if !url.starts_with("https://") {
-        return Err("only https:// urls are allowed".to_string());
-    }
     let safe_name: PathBuf = Path::new(filename)
         .file_name()
         .ok_or_else(|| "invalid filename".to_string())?
         .into();
     std::fs::create_dir_all(storage_dir).map_err(|e| e.to_string())?;
     let dest = storage_dir.join(&safe_name);
-
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(120))
-        .build()
-        .map_err(|e| e.to_string())?;
-    let mut response = client.get(url).send().map_err(|e| e.to_string())?;
-    if !response.status().is_success() {
-        return Err(format!("download failed: HTTP {}", response.status()));
-    }
-    if response
-        .content_length()
-        .is_some_and(|len| len > MAX_DOWNLOAD_BYTES)
-    {
-        return Err("download exceeds maximum allowed size".to_string());
-    }
-
-    let mut file = std::fs::File::create(&dest).map_err(|e| e.to_string())?;
-    let mut written: u64 = 0;
-    let mut buf = [0u8; 8192];
-    loop {
-        let n = response.read(&mut buf).map_err(|e| e.to_string())?;
-        if n == 0 {
-            break;
-        }
-        written += n as u64;
-        if written > MAX_DOWNLOAD_BYTES {
-            drop(file);
-            let _ = std::fs::remove_file(&dest);
-            return Err("download exceeds maximum allowed size".to_string());
-        }
-        file.write_all(&buf[..n]).map_err(|e| e.to_string())?;
-    }
-
+    crate::network::fetch_to_file(url, &dest)?;
     Ok(dest.to_string_lossy().to_string())
 }
 

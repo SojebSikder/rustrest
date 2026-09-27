@@ -1,0 +1,18 @@
+id = "js-lsp"
+name = "JavaScript Language Server"
+version = "0.1.0"
+author = "Rustrest"
+description = "Autocomplete, hover docs and error checking for pre-request / post-response scripts, powered by rustrest-js-lsp server."
+schema_version = 1
+
+[capabilities]
+external_process = true
+
+[[capabilities.language_servers]]
+id = "rustrest-js-lsp"
+name = "Rustrest JavaScript"
+languages = ["javascript"]
+
+[[capabilities.commands]]
+id = "reinstall-server"
+title = "JavaScript Language Server: Reinstall"

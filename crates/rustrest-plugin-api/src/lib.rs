@@ -28,6 +28,7 @@ mod hooks;
 mod host;
 #[cfg(target_arch = "wasm32")]
 mod hostcall;
+mod language_server;
 mod manifest;
 pub mod network;
 mod plugin;
@@ -54,9 +55,10 @@ pub use hooks::{
 };
 #[cfg(target_arch = "wasm32")]
 pub use host::log;
+pub use language_server::LanguageServerCommand;
 pub use manifest::{
-    CURRENT_SCHEMA_VERSION, Capability, CommandDef, FormatDef, MenuItemDef, PanelDef,
-    PluginManifest, StatusBarItemDef,
+    CURRENT_SCHEMA_VERSION, Capability, CommandDef, FormatDef, LanguageServerDef, MenuItemDef,
+    PanelDef, PluginManifest, StatusBarItemDef,
 };
 #[cfg(target_arch = "wasm32")]
 pub use network::http_request;
