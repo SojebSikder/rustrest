@@ -27,6 +27,9 @@ pub struct CollectionMeta {
 /// metadata persisted inside every folder directory.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FolderMeta {
+    /// the folder's `PostmanFolder::uid`
+    #[serde(rename = "id", default, skip_serializing_if = "Option::is_none")]
+    pub uid: Option<String>,
     pub description: Option<String>,
     #[serde(rename = "protocolProfileBehavior")]
     pub protocol_profile_behavior: Option<PostmanProtocolProfileBehavior>,

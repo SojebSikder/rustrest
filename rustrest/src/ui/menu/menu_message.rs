@@ -10,6 +10,7 @@ pub enum MenuMessage {
     CheckForUpdate,
     OpenPluginManager,
     OpenSettings,
+    OpenCloud,
     /// plugin_id, command_id.
     Plugin(String, String),
     /// plugin_id, format_id, file-picker extensions.

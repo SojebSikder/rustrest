@@ -270,6 +270,11 @@ pub fn render_context_menu_overlay<'a>(app: &Rustrest) -> Option<Element<'a, Mes
             if is_git_backed {
                 opts.push(("Commit changes...", Message::CommitChangesPressed(col_id)));
             }
+            if app.cloud.linked.contains_key(&col_id) {
+                opts.push(("Sync with Cloud", Message::CloudSync(col_id)));
+            } else {
+                opts.push(("Upload to Cloud...", Message::OpenCloudUpload(col_id)));
+            }
             opts.push(("Export As...", Message::ExportCollectionPressed(col_id)));
             if !app.plugins.plugin_manager.export_formats().is_empty() {
                 opts.push((

@@ -610,6 +610,7 @@ mod tests {
     fn request(id: usize, name: &str, method: &str, url: &str) -> CollectionItem {
         CollectionItem::Request(PostmanRequestNode {
             id,
+            uid: None,
             name: name.to_string(),
             event: None,
             request: PostmanRequestDetails {
@@ -640,6 +641,7 @@ mod tests {
     fn folder(name: &str, item: Vec<CollectionItem>) -> CollectionItem {
         CollectionItem::Folder(PostmanFolder {
             name: name.to_string(),
+            uid: None,
             protocol_profile_behavior: None,
             item,
             event: None,

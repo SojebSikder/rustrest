@@ -85,6 +85,7 @@ enum ActiveOverlay {
     ExportPicker,
     RemoteConfig,
     RemoteConnect,
+    Cloud,
     CommandPalette,
     ResponseTiming,
     About,
@@ -135,6 +136,8 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         Some(ActiveOverlay::RemoteConnect)
     } else if app.remote.remote_config_open {
         Some(ActiveOverlay::RemoteConfig)
+    } else if app.cloud.modal.is_some() {
+        Some(ActiveOverlay::Cloud)
     } else if app.plugins.export_plugin_picker.is_some() {
         Some(ActiveOverlay::ExportPicker)
     } else if app.settings.settings_open {
@@ -179,6 +182,7 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
             Some(ActiveOverlay::RemoteConfig) => {
                 outside_click_sub!(Message::CloseRemoteConfigPressed)
             }
+            Some(ActiveOverlay::Cloud) => outside_click_sub!(Message::CloseCloudModal),
             Some(ActiveOverlay::CommandPalette) => {
                 outside_click_sub!(Message::CommandPaletteClosed)
             }
@@ -221,6 +225,7 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         Some(ActiveOverlay::RemoteConfig) => {
             escape_close_sub!(Message::CloseRemoteConfigPressed)
         }
+        Some(ActiveOverlay::Cloud) => escape_close_sub!(Message::CloseCloudModal),
         Some(ActiveOverlay::CommandPalette) => escape_close_sub!(Message::CommandPaletteClosed),
         None => Subscription::none(),
     };
@@ -381,7 +386,31 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         Subscription::run_with(watch_targets, app::file_watch::watch_stream)
     };
 
+    // RustRest Cloud: live change hints for every cloud collection, plus a
+    // slow periodic sync as a fallback for anything the socket missed
+    let (cloud_realtime_sub, cloud_poll_sub) = match &app.cloud.client {
+        Some(client) if !app.cloud.linked.is_empty() => {
+            let target = app::cloud::RealtimeTarget {
+                client: client.clone(),
+                collection_ids: app
+                    .cloud
+                    .realtime_targets()
+                    .into_iter()
+                    .map(|(id, _)| id)
+                    .collect(),
+            };
+            (
+                Subscription::run_with(target, app::cloud::realtime_stream),
+                iced::time::every(std::time::Duration::from_secs(120))
+                    .map(|_| Message::CloudSyncAll),
+            )
+        }
+        _ => (Subscription::none(), Subscription::none()),
+    };
+
     Subscription::batch([
+        cloud_realtime_sub,
+        cloud_poll_sub,
         context_menu_sub,
         menu_bar_sub,
         click_outside_sub,
@@ -472,6 +501,17 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
             }
             MenuGroup::new("Plugins", items)
         },
+        MenuGroup::new(
+            "Cloud",
+            vec![DropdownItem::new(
+                if app.cloud.client.is_some() {
+                    "Cloud Collections..."
+                } else {
+                    "Sign in to RustRest Cloud..."
+                },
+                MenuMessage::OpenCloud,
+            )],
+        ),
         MenuGroup::new(
             "Settings",
             vec![DropdownItem::new(
@@ -671,6 +711,16 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
             .align_x(Alignment::Center)
             .align_y(Alignment::Center);
         main_interface_stack = main_interface_stack.push(remote_config_overlay);
+    }
+
+    // RustRest Cloud modal overlay
+    if let Some(modal) = app.cloud.modal.as_ref() {
+        let cloud_overlay = container(ui::cloud::view_cloud_modal(app, modal))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(Alignment::Center)
+            .align_y(Alignment::Center);
+        main_interface_stack = main_interface_stack.push(cloud_overlay);
     }
 
     // remote-connect (password/passphrase) modal overlay

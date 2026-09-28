@@ -151,6 +151,7 @@ fn sync_items<'a>(
                             .await?;
 
                     let meta = FolderMeta {
+                        uid: folder.uid.clone(),
                         description: folder.description.clone(),
                         protocol_profile_behavior: folder.protocol_profile_behavior.clone(),
                         event: folder.event.clone(),
@@ -305,6 +306,7 @@ fn read_items<'a>(
 
                 items.push(CollectionItem::Folder(PostmanFolder {
                     name: entry_name.clone(),
+                    uid: meta.uid,
                     protocol_profile_behavior: meta.protocol_profile_behavior,
                     item: child_items,
                     event: meta.event,

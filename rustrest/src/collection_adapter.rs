@@ -613,6 +613,7 @@ mod tests {
     fn node_with_saved_body(tab: &Tab) -> PostmanRequestNode {
         let mut node = PostmanRequestNode {
             id: 1,
+            uid: None,
             name: "req".to_string(),
             event: None,
             request: placeholder_request_details("POST", "http://localhost", Vec::new()),

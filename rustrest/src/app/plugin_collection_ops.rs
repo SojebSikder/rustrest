@@ -152,6 +152,7 @@ pub fn apply(app: &mut Rustrest, op: CollectionOperation) -> Result<String, Stri
                 &parent_path,
                 CollectionItem::Request(PostmanRequestNode {
                     id: req_id,
+                    uid: None,
                     name: name.clone(),
                     request: PostmanRequestDetails {
                         method,

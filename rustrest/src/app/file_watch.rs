@@ -280,6 +280,18 @@ pub fn replace_collection(app: &mut Rustrest, col_id: usize, mut new: PostmanCol
     refresh_open_tabs(app, pos);
 }
 
+/// after the collection's tree was replaced in place (e.g. by a cloud pull
+/// that already carried request ids over by uid): remember it as what's on
+/// disk and refresh the tabs showing it
+pub fn refresh_after_external_change(app: &mut Rustrest, col_id: usize) {
+    let Some(pos) = app.collections.iter().position(|c| c.id == col_id) else {
+        return;
+    };
+    record_current_as_baseline(app, col_id);
+    app.git.git_status_cache.remove(&col_id);
+    refresh_open_tabs(app, pos);
+}
+
 fn refresh_open_tabs(app: &mut Rustrest, collection_pos: usize) {
     let col = &app.collections[collection_pos];
     let col_id = col.id;

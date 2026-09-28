@@ -94,6 +94,7 @@ pub fn insert_nested(items: &mut Vec<CollectionItem>, path: &[String]) {
     if let Some(target) = find_folder_items_mut(items, path) {
         target.push(CollectionItem::Folder(PostmanFolder {
             name: "New Folder".to_string(),
+            uid: None,
             description: None,
             item: Vec::new(),
             protocol_profile_behavior: None,
@@ -111,6 +112,7 @@ pub fn insert_nested_named(items: &mut Vec<CollectionItem>, path: &[String], nam
     if let Some(target) = find_folder_items_mut(items, path) {
         target.push(CollectionItem::Folder(PostmanFolder {
             name: name.to_string(),
+            uid: None,
             description: None,
             item: Vec::new(),
             protocol_profile_behavior: None,
@@ -232,17 +234,20 @@ pub fn find_request_mut(
     None
 }
 
-/// gives every request under `items` a fresh id from `next_id` and flags every
-/// node as unsaved, so a cloned subtree doesn't alias the ids of its original.
+/// gives every request under `items` a fresh id from `next_id`, drops every
+/// cloud uid and flags every node as unsaved, so a cloned subtree doesn't
+/// alias the ids of its original.
 fn reassign_ids_as_unsaved(items: &mut [CollectionItem], next_id: &mut usize) {
     for item in items {
         match item {
             CollectionItem::Request(node) => {
                 node.id = *next_id;
                 *next_id += 1;
+                node.uid = None;
                 node.unsaved = true;
             }
             CollectionItem::Folder(folder) => {
+                folder.uid = None;
                 folder.unsaved = true;
                 reassign_ids_as_unsaved(&mut folder.item, next_id);
             }
@@ -283,6 +288,7 @@ pub fn duplicate_request(
     copy.name = format!("{} Copy", original.name);
     copy.id = *next_id;
     *next_id += 1;
+    copy.uid = None;
     copy.unsaved = true;
 
     let new_id = copy.id;
@@ -314,6 +320,7 @@ pub fn duplicate_folder(
             .iter()
             .any(|item| matches!(item, CollectionItem::Folder(f) if f.name == candidate))
     });
+    copy.uid = None;
     copy.unsaved = true;
     reassign_ids_as_unsaved(&mut copy.item, next_id);
     let new_name = copy.name.clone();
@@ -426,6 +433,7 @@ mod tests {
     fn request(id: usize, name: &str) -> CollectionItem {
         CollectionItem::Request(PostmanRequestNode {
             id,
+            uid: None,
             name: name.to_string(),
             event: None,
             request: PostmanRequestDetails {
@@ -445,6 +453,7 @@ mod tests {
     fn folder(name: &str, item: Vec<CollectionItem>) -> CollectionItem {
         CollectionItem::Folder(PostmanFolder {
             name: name.to_string(),
+            uid: None,
             protocol_profile_behavior: None,
             item,
             event: None,
@@ -550,5 +559,60 @@ mod tests {
         let mut next_id = 10;
         carry_over_request_ids(&old, &mut new, &mut next_id);
         assert_eq!(ids(&new), vec![("a".to_string(), 1)]);
+    }
+
+    fn with_uid(mut item: CollectionItem, uid: &str) -> CollectionItem {
+        match &mut item {
+            CollectionItem::Request(r) => r.uid = Some(uid.to_string()),
+            CollectionItem::Folder(f) => f.uid = Some(uid.to_string()),
+        }
+        item
+    }
+
+    fn uid_of(item: &CollectionItem) -> Option<&str> {
+        match item {
+            CollectionItem::Request(r) => r.uid.as_deref(),
+            CollectionItem::Folder(f) => f.uid.as_deref(),
+        }
+    }
+
+    #[test]
+    fn duplicates_drop_cloud_uids() {
+        let mut items = vec![
+            with_uid(request(1, "a"), "u-a"),
+            with_uid(folder("f", vec![with_uid(request(2, "b"), "u-b")]), "u-f"),
+        ];
+        let mut next_id = 10;
+        duplicate_request(&mut items, &[], 1, &mut next_id);
+        duplicate_folder(&mut items, &["f".to_string()], &mut next_id);
+
+        assert_eq!(uid_of(&items[0]), Some("u-a"));
+        assert_eq!(uid_of(&items[1]), None);
+        assert_eq!(uid_of(&items[2]), Some("u-f"));
+        let CollectionItem::Folder(copy) = &items[3] else {
+            panic!("expected folder copy");
+        };
+        assert_eq!(copy.uid, None);
+        assert_eq!(uid_of(&copy.item[0]), None);
+    }
+
+    #[test]
+    fn uid_is_stored_as_postman_id_and_omitted_when_unset() {
+        let CollectionItem::Request(plain) = request(1, "a") else {
+            unreachable!()
+        };
+        let json = serde_json::to_value(&plain).unwrap();
+        assert!(
+            json.get("id").is_none(),
+            "local-only items must not change on disk"
+        );
+
+        let CollectionItem::Request(synced) = with_uid(request(1, "a"), "u-a") else {
+            unreachable!()
+        };
+        let json = serde_json::to_value(&synced).unwrap();
+        assert_eq!(json["id"], "u-a");
+        let back: PostmanRequestNode = serde_json::from_value(json).unwrap();
+        assert_eq!(back.uid.as_deref(), Some("u-a"));
     }
 }

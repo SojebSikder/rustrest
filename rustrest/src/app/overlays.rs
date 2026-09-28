@@ -264,6 +264,9 @@ pub fn menu_interaction(
             MenuMessage::OpenSettings => {
                 return super::update(app, Message::OpenSettingsPressed);
             }
+            MenuMessage::OpenCloud => {
+                return super::update(app, Message::OpenCloudModal);
+            }
             MenuMessage::Plugin(plugin_id, command_id) => {
                 return super::update(app, Message::PluginCommand(plugin_id, command_id));
             }

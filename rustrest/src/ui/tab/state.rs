@@ -177,6 +177,7 @@ impl Tab {
     pub fn to_postman_request_node(&self, req_id: usize, name: &str) -> PostmanRequestNode {
         let mut node = PostmanRequestNode {
             id: req_id,
+            uid: None,
             name: name.to_string(),
             request: PostmanRequestDetails {
                 method: self.method.to_string(),

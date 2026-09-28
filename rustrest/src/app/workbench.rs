@@ -1092,6 +1092,7 @@ pub fn save_request_confirmed(app: &mut Rustrest) -> Task<Message> {
         let node = match crate::collection_adapter::protocol_request_details(&tab_state.content) {
             Some((request, protocol_request)) => PostmanRequestNode {
                 id: req_id,
+                uid: None,
                 name: name.clone(),
                 event: None,
                 request,

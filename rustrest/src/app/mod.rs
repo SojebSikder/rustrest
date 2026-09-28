@@ -1,3 +1,4 @@
+pub mod cloud;
 mod collection_settings;
 mod collections;
 mod docs;
@@ -136,6 +137,7 @@ pub struct Rustrest {
 
     pub file_watch: file_watch::FileWatchState,
     pub script_intel: script_intel::ScriptIntelState,
+    pub cloud: cloud::CloudState,
 }
 
 impl Rustrest {
@@ -608,6 +610,7 @@ pub fn init() -> (Rustrest, Task<Message>) {
         status_bar: crate::ui::status_bar::StatusBarState::default(),
         file_watch: file_watch::FileWatchState::default(),
         script_intel: script_intel::ScriptIntelState::default(),
+        cloud: cloud::CloudState::load(),
     };
     // ensure at least one tab exists right away - `view()` indexes
     // `app.tabs[app.active_tab_index]` unconditionally, and the real tabs
@@ -846,6 +849,45 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             update(app, *inner)
         }
         Message::None => Task::none(),
+
+        // Rustrest Cloud
+        Message::OpenCloudModal => cloud::open_modal(app, None),
+        Message::OpenCloudUpload(col_id) => cloud::open_modal(app, Some(col_id)),
+        Message::CloseCloudModal => cloud::close_modal(app),
+        Message::CloudServerUrlChanged(v) => cloud::edit_modal(app, |m| m.server_url = v),
+        Message::CloudNameChanged(v) => cloud::edit_modal(app, |m| m.name = v),
+        Message::CloudEmailChanged(v) => cloud::edit_modal(app, |m| m.email = v),
+        Message::CloudPasswordChanged(v) => cloud::edit_modal(app, |m| m.password = v),
+        Message::CloudToggleSignUp => cloud::edit_modal(app, |m| {
+            m.sign_up = !m.sign_up;
+            m.error = None;
+        }),
+        Message::CloudNewTeamNameChanged(v) => cloud::edit_modal(app, |m| m.new_team_name = v),
+        Message::CloudInviteEmailChanged(v) => cloud::edit_modal(app, |m| m.invite_email = v),
+        Message::CloudSubmitAuth => cloud::submit_auth(app),
+        Message::CloudSignedIn(result) => cloud::signed_in(app, result),
+        Message::CloudSignOut => cloud::sign_out(app),
+        Message::CloudTeamsLoaded(result) => cloud::teams_loaded(app, result),
+        Message::CloudTeamSelected(team_id) => cloud::select_team(app, team_id),
+        Message::CloudCollectionsLoaded(result) => cloud::collections_loaded(app, result),
+        Message::CloudCreateTeam => cloud::create_team(app),
+        Message::CloudTeamCreated(result) => cloud::team_created(app, result),
+        Message::CloudInvite => cloud::invite(app),
+        Message::CloudInvited(result) => cloud::invited(app, result),
+        Message::CloudUpload => cloud::upload(app),
+        Message::CloudUploaded(col_id, result) => cloud::uploaded(app, col_id, result),
+        Message::CloudOpenCollection(collection_id) => cloud::open_collection(app, collection_id),
+        Message::CloudDownloaded(result) => cloud::downloaded(app, result),
+        Message::CloudSync(col_id) => cloud::sync(app, col_id),
+        Message::CloudSyncAll => cloud::sync_all(app),
+        Message::CloudPulled(col_id, result) => cloud::pulled(app, col_id, result),
+        Message::CloudPushed(col_id, pushed) => cloud::pushed(app, col_id, pushed),
+        Message::CloudRealtimeChanged(collection_id, seq) => {
+            cloud::realtime_changed(app, collection_id, seq)
+        }
+        Message::CloudResolve(col_id, uid, resolution) => {
+            cloud::resolve(app, col_id, uid, resolution)
+        }
         Message::ImportCollectionPressed => collections::import_pressed(),
         // process file contents once loaded from disk
         Message::CollectionLoaded(path, content) => collections::loaded(app, path, content),
@@ -1647,6 +1689,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
 
         // temporary data stores
         Message::AutosaveTick => {
+            cloud::refresh_links(app);
             app.commit_active_workspace_snapshot();
             crate::workspace::save(&app.build_workspace_manifest());
             Task::none()

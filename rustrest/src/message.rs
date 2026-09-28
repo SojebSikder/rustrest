@@ -568,6 +568,52 @@ pub enum Message {
     // remote development (SSH) - configuration modal
     OpenRemoteConfig,
     CloseRemoteConfigPressed,
+
+    // RustRest Cloud
+    OpenCloudModal,
+    /// opens the cloud modal to upload this collection
+    OpenCloudUpload(usize),
+    CloseCloudModal,
+    CloudServerUrlChanged(String),
+    CloudNameChanged(String),
+    CloudEmailChanged(String),
+    CloudPasswordChanged(String),
+    CloudToggleSignUp,
+    CloudSubmitAuth,
+    CloudSignedIn(Result<Box<(rustrest_cloud::CloudClient, String)>, String>),
+    CloudSignOut,
+    CloudTeamsLoaded(Result<Vec<rustrest_cloud::wire::Team>, String>),
+    CloudTeamSelected(String),
+    CloudCollectionsLoaded(Result<Vec<rustrest_cloud::wire::CloudCollection>, String>),
+    CloudNewTeamNameChanged(String),
+    CloudCreateTeam,
+    CloudTeamCreated(Result<rustrest_cloud::wire::Team, String>),
+    CloudInviteEmailChanged(String),
+    CloudInvite,
+    CloudInvited(Result<String, String>),
+    CloudUpload,
+    CloudUploaded(usize, Result<Box<rustrest_cloud::SyncState>, String>),
+    /// cloud collection id
+    CloudOpenCollection(String),
+    CloudDownloaded(Result<Box<(PostmanCollection, rustrest_cloud::SyncState)>, String>),
+    /// app collection id; a no-op for collections that aren't cloud-backed
+    CloudSync(usize),
+    CloudSyncAll,
+    CloudPulled(
+        usize,
+        Result<Box<rustrest_cloud::wire::ChangeSet>, rustrest_cloud::CloudError>,
+    ),
+    CloudPushed(
+        usize,
+        Box<(
+            rustrest_cloud::sync::PushPlan,
+            rustrest_cloud::sync::PushOutcome,
+        )>,
+    ),
+    /// cloud collection id, its new change seq
+    CloudRealtimeChanged(String, i64),
+    /// app collection id, item uid (None = the collection settings)
+    CloudResolve(usize, Option<String>, rustrest_cloud::Resolution),
     WindowCloseRequested(iced::window::Id),
 
     // native plugins (wasm)
