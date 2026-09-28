@@ -569,7 +569,7 @@ pub enum Message {
     OpenRemoteConfig,
     CloseRemoteConfigPressed,
 
-    // RustRest Cloud
+    // Rustrest Cloud
     OpenCloudModal,
     /// opens the cloud modal to upload this collection
     OpenCloudUpload(usize),

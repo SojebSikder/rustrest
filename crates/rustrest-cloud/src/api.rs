@@ -30,14 +30,14 @@ pub enum CloudError {
 impl std::fmt::Display for CloudError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CloudError::Unauthorized => write!(f, "Not signed in to RustRest Cloud"),
+            CloudError::Unauthorized => write!(f, "Not signed in to Rustrest Cloud"),
             CloudError::Conflicts(c) => {
                 write!(f, "{} change(s) conflicted with the server", c.len())
             }
             CloudError::MetaConflict(_) => write!(f, "Collection settings changed on the server"),
             CloudError::Api { status, message } => write!(f, "Cloud error {status}: {message}"),
-            CloudError::Network(e) => write!(f, "Couldn't reach RustRest Cloud: {e}"),
-            CloudError::Decode(e) => write!(f, "Unexpected response from RustRest Cloud: {e}"),
+            CloudError::Network(e) => write!(f, "Couldn't reach Rustrest Cloud: {e}"),
+            CloudError::Decode(e) => write!(f, "Unexpected response from Rustrest Cloud: {e}"),
         }
     }
 }

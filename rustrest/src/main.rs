@@ -386,7 +386,7 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         Subscription::run_with(watch_targets, app::file_watch::watch_stream)
     };
 
-    // RustRest Cloud: live change hints for every cloud collection, plus a
+    // Rustrest Cloud: live change hints for every cloud collection, plus a
     // slow periodic sync as a fallback for anything the socket missed
     let (cloud_realtime_sub, cloud_poll_sub) = match &app.cloud.client {
         Some(client) if !app.cloud.linked.is_empty() => {
@@ -507,7 +507,7 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
                 if app.cloud.client.is_some() {
                     "Cloud Collections..."
                 } else {
-                    "Sign in to RustRest Cloud..."
+                    "Sign in to Rustrest Cloud..."
                 },
                 MenuMessage::OpenCloud,
             )],
@@ -713,7 +713,7 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
         main_interface_stack = main_interface_stack.push(remote_config_overlay);
     }
 
-    // RustRest Cloud modal overlay
+    // Rustrest Cloud modal overlay
     if let Some(modal) = app.cloud.modal.as_ref() {
         let cloud_overlay = container(ui::cloud::view_cloud_modal(app, modal))
             .width(Length::Fill)

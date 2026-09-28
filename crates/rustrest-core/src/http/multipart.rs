@@ -14,7 +14,7 @@ pub(crate) async fn encode(
         return Ok(None);
     }
 
-    let boundary = format!("----RustRestBoundary{}", random_boundary_suffix());
+    let boundary = format!("----RustrestBoundary{}", random_boundary_suffix());
     let mut body = Vec::new();
 
     for row in active_rows {

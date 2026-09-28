@@ -44,7 +44,7 @@ fn muted(label: String) -> Element<'static, Message> {
 }
 
 pub fn view_cloud_modal<'a>(app: &'a Rustrest, modal: &'a CloudModal) -> Element<'a, Message> {
-    let title = text("RustRest Cloud").size(18).font(Font {
+    let title = text("Rustrest Cloud").size(18).font(Font {
         weight: iced::font::Weight::Bold,
         ..Font::DEFAULT
     });
@@ -253,7 +253,7 @@ fn signed_in_view<'a>(
             .align_y(Alignment::Center),
         );
         body = body.push(muted(
-            "The collection moves into RustRest's cloud cache and syncs from there; \
+            "The collection moves into Rustrest's cloud cache and syncs from there; \
              the original file or folder is left as it is."
                 .to_string(),
         ));
@@ -322,7 +322,7 @@ fn signed_in_view<'a>(
             .align_y(Alignment::Center),
         );
         body = body.push(muted(format!(
-            "They need a RustRest Cloud account first. Editors can change every collection in {}.",
+            "They need a Rustrest Cloud account first. Editors can change every collection in {}.",
             team.name
         )));
     }

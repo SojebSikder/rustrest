@@ -496,7 +496,7 @@ pub fn uploaded(
     app.cloud.modal = None;
     Task::batch([
         Task::done(Message::ShowToast(
-            format!("'{name}' is now synced with RustRest Cloud"),
+            format!("'{name}' is now synced with Rustrest Cloud"),
             ToastStatus::Success,
         )),
         Task::done(Message::CloudSync(col_id)),
@@ -567,7 +567,7 @@ pub fn downloaded(
     app.cloud.linked.insert(col_id, (dir, state));
     app.cloud.modal = None;
     Task::done(Message::ShowToast(
-        format!("Opened '{name}' from RustRest Cloud"),
+        format!("Opened '{name}' from Rustrest Cloud"),
         ToastStatus::Success,
     ))
 }
@@ -774,7 +774,7 @@ fn finish(app: &mut Rustrest, col_id: usize, error: Option<CloudError>) -> Task<
         Some(CloudError::Unauthorized) => {
             app.cloud.client = None;
             tasks.push(Task::done(Message::ShowToast(
-                "Your RustRest Cloud session expired. Sign in again to keep syncing.".to_string(),
+                "Your Rustrest Cloud session expired. Sign in again to keep syncing.".to_string(),
                 ToastStatus::Error,
             )));
         }
@@ -784,7 +784,7 @@ fn finish(app: &mut Rustrest, col_id: usize, error: Option<CloudError>) -> Task<
                 let _ = std::fs::remove_file(dir.join(rustrest_cloud::sync::STATE_FILE));
             }
             tasks.push(Task::done(Message::ShowToast(
-                format!("'{name}' is no longer in RustRest Cloud; kept it as a local collection"),
+                format!("'{name}' is no longer in Rustrest Cloud; kept it as a local collection"),
                 ToastStatus::Info,
             )));
         }
