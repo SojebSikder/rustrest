@@ -15,6 +15,7 @@ rustrest-sse = { path = "../crates/rustrest-sse" }
 rustrest-graphql = { path = "../crates/rustrest-graphql" }
 rustrest-grpc = { path = "../crates/rustrest-grpc" }
 rustrest-lsp = { path = "../crates/rustrest-lsp" }
+rustrest-cloud = { path = "../crates/rustrest-cloud" }
 
 iced = { version = "0.14", features = ["tokio", "image", "advanced", "canvas", "sipper", "markdown", "highlighter"] }
 

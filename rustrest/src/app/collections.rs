@@ -133,7 +133,11 @@ pub fn persist_if_known_location(
             return match crate::collection::dir_storage::save_collection_to_dir_clean(
                 collection, dir,
             ) {
-                Ok(()) => Task::done(Message::ShowToast(success_msg, ToastStatus::Success)),
+                // no-op unless the collection is cloud-backed
+                Ok(()) => Task::batch([
+                    Task::done(Message::ShowToast(success_msg, ToastStatus::Success)),
+                    Task::done(Message::CloudSync(col_id)),
+                ]),
                 Err(err) => Task::done(Message::ShowToast(
                     format!("Saved in memory, but failed to write to disk: {}", err),
                     ToastStatus::Error,
@@ -573,6 +577,7 @@ pub fn add_request_pressed(
 
         let new_request_node = PostmanRequestNode {
             id: req_id,
+            uid: None,
             name: "Untitled Request".to_string(),
             request: PostmanRequestDetails {
                 method: "GET".to_string(),

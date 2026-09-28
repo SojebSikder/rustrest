@@ -18,6 +18,7 @@ pub enum AppCommand {
     About,
     ViewReleaseNotes,
     RemoteDevelopmentOverSsh,
+    Cloud,
     OpenPluginManager,
     RestartLanguageServer,
     /// plugin_id, command_id.
@@ -72,6 +73,8 @@ pub fn commands(app: &Rustrest) -> Vec<Command<AppCommand>> {
             AppCommand::RemoteDevelopmentOverSsh,
         )
         .with_subtitle("Configure saved hosts in a new window"),
+        Command::new("cloud", "Rustrest Cloud...", AppCommand::Cloud)
+            .with_subtitle("Sign in, open and share team collections"),
         Command::new(
             "manage-plugins",
             "Manage Plugins...",
@@ -118,6 +121,7 @@ pub fn to_message(action: AppCommand) -> Message {
         AppCommand::About => Message::ShowAboutModal,
         AppCommand::ViewReleaseNotes => Message::ViewReleaseNotes,
         AppCommand::RemoteDevelopmentOverSsh => Message::OpenRemoteConfig,
+        AppCommand::Cloud => Message::OpenCloudModal,
         AppCommand::OpenPluginManager => Message::OpenPluginManagerPressed,
         AppCommand::RestartLanguageServer => Message::RestartLanguageServer,
         AppCommand::Plugin(plugin_id, command_id) => Message::PluginCommand(plugin_id, command_id),

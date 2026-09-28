@@ -172,6 +172,11 @@ pub struct CollectionInfo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PostmanFolder {
     pub name: String,
+    /// stable identity used by cloud sync, stored as Postman's item `id`.
+    /// `None` until the collection is first synced, so local-only
+    /// collections don't change on disk. Cleared on duplicate.
+    #[serde(rename = "id", default, skip_serializing_if = "Option::is_none")]
+    pub uid: Option<String>,
     #[serde(rename = "protocolProfileBehavior")]
     pub protocol_profile_behavior: Option<PostmanProtocolProfileBehavior>,
     pub item: Vec<CollectionItem>,
@@ -282,6 +287,11 @@ impl PostmanScriptExec {
 pub struct PostmanRequestNode {
     #[serde(skip)]
     pub id: usize,
+    /// stable identity used by cloud sync, stored as Postman's item `id`.
+    /// `None` until the collection is first synced, so local-only
+    /// collections don't change on disk. Cleared on duplicate.
+    #[serde(rename = "id", default, skip_serializing_if = "Option::is_none")]
+    pub uid: Option<String>,
     pub name: String,
     pub event: Option<Vec<PostmanEvent>>,
     pub request: PostmanRequestDetails,

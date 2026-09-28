@@ -127,6 +127,7 @@ fn sync_items(
                 let child_order = sync_items(&folder.item, &folder_dir, &folder_rel, apply, plan)?;
 
                 let meta = FolderMeta {
+                    uid: folder.uid.clone(),
                     description: folder.description.clone(),
                     protocol_profile_behavior: folder.protocol_profile_behavior.clone(),
                     event: folder.event.clone(),
@@ -259,6 +260,7 @@ fn read_items(dir: &Path, order: &[String]) -> Result<Vec<CollectionItem>, Strin
 
             items.push(CollectionItem::Folder(PostmanFolder {
                 name: entry_name.clone(),
+                uid: meta.uid,
                 protocol_profile_behavior: meta.protocol_profile_behavior,
                 item: child_items,
                 event: meta.event,
