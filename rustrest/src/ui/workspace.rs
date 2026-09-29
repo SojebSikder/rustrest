@@ -119,8 +119,20 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
         let tab_surface = container(tab_row)
             .padding(6)
             .style(move |theme: &iced::Theme| {
-                if is_active {
-                    container::Style {
+                let colors = crate::theme::colors();
+                match (is_active, colors.tab_active_background) {
+                    // themes: the active tab takes the editor's surface with an accent underline, instead of a fill
+                    (true, Some(active_bg)) => container::Style {
+                        background: Some(active_bg.into()),
+                        text_color: Some(colors.text),
+                        border: iced::Border {
+                            color: colors.text_accent,
+                            width: 1.0,
+                            radius: 4.0.into(),
+                        },
+                        ..Default::default()
+                    },
+                    (true, None) => container::Style {
                         background: Some(theme.palette().primary.into()),
                         text_color: Some(theme.palette().background),
                         border: iced::Border {
@@ -128,16 +140,15 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
                             ..Default::default()
                         },
                         ..Default::default()
-                    }
-                } else {
-                    container::Style {
-                        background: Some(iced::Color::from_rgba(0.5, 0.5, 0.5, 0.12).into()),
+                    },
+                    (false, _) => container::Style {
+                        background: Some(colors.tab_inactive_background.into()),
                         border: iced::Border {
                             radius: 4.0.into(),
                             ..Default::default()
                         },
                         ..Default::default()
-                    }
+                    },
                 }
             });
 
@@ -183,7 +194,7 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
                 Message::ResizeDragStarted(ResizeKind::MultilineField(kind))
             },
             app.spinner_tick,
-            &app.settings.theme.to_iced(),
+            &app.theme.active.iced,
             app.settings.show_form_data_content_type,
         ),
 
@@ -265,7 +276,7 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
         WorkspaceContent::PluginManager => super::plugin_manager::render_plugin_manager_tab(app),
         WorkspaceContent::ReleaseNotes(state) => super::release_notes::render_release_notes_tab(
             state,
-            &app.settings.theme.to_iced(),
+            &app.theme.active.iced,
             app.spinner_tick,
         ),
 

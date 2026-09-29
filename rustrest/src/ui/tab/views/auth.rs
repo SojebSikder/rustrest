@@ -28,7 +28,7 @@ fn field_row<'a, Message: 'a>(label: &'a str, input: Element<'a, Message>) -> El
 fn hint<'a, Message: 'a>(text_str: &'a str) -> Element<'a, Message> {
     text(text_str)
         .size(11)
-        .color(iced::Color::from_rgb(0.5, 0.5, 0.5))
+        .color(crate::theme::colors().text_muted)
         .into()
 }
 
@@ -93,11 +93,11 @@ where
 
     let fields: Element<'a, Message> = match form.auth_type {
         AuthType::Inherit => text(ctx.inherit_note)
-            .color(iced::Color::from_rgb(0.5, 0.5, 0.5))
+            .color(crate::theme::colors().text_muted)
             .into(),
 
         AuthType::NoAuth => text(ctx.no_auth_note)
-            .color(iced::Color::from_rgb(0.5, 0.5, 0.5))
+            .color(crate::theme::colors().text_muted)
             .into(),
 
         AuthType::Custom => multiline_input(

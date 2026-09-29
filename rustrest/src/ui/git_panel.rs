@@ -8,13 +8,14 @@ use std::path::PathBuf;
 /// small colored letter badge for a file's git status, mirroring the log
 /// level badges in `console_panel.rs`. Shared with the commit modal's file list.
 pub fn status_badge(status: GitChangeKind) -> Element<'static, Message> {
+    let colors = crate::theme::colors();
     let (label, color) = match status {
-        GitChangeKind::Untracked => ("U", Color::from_rgb(0.45, 0.45, 0.45)),
-        GitChangeKind::Modified => ("M", Color::from_rgb(0.85, 0.55, 0.10)),
-        GitChangeKind::Added => ("A", Color::from_rgb(0.25, 0.65, 0.35)),
-        GitChangeKind::Deleted => ("D", Color::from_rgb(0.87, 0.22, 0.22)),
-        GitChangeKind::Renamed => ("R", Color::from_rgb(0.20, 0.45, 0.85)),
-        GitChangeKind::Conflicted => ("!", Color::from_rgb(0.87, 0.22, 0.22)),
+        GitChangeKind::Untracked => ("U", colors.ignored),
+        GitChangeKind::Modified => ("M", colors.modified),
+        GitChangeKind::Added => ("A", colors.created),
+        GitChangeKind::Deleted => ("D", colors.deleted),
+        GitChangeKind::Renamed => ("R", colors.renamed),
+        GitChangeKind::Conflicted => ("!", colors.conflict),
     };
 
     container(
@@ -57,7 +58,7 @@ fn file_row(
             .style(move |_theme: &iced::Theme| {
                 if is_selected {
                     container::Style {
-                        background: Some(Color::from_rgb(0.20, 0.22, 0.28).into()),
+                        background: Some(crate::theme::colors().element_selected.into()),
                         ..Default::default()
                     }
                 } else {
@@ -130,9 +131,7 @@ pub fn render_git_panel(
         Some(Err(e)) => {
             return column![
                 text("Not a git repository yet, or git isn't available.").size(13),
-                text(e.clone())
-                    .size(12)
-                    .color(Color::from_rgb(0.75, 0.5, 0.4)),
+                text(e.clone()).size(12).color(crate::theme::colors().error),
             ]
             .spacing(6)
             .into();
@@ -143,7 +142,7 @@ pub fn render_git_panel(
     if snapshot.files.is_empty() {
         return text("No changes - working tree clean.")
             .size(13)
-            .color(Color::from_rgb(0.5, 0.5, 0.5))
+            .color(crate::theme::colors().text_muted)
             .into();
     }
 
@@ -167,7 +166,7 @@ pub fn render_git_panel(
         _ => container(
             text("Select a file to preview its diff.")
                 .size(12)
-                .color(Color::from_rgb(0.5, 0.5, 0.5)),
+                .color(crate::theme::colors().text_muted),
         )
         .padding(10)
         .height(Length::FillPortion(3))

@@ -7,9 +7,7 @@ use iced::widget::text_editor::{Action, Binding, Edit, KeyPress, Status};
 use iced::widget::{
     Stack, button, column, container, pin, responsive, row, space, text, text_editor,
 };
-use iced::{
-    Alignment, Border, Color, Element, Font, Length, Shadow, Size, Theme, Vector, highlighter,
-};
+use iced::{Alignment, Border, Color, Element, Font, Length, Shadow, Size, Theme, Vector};
 use rustrest_core::script_engine::check_syntax;
 use rustrest_lsp::{CompletionItem, CompletionKind, Diagnostic, Position, Severity};
 use std::cell::Cell;
@@ -361,18 +359,14 @@ fn filter_items(items: &[CompletionItem], prefix: &str) -> Vec<usize> {
 /// are shown below the editor.
 pub fn script_editor<'a, Message>(
     script: &'a ScriptContent,
-    theme: &Theme,
     on_event: impl Fn(ScriptEditorEvent) -> Message + Copy + 'a,
     on_right_click: Message,
 ) -> Element<'a, Message>
 where
     Message: Clone + 'a,
 {
-    let highlight_theme = if theme.extended_palette().is_dark {
-        highlighter::Theme::SolarizedDark
-    } else {
-        highlighter::Theme::InspiredGitHub
-    };
+    // active theme's `syntax` table
+    let highlight_theme = crate::theme::syntax();
 
     let editor_area = responsive(move |size| {
         let visible = ((size.height - 2.0 * PADDING) / LINE_HEIGHT)
@@ -383,7 +377,13 @@ where
         let popup_open = script.shown_completion().is_some();
         let editor = with_context_menu(
             text_editor(&script.content)
-                .highlight("js", highlight_theme)
+                .highlight_with::<crate::theme::syntax::Highlighter>(
+                    crate::theme::syntax::Settings {
+                        theme: highlight_theme,
+                        token: "js".to_string(),
+                    },
+                    crate::theme::syntax::Highlight::to_format,
+                )
                 .font(Font::MONOSPACE)
                 .size(FONT_SIZE)
                 .on_action(move |action| on_event(ScriptEditorEvent::Action(action)))

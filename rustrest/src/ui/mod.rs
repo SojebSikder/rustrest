@@ -30,6 +30,7 @@ pub mod spinner;
 pub mod status_bar;
 pub mod tab;
 pub mod terminal_view;
+pub mod theme_selector;
 pub mod toast;
 pub mod tooltip;
 pub mod unsaved;

@@ -92,3 +92,16 @@ pub fn update_node(items: &mut Vec<CollectionItem>, target_id: usize, tab: &Tab)
 
     true
 }
+
+/// opens `dir` in the OS file manager (Explorer, Finder, or the xdg default).
+pub fn open_in_file_manager(dir: &std::path::Path) {
+    #[cfg(target_os = "windows")]
+    let program = "explorer";
+    #[cfg(target_os = "macos")]
+    let program = "open";
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let program = "xdg-open";
+    if let Err(e) = std::process::Command::new(program).arg(dir).spawn() {
+        eprintln!("Failed to open {}: {e}", dir.display());
+    }
+}

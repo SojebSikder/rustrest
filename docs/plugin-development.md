@@ -2,6 +2,8 @@
 
 Rustrest plugins are small [WebAssembly](https://webassembly.org/) modules, sandboxed with [`wasmtime`](https://wasmtime.dev/). A plugin is a directory with a `plugin.toml` manifest plus a compiled `plugin.wasm`.
 
+A plugin can also ship themes in a `themes/` folder, and a *theme extension* is a plugin with only that - no wasm at all (Zed theme extensions, with their `extension.toml`, install as-is). See [Themes](themes.md).
+
 This guide covers the fundamentals of Rustrest plugin development.
 
 ## Contents
@@ -37,7 +39,7 @@ The tab has two views, switched with the **Installed** / **Browse** buttons at t
 
 **Installed** (the default):
 
-1. Click **Install Plugin Folder...** and pick a folder that directly contains a `plugin.toml` and a `plugin.wasm`. Rustrest validates the manifest, compiles the wasm, and copies both files into its own plugins directory under a subfolder named after the plugin's `id`.
+1. Click **Install Plugin Folder...** and pick a folder that directly contains a `plugin.toml` and a `plugin.wasm` (or, for a [theme extension](themes.md#theme-extensions), a manifest and a `themes/` folder). Rustrest validates the manifest, compiles the wasm, and copies both files into its own plugins directory under a subfolder named after the plugin's `id`.
 2. Toggle the checkbox next to a plugin to enable/disable it (it stays on disk, just inactive).
 3. Click **Uninstall** to remove it from disk entirely (confirmation required).
 
@@ -63,6 +65,7 @@ An installed plugin's directory looks like this:
 example/
 ├── plugin.toml   # declarative manifest - read without running any code
 ├── plugin.wasm   # the compiled plugin
+├── themes/       # optional: Zed-format theme files (see themes.md)
 └── storage/      # created lazily if the plugin uses ExternalProcess (downloads, etc.)
 ```
 
@@ -654,5 +657,5 @@ To publish:
 - [ ] `id` in `plugin.toml` is unique and matches the folder name you ship
 - [ ] Only the capabilities you actually use are declared (undeclared `ExternalProcess` calls fail with a clear "capability not declared" error - by design, so a user can trust the badges shown in Manage Plugins)
 - [ ] Built with `cargo build --release --target wasm32-unknown-unknown`
-- [ ] The release folder contains exactly `plugin.toml` + `plugin.wasm` at its root
+- [ ] The release folder contains exactly `plugin.toml` + `plugin.wasm` (plus `themes/`, if it ships themes) at its root
 - [ ] Tested via **Install Plugin Folder...**, not just `cargo test` against the crate in isolation

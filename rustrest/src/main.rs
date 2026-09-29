@@ -11,6 +11,7 @@ mod remote_agent;
 mod script_engine;
 mod session;
 mod shortcuts;
+mod theme;
 mod ui;
 mod updater;
 mod utils;
@@ -67,7 +68,7 @@ pub fn main() -> iced::Result {
 }
 
 fn theme(app: &Rustrest, _window_id: window::Id) -> iced::Theme {
-    app.settings.theme.to_iced()
+    app.theme.active.iced.clone()
 }
 
 fn title(_app: &Rustrest, _window_id: window::Id) -> String {
@@ -87,6 +88,7 @@ enum ActiveOverlay {
     RemoteConnect,
     Cloud,
     CommandPalette,
+    ThemeSelector,
     ResponseTiming,
     About,
 }
@@ -128,7 +130,9 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         Subscription::none()
     };
 
-    let active_overlay = if app.overlays.command_palette.is_some() {
+    let active_overlay = if app.theme.selector.is_some() {
+        Some(ActiveOverlay::ThemeSelector)
+    } else if app.overlays.command_palette.is_some() {
         Some(ActiveOverlay::CommandPalette)
     } else if app.overlays.confirm_dialog.is_some() {
         Some(ActiveOverlay::ConfirmDialog)
@@ -186,6 +190,9 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
             Some(ActiveOverlay::CommandPalette) => {
                 outside_click_sub!(Message::CommandPaletteClosed)
             }
+            Some(ActiveOverlay::ThemeSelector) => {
+                outside_click_sub!(Message::ThemeSelectorClosed)
+            }
             None => Subscription::none(),
         }
     } else {
@@ -227,6 +234,7 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         }
         Some(ActiveOverlay::Cloud) => escape_close_sub!(Message::CloseCloudModal),
         Some(ActiveOverlay::CommandPalette) => escape_close_sub!(Message::CommandPaletteClosed),
+        Some(ActiveOverlay::ThemeSelector) => escape_close_sub!(Message::ThemeSelectorClosed),
         None => Subscription::none(),
     };
 
@@ -316,6 +324,67 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
     } else {
         Subscription::none()
     };
+
+    // same for the theme selector, where moving the selection also previews the highlighted theme
+    let theme_selector_sub = if app.theme.selector.is_some() {
+        event::listen_with(|event, _status, _window| match event {
+            Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                key: Key::Named(Named::ArrowUp),
+                ..
+            }) => Some(Message::ThemeSelectorMoveSelection(-1)),
+            Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                key: Key::Named(Named::ArrowDown),
+                ..
+            }) => Some(Message::ThemeSelectorMoveSelection(1)),
+            _ => None,
+        })
+    } else {
+        Subscription::none()
+    };
+
+    // second key of a Ctrl+K chord: Ctrl+T opens the theme selector (Zed's binding), anything else cancels
+    let chord_sub = if app.theme.chord_pending {
+        event::listen_with(|event, _status, _window| match event {
+            Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                key: Key::Character(ref c),
+                modifiers,
+                ..
+            }) if c.eq_ignore_ascii_case("k") && modifiers.command() => None,
+            Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                key: Key::Character(ref c),
+                modifiers,
+                ..
+            }) if c.eq_ignore_ascii_case("t") && modifiers.command() => {
+                Some(Message::ToggleThemeSelector)
+            }
+            Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                key: Key::Named(named),
+                ..
+            }) if !matches!(
+                named,
+                Named::Control | Named::Shift | Named::Alt | Named::Super | Named::Meta
+            ) =>
+            {
+                Some(Message::ChordCancelled)
+            }
+            Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                key: Key::Character(_),
+                ..
+            }) => Some(Message::ChordCancelled),
+            _ => None,
+        })
+    } else {
+        Subscription::none()
+    };
+
+    // follows the OS light/dark setting for `"mode": "system"`
+    let system_theme_sub = iced::system::theme_changes().map(Message::SystemThemeChanged);
+
+    // reloads themes when a theme file, extension or settings.json changes
+    let theme_watch_sub = Subscription::run_with(
+        theme::loader::watch_targets(app.plugins.plugin_manager.plugins_dir()),
+        theme::loader::watch_stream,
+    );
 
     // tracks the cursor position so context menus can be anchored where they
     // were triggered
@@ -428,6 +497,10 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         tab_drag_sub,
         terminal_sub,
         command_palette_sub,
+        theme_selector_sub,
+        chord_sub,
+        system_theme_sub,
+        theme_watch_sub,
         file_watch_sub,
     ])
 }
@@ -486,6 +559,8 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
             vec![
                 DropdownItem::new("Command Palette", MenuMessage::CommandPalette)
                     .with_shortcut("Ctrl+Shift+P"),
+                DropdownItem::new("Select Theme...", MenuMessage::ThemeSelector)
+                    .with_shortcut("Ctrl+K Ctrl+T"),
             ],
         ),
         {
@@ -766,6 +841,16 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
             .align_x(Alignment::Center)
             .align_y(Alignment::Center);
         main_interface_stack = main_interface_stack.push(palette_overlay);
+    }
+
+    // theme selector overlay (Ctrl+K Ctrl+T)
+    if let Some(selector_state) = app.theme.selector.as_ref() {
+        let selector_overlay = container(ui::theme_selector::view(app, selector_state))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(Alignment::Center)
+            .align_y(Alignment::Center);
+        main_interface_stack = main_interface_stack.push(selector_overlay);
     }
 
     stack![main_interface_stack, toast_layer].into()

@@ -260,7 +260,7 @@ fn render_operations_pane<'a>(
             kind_tabs,
             text("Fetch the schema to list operations.")
                 .size(11)
-                .color(iced::Color::from_rgb(0.6, 0.6, 0.6)),
+                .color(crate::theme::colors().text_muted),
         ]
         .spacing(6);
     };
@@ -273,7 +273,7 @@ fn render_operations_pane<'a>(
         content = content.push(
             text("No operations of this kind.")
                 .size(11)
-                .color(iced::Color::from_rgb(0.6, 0.6, 0.6)),
+                .color(crate::theme::colors().text_muted),
         );
     }
 

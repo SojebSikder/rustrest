@@ -1,10 +1,15 @@
-use crate::ui::settings::AppTheme;
+use crate::theme::{ThemeOverrides, ThemeSelection};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PersistedSettings {
-    pub theme: AppTheme,
+    /// `"Name"` or `{ "mode": "system", "light": "..", "dark": ".." }`.
+    #[serde(default)]
+    pub theme: ThemeSelection,
+    /// theme name -> Zed style keys patched onto that theme.
+    #[serde(default, skip_serializing_if = "ThemeOverrides::is_empty")]
+    pub theme_overrides: ThemeOverrides,
     #[serde(default = "default_true")]
     pub close_on_outside_click: bool,
     #[serde(default)]
@@ -18,14 +23,15 @@ fn default_true() -> bool {
 impl Default for PersistedSettings {
     fn default() -> Self {
         Self {
-            theme: AppTheme::default(),
+            theme: ThemeSelection::default(),
+            theme_overrides: ThemeOverrides::default(),
             close_on_outside_click: true,
             show_form_data_content_type: false,
         }
     }
 }
 
-fn settings_path() -> Option<PathBuf> {
+pub fn settings_path() -> Option<PathBuf> {
     let dir = dirs::data_dir()?.join(crate::APP_NAME);
     std::fs::create_dir_all(&dir).ok()?;
     Some(dir.join("settings.json"))
@@ -44,4 +50,12 @@ pub fn load() -> PersistedSettings {
         .and_then(|path| std::fs::read_to_string(path).ok())
         .and_then(|content| serde_json::from_str(&content).ok())
         .unwrap_or_default()
+}
+
+/// like `load`, but `None` if settings.json is missing or doesn't parse,
+/// for reloading after an external edit, where a half-typed file shouldn't be
+/// mistaken for "reset everything to defaults".
+pub fn try_load() -> Option<PersistedSettings> {
+    let content = std::fs::read_to_string(settings_path()?).ok()?;
+    serde_json::from_str(&content).ok()
 }

@@ -7,7 +7,7 @@ use iced::widget::text;
 pub fn unsaved_dot<'a, Message: 'a>() -> Element<'a, Message> {
     text("●")
         .size(8)
-        .color(iced::Color::from_rgb(0.85, 0.55, 0.10))
+        .color(crate::theme::colors().modified)
         .into()
 }
 

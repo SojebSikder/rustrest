@@ -1,7 +1,7 @@
 use crate::message::Message;
 use crate::ui::spinner::spinner;
 use iced::widget::{button, column, container, row, text};
-use iced::{Alignment, Border, Color, Length};
+use iced::{Alignment, Border, Length};
 use std::time::{Duration, Instant};
 
 pub const TOAST_DURATION: Duration = Duration::from_secs(4);
@@ -222,11 +222,13 @@ impl ToastManager {
     {
         let mut toast_list = column![].spacing(10).align_x(Alignment::End);
         for toast in &self.toasts {
+            let colors = crate::theme::colors();
             let border_color = match toast.status {
-                ToastStatus::Success => Color::from_rgb(0.1, 0.7, 0.1),
-                ToastStatus::Error => Color::from_rgb(0.8, 0.1, 0.1),
-                ToastStatus::Info => Color::from_rgb(0.1, 0.5, 0.8),
+                ToastStatus::Success => colors.success,
+                ToastStatus::Error => colors.error,
+                ToastStatus::Info => colors.info,
             };
+            let (toast_background, toast_text) = (colors.elevated_surface_background, colors.text);
             let dismiss_id = toast.id;
             let action_id = toast.id;
 
@@ -252,13 +254,13 @@ impl ToastManager {
                 .width(300)
                 .padding(12)
                 .style(move |_theme| container::Style {
-                    background: Some(Color::from_rgb(0.15, 0.15, 0.15).into()),
+                    background: Some(toast_background.into()),
                     border: Border {
                         color: border_color,
                         width: 2.0,
                         radius: 4.0.into(),
                     },
-                    text_color: Some(Color::WHITE),
+                    text_color: Some(toast_text),
                     ..Default::default()
                 });
             toast_list = toast_list.push(toast_ui);

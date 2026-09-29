@@ -87,7 +87,7 @@ pub fn render_status_bar(app: &Rustrest) -> Element<'_, Message> {
         } else {
             text(item.label.as_str())
                 .size(13)
-                .color(iced::Color::from_rgb(0.5, 0.5, 0.5))
+                .color(crate::theme::colors().text_muted)
                 .into()
         };
         left = left.push(entry);
@@ -106,7 +106,7 @@ pub fn render_status_bar(app: &Rustrest) -> Element<'_, Message> {
                 .into(),
             None => text(item.label)
                 .size(13)
-                .color(iced::Color::from_rgb(0.5, 0.5, 0.5))
+                .color(crate::theme::colors().text_muted)
                 .into(),
         };
         left = left.push(entry);
@@ -144,12 +144,12 @@ pub fn render_status_bar(app: &Rustrest) -> Element<'_, Message> {
             left: 4.0,
             right: 4.0,
         })
-        .style(|theme: &iced::Theme| {
-            let palette = theme.extended_palette();
+        .style(|_theme: &iced::Theme| {
+            let colors = crate::theme::colors();
             container::Style {
-                background: Some(palette.background.weak.color.into()),
+                background: Some(colors.status_bar_background.into()),
                 border: iced::Border {
-                    color: palette.background.strong.color,
+                    color: colors.border,
                     width: 1.0,
                     radius: 0.0.into(),
                 },

@@ -19,9 +19,19 @@ use rustrest_terminal::{CursorShape, TerminalSession};
 const FONT_SIZE: f32 = 14.0;
 const CELL_WIDTH: f32 = FONT_SIZE * 0.6;
 const CELL_HEIGHT: f32 = FONT_SIZE * 1.3;
-const BACKGROUND: Color = Color::from_rgb(18.0 / 255.0, 18.0 / 255.0, 18.0 / 255.0);
-const DEFAULT_FG: Color = Color::from_rgb(230.0 / 255.0, 230.0 / 255.0, 230.0 / 255.0);
-const SELECTION_BG: Color = Color::from_rgba(80.0 / 255.0, 130.0 / 255.0, 220.0 / 255.0, 0.45);
+
+/// the active theme's `terminal.*` colors in the terminal crate's terms.
+fn terminal_palette(colors: &crate::theme::ThemeColors) -> rustrest_terminal::TerminalPalette {
+    let rgb = |c: Color| {
+        let [r, g, b, _] = c.into_rgba8();
+        rustrest_terminal::Rgb { r, g, b }
+    };
+    rustrest_terminal::TerminalPalette {
+        foreground: rgb(colors.terminal_foreground),
+        background: rgb(colors.terminal_background),
+        ansi: colors.terminal_ansi.map(rgb),
+    }
+}
 /// wheel notches translate to this many terminal lines each.
 const SCROLL_LINES_PER_NOTCH: f32 = 3.0;
 
@@ -45,7 +55,9 @@ impl<'a> TerminalView<'a> {
         .width(Length::Fill)
         .height(Length::Fill)
         .style(|_| iced::widget::container::Style {
-            background: Some(iced::Background::Color(BACKGROUND)),
+            background: Some(iced::Background::Color(
+                crate::theme::colors().terminal_background,
+            )),
             ..Default::default()
         })
         .into()
@@ -175,7 +187,9 @@ impl<'a> Widget<Message, Theme, Renderer> for TerminalView<'a> {
         viewport: &Rectangle,
     ) {
         let bounds = layout.bounds();
-        let grid = self.session.snapshot();
+        let colors = crate::theme::colors();
+        let grid = self.session.snapshot_with(&terminal_palette(&colors));
+        let background = to_iced_color(terminal_palette(&colors).background);
 
         let mut frame = Frame::new(renderer, viewport.size());
 
@@ -192,7 +206,7 @@ impl<'a> Widget<Message, Theme, Renderer> for TerminalView<'a> {
                 while run_end < row_cells.len() && row_cells[run_end].bg == bg {
                     run_end += 1;
                 }
-                if to_iced_color(bg) != BACKGROUND {
+                if to_iced_color(bg) != background {
                     let x = bounds.x + run_start as f32 * CELL_WIDTH;
                     let width = (run_end - run_start) as f32 * CELL_WIDTH;
                     frame.fill(
@@ -219,7 +233,7 @@ impl<'a> Widget<Message, Theme, Renderer> for TerminalView<'a> {
                 let width = (run_end - run_start) as f32 * CELL_WIDTH;
                 frame.fill(
                     &Path::rectangle(Point::new(x, y), Size::new(width, CELL_HEIGHT)),
-                    SELECTION_BG,
+                    colors.selection,
                 );
                 run_start = run_end;
             }
@@ -291,7 +305,7 @@ impl<'a> Widget<Message, Theme, Renderer> for TerminalView<'a> {
             let y = bounds.y + grid.cursor_row as f32 * CELL_HEIGHT;
             let cursor_color = Color {
                 a: 0.55,
-                ..DEFAULT_FG
+                ..colors.terminal_foreground
             };
 
             match grid.cursor_shape {

@@ -107,10 +107,11 @@ where
 }
 
 fn status_color(status: u16) -> iced::Color {
+    let colors = crate::theme::colors();
     if (200..300).contains(&status) {
-        iced::Color::from_rgb(0.12, 0.64, 0.35) // Elegant Emerald Green
+        colors.success
     } else {
-        iced::Color::from_rgb(0.87, 0.22, 0.22) // Coral/Red
+        colors.error
     }
 }
 
@@ -192,11 +193,11 @@ where
         text(column_labels.0)
             .width(Length::FillPortion(column_portions.0))
             .size(12)
-            .color(iced::Color::from_rgb(0.5, 0.5, 0.5)),
+            .color(crate::theme::colors().text_muted),
         text(column_labels.1)
             .width(Length::FillPortion(column_portions.1))
             .size(12)
-            .color(iced::Color::from_rgb(0.5, 0.5, 0.5)),
+            .color(crate::theme::colors().text_muted),
     ]
     .padding(8)
     .align_y(Alignment::Center);
@@ -224,7 +225,7 @@ where
             container(
                 text(empty_message)
                     .size(13)
-                    .color(iced::Color::from_rgb(0.5, 0.5, 0.5)),
+                    .color(crate::theme::colors().text_muted),
             )
             .padding(10),
         );
@@ -295,7 +296,7 @@ where
         } else {
             "Enter a request and click 'Send' to see the response."
         })
-        .color(iced::Color::from_rgb(0.4, 0.4, 0.4))
+        .color(crate::theme::colors().text_muted)
         .into(),
 
         Some(Ok(resp)) => {
@@ -382,16 +383,16 @@ where
                             container(
                                 text("No test results. Add assertions in the Post-request script tab (e.g. pm.test(...)) to view test outcomes here.")
                                     .size(13)
-                                    .color(iced::Color::from_rgb(0.5, 0.5, 0.5)),
+                                    .color(crate::theme::colors().text_muted),
                             )
                             .padding(10),
                         );
                     } else {
                         for test in &resp.test_results {
                             let (status_text, status_color) = if test.passed {
-                                ("PASS", iced::Color::from_rgb(0.12, 0.64, 0.35))
+                                ("PASS", crate::theme::colors().success)
                             } else {
-                                ("FAIL", iced::Color::from_rgb(0.87, 0.22, 0.22))
+                                ("FAIL", crate::theme::colors().error)
                             };
 
                             let test_row = container(
@@ -430,13 +431,13 @@ where
 
         Some(Err(err_msg)) => column![
             text("Transaction Failure")
-                .color(iced::Color::from_rgb(0.9, 0.0, 0.0))
+                .color(crate::theme::colors().error)
                 .size(14),
             scrollable(
                 text(err_msg)
                     .font(Font::MONOSPACE)
                     .size(13)
-                    .color(iced::Color::from_rgb(0.7, 0.2, 0.2))
+                    .color(crate::theme::colors().error)
             )
             .height(Length::Fixed(150.0))
         ]
@@ -464,7 +465,7 @@ where
             .style(button::text)
             .on_press(wrap_msg(TabMessage::ShowResponseTimingModal(Some(index)))),
         text(format!("Saved: {}", saved.name))
-            .color(iced::Color::from_rgb(0.5, 0.5, 0.5))
+            .color(crate::theme::colors().text_muted)
             .size(12),
         button(text("Back to Live").size(12))
             .padding([3, 8])
@@ -506,7 +507,7 @@ where
         ResponseSubTab::TestResults => container(
             text("Test results aren't captured in saved responses.")
                 .size(13)
-                .color(iced::Color::from_rgb(0.5, 0.5, 0.5)),
+                .color(crate::theme::colors().text_muted),
         )
         .padding(10)
         .into(),

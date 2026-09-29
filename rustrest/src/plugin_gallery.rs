@@ -24,7 +24,7 @@ pub struct GalleryEntry {
     pub version: String,
     pub author: String,
     pub description: String,
-    /// direct link to a .zip containing `plugin.toml` + `plugin.wasm` at its root
+    /// direct link to a .zip containing `plugin.toml` + `plugin.wasm` (and/or a `themes/` folder) at its root
     pub download_url: String,
     #[serde(default)]
     pub sha256: Option<String>,
@@ -71,7 +71,7 @@ pub fn download_and_prepare(
     engine: &Engine,
     plugins_dir: &Path,
     entry: &GalleryEntry,
-) -> Result<(String, PluginManifest, Module), String> {
+) -> Result<(String, PluginManifest, Option<Module>), String> {
     let tmp_dir = std::env::temp_dir().join(format!(
         "rustrest-plugin-gallery-{}-{}",
         entry.id,
@@ -88,7 +88,7 @@ fn download_and_prepare_into(
     plugins_dir: &Path,
     entry: &GalleryEntry,
     tmp_dir: &Path,
-) -> Result<(String, PluginManifest, Module), String> {
+) -> Result<(String, PluginManifest, Option<Module>), String> {
     let archive_path = tmp_dir.join(format!("{}.zip", entry.id));
     crate::updater::download_to_file(&entry.download_url, &archive_path)?;
 
@@ -101,7 +101,9 @@ fn download_and_prepare_into(
         .extract_into(&extract_dir)
         .map_err(|e| e.to_string())?;
 
-    let manifest_path = crate::updater::find_file(&extract_dir, "plugin.toml")?;
+    // Zed theme extension ships `extension.toml`
+    let manifest_path = crate::updater::find_file(&extract_dir, "plugin.toml")
+        .or_else(|_| crate::updater::find_file(&extract_dir, "extension.toml"))?;
     let source_dir = manifest_path
         .parent()
         .ok_or_else(|| "invalid archive layout".to_string())?;
