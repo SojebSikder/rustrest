@@ -1,0 +1,5 @@
+id = "midnight"
+name = "Midnight"
+version = "0.1.0"
+author = "Rustrest"
+description = "Example theme extension: a dark and a light theme, no wasm."

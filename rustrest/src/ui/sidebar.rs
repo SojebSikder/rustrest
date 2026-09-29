@@ -152,7 +152,7 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
                 let name_color = if is_online {
                     None
                 } else {
-                    Some(iced::Color::from_rgb(0.55, 0.55, 0.55))
+                    Some(crate::theme::colors().text_muted)
                 };
 
                 let mut header_row = row![
@@ -182,11 +182,8 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
 
                     header_row = header_row.push(text("🌿").size(11));
                     if has_changes {
-                        header_row = header_row.push(
-                            text("●")
-                                .size(9)
-                                .color(iced::Color::from_rgb(0.85, 0.55, 0.10)),
-                        );
+                        header_row = header_row
+                            .push(text("●").size(9).color(crate::theme::colors().modified));
                     }
                 }
 
@@ -712,7 +709,7 @@ fn render_saved_response_row<'a>(
             text("📄").size(11),
             text(example.name.clone())
                 .size(12)
-                .color(iced::Color::from_rgb(0.55, 0.55, 0.55)),
+                .color(crate::theme::colors().text_muted),
         ]
         .spacing(4)
         .align_y(Alignment::Center);

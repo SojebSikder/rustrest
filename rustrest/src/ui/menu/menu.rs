@@ -159,11 +159,11 @@ pub fn render_menu_bar<'a, T: 'static + Clone>(
     container(menu_row)
         .width(Length::Fill)
         .padding([4, 8])
-        .style(|theme| container::Style {
-            background: Some(theme.palette().background.into()),
+        .style(|_theme| container::Style {
+            background: Some(crate::theme::colors().title_bar_background.into()),
             border: Border {
                 width: 1.0,
-                color: iced::Color::from_rgba8(0, 0, 0, 0.1),
+                color: crate::theme::colors().border_variant,
                 ..Default::default()
             },
             ..Default::default()

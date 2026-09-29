@@ -62,7 +62,6 @@ fn render_collection_auth<'a>(
 fn render_collection_scripts<'a>(
     collection_id: usize,
     settings: &'a CollectionSettingsState,
-    theme: &Theme,
 ) -> Element<'a, Message> {
     let mut radio_bar = row![].spacing(15).align_y(Alignment::Center);
     for variant in ScriptTab::ALL {
@@ -89,7 +88,6 @@ fn render_collection_scripts<'a>(
     let script_tab = settings.script_tab;
     let editor = script_editor(
         content,
-        theme,
         move |action| Message::CollectionScriptAction(collection_id, script_tab, action),
         Message::ShowPluginTextContextMenu(content.selection_or_text()),
     );
@@ -175,9 +173,7 @@ pub fn render_collection_root<'a>(
             None => column![].into(),
         },
         CollectionSubTab::Scripts => match settings {
-            Some(settings) => {
-                render_collection_scripts(collection_id, settings, &app.settings.theme.to_iced())
-            }
+            Some(settings) => render_collection_scripts(collection_id, settings),
             None => column![].into(),
         },
         CollectionSubTab::Variables => {
@@ -275,7 +271,7 @@ pub fn render_collection_root<'a>(
             Some(state) => crate::ui::docs_view::view(
                 state,
                 target_collection,
-                &app.settings.theme.to_iced(),
+                &app.theme.active.iced,
                 Message::Docs,
             ),
             None => column![].into(),
@@ -327,7 +323,7 @@ pub fn render_folder_root<'a>(
         container(crate::ui::docs_view::view(
             docs,
             collection,
-            &app.settings.theme.to_iced(),
+            &app.theme.active.iced,
             Message::Docs,
         ))
         .padding(10)

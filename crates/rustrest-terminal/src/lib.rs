@@ -39,6 +39,26 @@ pub struct Rgb {
     pub b: u8,
 }
 
+/// default colors a snapshot resolves cells against, the host app's terminal theme.
+/// Programs can still override individual entries at runtime via OSC sequences.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TerminalPalette {
+    pub foreground: Rgb,
+    pub background: Rgb,
+    /// black, red, green, yellow, blue, magenta, cyan, white, then the eight bright variants.
+    pub ansi: [Rgb; 16],
+}
+
+impl Default for TerminalPalette {
+    fn default() -> Self {
+        Self {
+            foreground: DEFAULT_FG,
+            background: DEFAULT_BG,
+            ansi: palette::BASIC16,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct CellStyle {
     pub bold: bool,
@@ -192,8 +212,13 @@ impl TerminalSession {
         (self.columns, self.rows)
     }
 
-    /// builds a plain-data snapshot of the currently visible grid for painting.
+    /// builds a plain-data snapshot of the currently visible grid for painting, with the default palette.
     pub fn snapshot(&self) -> TerminalGrid {
+        self.snapshot_with(&TerminalPalette::default())
+    }
+
+    /// `snapshot`, resolving default/ANSI colors against `palette`.
+    pub fn snapshot_with(&self, palette: &TerminalPalette) -> TerminalGrid {
         let term = self.term.lock();
         let content = term.renderable_content();
         let columns = self.columns;
@@ -202,8 +227,8 @@ impl TerminalSession {
         let mut cells = vec![
             TerminalCell {
                 c: ' ',
-                fg: DEFAULT_FG,
-                bg: DEFAULT_BG,
+                fg: palette.foreground,
+                bg: palette.background,
                 style: CellStyle::default(),
                 selected: false,
             };
@@ -224,8 +249,8 @@ impl TerminalSession {
                 continue;
             }
 
-            let mut fg = palette::resolve(indexed.fg, colors, DEFAULT_FG, DEFAULT_BG);
-            let mut bg = palette::resolve(indexed.bg, colors, DEFAULT_FG, DEFAULT_BG);
+            let mut fg = palette::resolve(indexed.fg, colors, palette);
+            let mut bg = palette::resolve(indexed.bg, colors, palette);
             if indexed.cell.flags.contains(CellFlags::INVERSE) {
                 std::mem::swap(&mut fg, &mut bg);
             }

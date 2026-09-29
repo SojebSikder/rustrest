@@ -2,7 +2,7 @@ use crate::app::Rustrest;
 use crate::message::Message;
 use crate::ui::modal::card;
 use iced::widget::{Id, button, column, container, scrollable, text, text_input};
-use iced::{Alignment, Color, Element, Font, Length};
+use iced::{Alignment, Element, Font, Length};
 use rustrest_command_palette::{Command, PaletteState, filter};
 
 /// every action reachable from the command palette.
@@ -21,6 +21,10 @@ pub enum AppCommand {
     Cloud,
     OpenPluginManager,
     RestartLanguageServer,
+    SelectTheme,
+    ImportTheme,
+    OpenThemesFolder,
+    ReloadThemes,
     /// plugin_id, command_id.
     Plugin(String, String),
 }
@@ -80,6 +84,20 @@ pub fn commands(app: &Rustrest) -> Vec<Command<AppCommand>> {
             "Manage Plugins...",
             AppCommand::OpenPluginManager,
         ),
+        Command::new(
+            "theme-selector",
+            "Theme Selector: Toggle",
+            AppCommand::SelectTheme,
+        )
+        .with_subtitle("Ctrl+K Ctrl+T"),
+        Command::new("import-theme", "Import Theme...", AppCommand::ImportTheme)
+            .with_subtitle("Zed theme .json"),
+        Command::new(
+            "open-themes-folder",
+            "Open Themes Folder",
+            AppCommand::OpenThemesFolder,
+        ),
+        Command::new("reload-themes", "Reload Themes", AppCommand::ReloadThemes),
     ];
 
     if crate::app::script_intel::has_language_plugin(app) {
@@ -124,6 +142,10 @@ pub fn to_message(action: AppCommand) -> Message {
         AppCommand::Cloud => Message::OpenCloudModal,
         AppCommand::OpenPluginManager => Message::OpenPluginManagerPressed,
         AppCommand::RestartLanguageServer => Message::RestartLanguageServer,
+        AppCommand::SelectTheme => Message::ToggleThemeSelector,
+        AppCommand::ImportTheme => Message::ImportThemePressed,
+        AppCommand::OpenThemesFolder => Message::OpenThemesFolderPressed,
+        AppCommand::ReloadThemes => Message::ReloadThemesPressed,
         AppCommand::Plugin(plugin_id, command_id) => Message::PluginCommand(plugin_id, command_id),
     }
 }
@@ -158,9 +180,7 @@ pub fn view<'a>(app: &'a Rustrest, state: &'a PaletteState) -> Element<'a, Messa
             container(
                 text("No matching commands")
                     .size(12)
-                    .style(|_theme: &iced::Theme| text::Style {
-                        color: Some(Color::from_rgb(0.55, 0.55, 0.6)),
-                    }),
+                    .color(crate::theme::colors().text_muted),
             )
             .padding(8),
         );
@@ -171,12 +191,11 @@ pub fn view<'a>(app: &'a Rustrest, state: &'a PaletteState) -> Element<'a, Messa
         let mut row_content = column![text(cmd.title.clone()).size(13)].spacing(2);
         if let Some(subtitle) = &cmd.subtitle {
             let subtitle = subtitle.clone();
-            row_content =
-                row_content.push(text(subtitle).size(11).style(|_theme: &iced::Theme| {
-                    text::Style {
-                        color: Some(Color::from_rgb(0.55, 0.55, 0.6)),
-                    }
-                }));
+            row_content = row_content.push(
+                text(subtitle)
+                    .size(11)
+                    .color(crate::theme::colors().text_muted),
+            );
         }
 
         let action = cmd.action.clone();
@@ -185,7 +204,7 @@ pub fn view<'a>(app: &'a Rustrest, state: &'a PaletteState) -> Element<'a, Messa
                 .on_press(Message::CommandPaletteItemClicked(action))
                 .width(Length::Fill)
                 .padding(8)
-                .style(move |theme, status| {
+                .style(move |theme: &iced::Theme, status| {
                     if is_selected {
                         button::Style {
                             background: Some(theme.extended_palette().primary.weak.color.into()),

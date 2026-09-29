@@ -1,7 +1,7 @@
 use crate::error::PluginError;
 use crate::files::FileEvent;
 use crate::instance::{LoadedPlugin, compile, instantiate, load_from_module};
-use crate::manifest_toml::{self, MANIFEST_FILE_NAME, WASM_FILE_NAME};
+use crate::manifest_toml::{self, THEMES_DIR_NAME, WASM_FILE_NAME};
 use crate::network::{NetworkEvent, NetworkTable};
 use crate::process::{ProcessEvent, ProcessTable};
 use rustrest_plugin_api::{
@@ -33,6 +33,8 @@ pub struct PreparedPlugin {
     manifest: Option<PluginManifest>,
     module: Option<Module>,
     load_error: Option<String>,
+    /// a wasm-less extension that only ships themes.
+    theme_only: bool,
 }
 
 /// Discovers, loads, and drives every wasm plugin under the plugins
@@ -119,7 +121,7 @@ impl PluginManager {
                 if !path.is_dir() {
                     continue;
                 }
-                if !path.join(MANIFEST_FILE_NAME).is_file() {
+                if manifest_toml::manifest_path(&path).is_none() {
                     continue;
                 }
                 let Some(dir_name) = path.file_name().and_then(|n| n.to_str()) else {
@@ -143,6 +145,7 @@ impl PluginManager {
                             manifest: None,
                             module: None,
                             load_error: Some(e.to_string()),
+                            theme_only: false,
                         };
                     }
                 };
@@ -157,6 +160,20 @@ impl PluginManager {
                         enabled: false,
                         manifest: Some(manifest),
                         module: None,
+                        theme_only: false,
+                    };
+                }
+                let wasm_path = plugin_dir.join(WASM_FILE_NAME);
+                // a theme extension has no wasm to compile, it's loaded for its theme files.
+                if !wasm_path.is_file() && !manifest_toml::theme_files(&plugin_dir).is_empty() {
+                    return PreparedPlugin {
+                        dir_name,
+                        plugin_dir,
+                        enabled,
+                        manifest: Some(manifest),
+                        module: None,
+                        load_error: None,
+                        theme_only: true,
                     };
                 }
                 // a disabled plugin can't run anything, so skip the
@@ -170,9 +187,9 @@ impl PluginManager {
                         manifest: Some(manifest),
                         module: None,
                         load_error: None,
+                        theme_only: false,
                     };
                 }
-                let wasm_path = plugin_dir.join(WASM_FILE_NAME);
                 match compile(engine, &wasm_path) {
                     Ok(module) => PreparedPlugin {
                         dir_name,
@@ -181,6 +198,7 @@ impl PluginManager {
                         manifest: Some(manifest),
                         module: Some(module),
                         load_error: None,
+                        theme_only: false,
                     },
                     Err(e) => PreparedPlugin {
                         dir_name,
@@ -189,6 +207,7 @@ impl PluginManager {
                         manifest: Some(manifest),
                         module: None,
                         load_error: Some(e.to_string()),
+                        theme_only: false,
                     },
                 }
             })
@@ -212,14 +231,46 @@ impl PluginManager {
                     p.enabled,
                 ),
                 (manifest, _) => LoadedPlugin {
+                    theme_files: if p.theme_only {
+                        manifest_toml::theme_files(&p.plugin_dir)
+                    } else {
+                        Vec::new()
+                    },
                     dir_name: p.dir_name,
                     manifest,
-                    enabled: false,
+                    enabled: p.theme_only && p.enabled,
                     load_error: p.load_error,
                     runtime: None,
                 },
             })
             .collect();
+    }
+
+    /// `(extension id, theme file)` for every enabled extension, straight
+    /// from disk - no wasm is compiled - so the app can resolve an
+    /// extension's theme before the first frame, ahead of the (slow)
+    /// `prepare_load_all`. Same result as `theme_files` once loading is done.
+    pub fn scan_theme_files(plugins_dir: &Path, state_path: &Path) -> Vec<(String, PathBuf)> {
+        let disabled = Self::read_disabled_at(state_path);
+        let mut dirs: Vec<PathBuf> = fs::read_dir(plugins_dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.is_dir())
+            .collect();
+
+        dirs.sort();
+
+        dirs.into_iter()
+            .filter_map(|dir| {
+                let manifest = manifest_toml::read_from_dir(&dir).ok()?;
+                let dir_name = dir.file_name()?.to_str()?.to_string();
+                (manifest.id == dir_name && !disabled.contains(&dir_name))
+                    .then(|| (dir_name, manifest_toml::theme_files(&dir)))
+            })
+            .flat_map(|(id, files)| files.into_iter().map(move |f| (id.clone(), f)))
+            .collect()
     }
 
     fn read_disabled_at(state_path: &Path) -> HashSet<String> {
@@ -250,10 +301,19 @@ impl PluginManager {
     }
 
     pub fn set_enabled(&mut self, plugin_id: &str, enabled: bool) {
-        // a plugin that was disabled at startup never got its wasm
-        // instantiated (see `PluginManager::prepare_load_all`); if it's
-        // being turned back on,
-        // instantiate it now instead of leaving it permanently inert.
+        // theme extension has nothing to instantiate, toggling it only decides whether its themes are offered.
+        if let Some(plugin) = self
+            .plugins
+            .iter_mut()
+            .find(|p| p.id() == plugin_id && p.is_theme_only())
+        {
+            plugin.enabled = enabled;
+            self.save_state();
+            return;
+        }
+
+        // a plugin that was disabled at startup never got its wasm instantiated (see `PluginManager::prepare_load_all`),
+        // if it's being turned back on, instantiate it now instead of leaving it permanently inert.
         if enabled
             && let Some(dir_name) = self.plugins.iter().find_map(|p| {
                 (p.id() == plugin_id && p.runtime.is_none() && p.load_error.is_none())
@@ -294,21 +354,30 @@ impl PluginManager {
     }
 
     /// validates the plugin folder at `source` (must contain `plugin.toml`
-    /// and `plugin.wasm`), compiles its wasm, and copies both files into
-    /// `plugins_dir` under a directory named after the manifest id.
+    /// or a Zed `extension.toml`, plus `plugin.wasm` and/or a `themes/`
+    /// directory), compiles its wasm if it has one, and copies it into
+    /// `plugins_dir` under a directory named after the manifest id. The
+    /// module is `None` for a theme-only extension.
     pub fn prepare_install(
         engine: &Engine,
         plugins_dir: &Path,
         source: &Path,
-    ) -> Result<(String, PluginManifest, Module), PluginError> {
+    ) -> Result<(String, PluginManifest, Option<Module>), PluginError> {
         let manifest = manifest_toml::read_from_dir(source)?;
+        let manifest_path =
+            manifest_toml::manifest_path(source).expect("read_from_dir just found a manifest");
         let wasm_path = source.join(WASM_FILE_NAME);
-        if !wasm_path.is_file() {
+        let theme_files = manifest_toml::theme_files(source);
+
+        let module = if wasm_path.is_file() {
+            Some(compile(engine, &wasm_path)?)
+        } else if theme_files.is_empty() {
             return Err(PluginError::Manifest(format!(
-                "missing {WASM_FILE_NAME} in plugin folder"
+                "missing {WASM_FILE_NAME} (or a {THEMES_DIR_NAME}/ folder of theme files) in plugin folder"
             )));
-        }
-        let module = compile(engine, &wasm_path)?;
+        } else {
+            None
+        };
 
         fs::create_dir_all(plugins_dir)?;
         let dest_dir = plugins_dir.join(&manifest.id);
@@ -320,25 +389,48 @@ impl PluginManager {
         }
         fs::create_dir_all(&dest_dir)?;
         fs::copy(
-            source.join(MANIFEST_FILE_NAME),
-            dest_dir.join(MANIFEST_FILE_NAME),
+            &manifest_path,
+            dest_dir.join(manifest_path.file_name().expect("manifest has a file name")),
         )?;
-        fs::copy(&wasm_path, dest_dir.join(WASM_FILE_NAME))?;
+        if module.is_some() {
+            fs::copy(&wasm_path, dest_dir.join(WASM_FILE_NAME))?;
+        }
+        if !theme_files.is_empty() {
+            let themes_dir = dest_dir.join(THEMES_DIR_NAME);
+            fs::create_dir_all(&themes_dir)?;
+            for file in &theme_files {
+                fs::copy(
+                    file,
+                    themes_dir.join(file.file_name().expect("theme file name")),
+                )?;
+            }
+        }
 
         Ok((manifest.id.clone(), manifest, module))
     }
 
-    /// finishes an install prepared by `prepare_install`: instantiates the
-    /// already-compiled module and activates it.
+    /// finishes an install prepared by `prepare_install`, instantiates the already-compiled module (if any) and activates it.
     pub fn finish_install(
         &mut self,
         dir_name: String,
         manifest: PluginManifest,
-        module: Module,
+        module: Option<Module>,
     ) -> Result<String, PluginError> {
         let engine = self.engine.get_or_insert_with(Self::new_engine);
         let plugin_dir = self.plugins_dir.join(&dir_name);
-        let loaded = load_from_module(&dir_name, engine, &module, &manifest, &plugin_dir, true);
+        let loaded = match module {
+            Some(module) => {
+                load_from_module(&dir_name, engine, &module, &manifest, &plugin_dir, true)
+            }
+            None => LoadedPlugin {
+                dir_name: dir_name.clone(),
+                manifest: Some(manifest),
+                enabled: true,
+                load_error: None,
+                theme_files: manifest_toml::theme_files(&plugin_dir),
+                runtime: None,
+            },
+        };
         let id = loaded.id().to_string();
         let error = loaded.load_error.clone();
 
@@ -387,6 +479,19 @@ impl PluginManager {
         fs::remove_dir_all(self.plugins_dir.join(&dir_name))?;
         self.drop_plugin(plugin_id);
         Ok(())
+    }
+
+    /// `(plugin id, theme file)` for every enabled plugin's `themes/*.json`.
+    pub fn theme_files(&self) -> Vec<(String, PathBuf)> {
+        self.plugins
+            .iter()
+            .filter(|p| p.enabled)
+            .flat_map(|p| {
+                p.theme_files
+                    .iter()
+                    .map(move |f| (p.id().to_string(), f.clone()))
+            })
+            .collect()
     }
 
     fn find_active(&mut self, plugin_id: &str) -> Result<&mut LoadedPlugin, PluginError> {

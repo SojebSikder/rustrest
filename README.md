@@ -37,6 +37,7 @@ Modern API clients like Postman or Insomnia carry massive resource overhead. Rus
 - **Remote Development over SSH**: Remote development using SSH for accessing collections on remote servers.
 - **AI Agent**: AI agent for AI backed API testing
 - **Plugins**: Extend functionality with plugins
+- **Themes**: Supports Zed code editor compatible themes in rustrest
 - And many more...
 
 ## Installation

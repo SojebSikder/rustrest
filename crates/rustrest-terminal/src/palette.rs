@@ -1,8 +1,8 @@
-use crate::Rgb;
+use crate::{Rgb, TerminalPalette};
 use alacritty_terminal::term::color::Colors;
 use alacritty_terminal::vte::ansi::{Color as AnsiColor, NamedColor};
 
-const BASIC16: [Rgb; 16] = [
+pub(crate) const BASIC16: [Rgb; 16] = [
     Rgb { r: 0, g: 0, b: 0 },   // Black
     Rgb { r: 205, g: 0, b: 0 }, // Red
     Rgb { r: 0, g: 205, b: 0 }, // Green
@@ -69,9 +69,9 @@ pub fn dim(c: Rgb) -> Rgb {
     }
 }
 
-fn indexed_default(index: u8) -> Rgb {
+fn indexed_default(index: u8, palette: &TerminalPalette) -> Rgb {
     match index {
-        0..=15 => BASIC16[index as usize],
+        0..=15 => palette.ansi[index as usize],
         16..=231 => {
             let i = index - 16;
             let component = |c: u8| if c == 0 { 0 } else { c * 40 + 55 };
@@ -92,22 +92,23 @@ fn indexed_default(index: u8) -> Rgb {
     }
 }
 
-fn named_default(named: NamedColor, default_fg: Rgb, default_bg: Rgb) -> Rgb {
+fn named_default(named: NamedColor, palette: &TerminalPalette) -> Rgb {
+    let (fg, bg) = (palette.foreground, palette.background);
     match named as usize {
-        v @ 0..=15 => BASIC16[v],
-        256 => default_fg,                      // Foreground
-        257 => default_bg,                      // Background
-        258 => default_fg,                      // Cursor
-        v @ 259..=266 => dim(BASIC16[v - 259]), // DimBlack..DimWhite
-        267 => default_fg,                      // BrightForeground
-        268 => dim(default_fg),                 // DimForeground
-        _ => default_fg,
+        v @ 0..=15 => palette.ansi[v],
+        256 => fg,                                   // Foreground
+        257 => bg,                                   // Background
+        258 => fg,                                   // Cursor
+        v @ 259..=266 => dim(palette.ansi[v - 259]), // DimBlack..DimWhite
+        267 => fg,                                   // BrightForeground
+        268 => dim(fg),                              // DimForeground
+        _ => fg,
     }
 }
 
 /// resolves a cell's color, honoring any palette overrides the running
-/// program has set via OSC sequences before falling back to the defaults.
-pub fn resolve(color: AnsiColor, overrides: &Colors, default_fg: Rgb, default_bg: Rgb) -> Rgb {
+/// program has set via OSC sequences before falling back to `palette`.
+pub fn resolve(color: AnsiColor, overrides: &Colors, palette: &TerminalPalette) -> Rgb {
     match color {
         AnsiColor::Spec(rgb) => Rgb {
             r: rgb.r,
@@ -120,13 +121,13 @@ pub fn resolve(color: AnsiColor, overrides: &Colors, default_fg: Rgb, default_bg
                 g: rgb.g,
                 b: rgb.b,
             })
-            .unwrap_or_else(|| named_default(named, default_fg, default_bg)),
+            .unwrap_or_else(|| named_default(named, palette)),
         AnsiColor::Indexed(index) => overrides[index as usize]
             .map(|rgb| Rgb {
                 r: rgb.r,
                 g: rgb.g,
                 b: rgb.b,
             })
-            .unwrap_or_else(|| indexed_default(index)),
+            .unwrap_or_else(|| indexed_default(index, palette)),
     }
 }

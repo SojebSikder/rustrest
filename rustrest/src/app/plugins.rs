@@ -316,6 +316,8 @@ pub fn open_manager_pressed(app: &mut Rustrest) -> Task<Message> {
 
 pub fn toggle_enabled(app: &mut Rustrest, plugin_id: String, enabled: bool) -> Task<Message> {
     app.plugins.plugin_manager.set_enabled(&plugin_id, enabled);
+    // extension's themes come and go with it
+    super::theme::reload(app);
     Task::none()
 }
 
@@ -369,7 +371,7 @@ type PrepareResult = Result<
     (
         String,
         rustrest_plugin_host::PluginManifest,
-        rustrest_plugin_host::Module,
+        Option<rustrest_plugin_host::Module>,
     ),
     String,
 >;
@@ -383,10 +385,13 @@ pub fn install_prepared(app: &mut Rustrest, result: PrepareResult) -> Task<Messa
                 .plugin_manager
                 .finish_install(dir_name, manifest, module)
             {
-                Ok(id) => Task::done(Message::ShowToast(
-                    format!("Plugin '{id}' installed successfully"),
-                    ToastStatus::Success,
-                )),
+                Ok(id) => {
+                    super::theme::reload(app);
+                    Task::done(Message::ShowToast(
+                        format!("Plugin '{id}' installed successfully"),
+                        ToastStatus::Success,
+                    ))
+                }
                 Err(e) => Task::done(Message::ShowToast(
                     format!("Failed to install plugin: {e}"),
                     ToastStatus::Error,
@@ -444,6 +449,7 @@ pub fn uninstall_finished(
     let task = match result {
         Ok(()) => {
             app.plugins.plugin_manager.drop_plugin(&plugin_id);
+            super::theme::reload(app);
             Task::done(Message::ShowToast(
                 format!("Plugin '{plugin_id}' uninstalled"),
                 ToastStatus::Success,

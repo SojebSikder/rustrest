@@ -5,7 +5,7 @@ use crate::network::NetworkTable;
 use crate::process::ProcessTable;
 use crate::state::PluginState;
 use rustrest_plugin_api::{Capability, PluginManifest};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use wasmtime::{Engine, Linker, Module, Store};
 
@@ -27,6 +27,8 @@ pub struct LoadedPlugin {
     pub manifest: Option<PluginManifest>,
     pub enabled: bool,
     pub load_error: Option<String>,
+    /// `themes/*.json` files the plugin ships (see `manifest_toml::theme_files`).
+    pub theme_files: Vec<PathBuf>,
     pub(crate) runtime: Option<PluginRuntime>,
 }
 
@@ -40,6 +42,12 @@ impl LoadedPlugin {
 
     pub fn is_active(&self) -> bool {
         self.enabled && self.runtime.is_some()
+    }
+
+    /// a theme extension: no wasm, only `themes/`. It has nothing to run,
+    /// so "enabled" just decides whether its themes are offered.
+    pub fn is_theme_only(&self) -> bool {
+        self.runtime.is_none() && self.load_error.is_none() && !self.theme_files.is_empty()
     }
 }
 
@@ -122,6 +130,7 @@ pub fn load_from_module(
             manifest: Some(manifest.clone()),
             enabled,
             load_error: None,
+            theme_files: crate::manifest_toml::theme_files(plugin_dir),
             runtime: Some(runtime),
         },
         Err(e) => LoadedPlugin {
@@ -129,6 +138,7 @@ pub fn load_from_module(
             manifest: Some(manifest.clone()),
             enabled: false,
             load_error: Some(e.to_string()),
+            theme_files: Vec::new(),
             runtime: None,
         },
     }

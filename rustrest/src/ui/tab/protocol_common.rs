@@ -204,17 +204,12 @@ pub fn message_log<'a, Message: 'a>(
     let mut content = column![].spacing(6);
 
     for entry in entries {
+        let colors = crate::theme::colors();
         let (prefix_color, label_text): (iced::Color, String) = match entry.direction {
-            LogDirection::Out => (
-                iced::Color::from_rgb(0.3, 0.6, 1.0),
-                format!("→ {}", entry.label),
-            ),
-            LogDirection::In => (
-                iced::Color::from_rgb(0.3, 0.8, 0.4),
-                format!("← {}", entry.label),
-            ),
-            LogDirection::Info => (iced::Color::from_rgb(0.6, 0.6, 0.6), entry.label.clone()),
-            LogDirection::Error => (iced::Color::from_rgb(0.9, 0.3, 0.3), entry.label.clone()),
+            LogDirection::Out => (colors.info, format!("→ {}", entry.label)),
+            LogDirection::In => (colors.success, format!("← {}", entry.label)),
+            LogDirection::Info => (colors.text_muted, entry.label.clone()),
+            LogDirection::Error => (colors.error, entry.label.clone()),
         };
 
         content = content.push(

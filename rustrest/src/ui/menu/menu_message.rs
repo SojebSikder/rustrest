@@ -5,6 +5,7 @@ pub enum MenuMessage {
     FileOpenGitFolder,
     FileExit,
     CommandPalette,
+    ThemeSelector,
     HelpAbout,
     ViewReleaseNotes,
     CheckForUpdate,

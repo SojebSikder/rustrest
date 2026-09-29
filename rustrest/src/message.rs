@@ -632,14 +632,14 @@ pub enum Message {
     InstallPluginPressed,
     /// the folder picked by `InstallPluginPressed` (or `None` if cancelled).
     PluginInstallFolderPicked(Option<std::path::PathBuf>),
-    /// a background thread finished compiling the picked plugin's wasm and
-    /// copying it into the plugins directory (or failed)
+    /// background thread finished compiling the picked plugin's wasm (none for a theme-only extension)
+    /// and copying it into the plugins directory (or failed)
     PluginInstallPrepared(
         Result<
             (
                 String,
                 rustrest_plugin_host::PluginManifest,
-                rustrest_plugin_host::Module,
+                Option<rustrest_plugin_host::Module>,
             ),
             String,
         >,
@@ -699,7 +699,29 @@ pub enum Message {
     OpenSettingsPressed,
     CloseSettingsPressed,
     SettingsTabSelected(crate::ui::settings::SettingsTab),
-    ThemeSelected(crate::ui::settings::AppTheme),
+
+    // themes
+    /// pick a theme for whichever light/dark slot is showing (as Zed's selector does)
+    ThemeSelected(String),
+    /// set the light or dark slot of a `"mode"`-style theme setting
+    ThemeSelectedFor(crate::theme::Appearance, String),
+    ThemeModeSelected(crate::theme::ThemeMode),
+    SystemThemeChanged(iced::theme::Mode),
+    /// a theme file, extension or settings.json changed on disk
+    ThemeFilesChanged(Vec<std::path::PathBuf>),
+    ReloadThemesPressed,
+    OpenThemesFolderPressed,
+    ImportThemePressed,
+    ThemeFilePicked(Option<std::path::PathBuf>),
+    /// Ctrl+K - the first half of a two-key chord
+    ChordStarted,
+    ChordCancelled,
+    ToggleThemeSelector,
+    ThemeSelectorQueryChanged(String),
+    ThemeSelectorMoveSelection(i32),
+    ThemeSelectorConfirm,
+    ThemeSelectorClosed,
+    ThemeSelectorItemClicked(String),
     CloseOnOutsideClickToggled(bool),
 
     // new tab protocol picker

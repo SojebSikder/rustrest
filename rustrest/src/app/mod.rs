@@ -17,6 +17,7 @@ pub mod script_intel;
 mod settings;
 mod sidebar;
 mod terminal;
+pub mod theme;
 mod workbench;
 mod workspace;
 mod ws;
@@ -132,6 +133,7 @@ pub struct Rustrest {
     pub plugins: plugins::PluginsState,
 
     pub settings: settings::SettingsState,
+    pub theme: theme::ThemeState,
 
     pub status_bar: crate::ui::status_bar::StatusBarState,
 
@@ -603,15 +605,20 @@ pub fn init() -> (Rustrest, Task<Message>) {
         settings: settings::SettingsState {
             settings_open: false,
             settings_tab: SettingsTab::default(),
-            theme: persisted_settings.theme,
             close_on_outside_click: persisted_settings.close_on_outside_click,
             show_form_data_content_type: persisted_settings.show_form_data_content_type,
         },
+        theme: theme::ThemeState::new(
+            persisted_settings.theme.clone(),
+            persisted_settings.theme_overrides.clone(),
+            &[],
+        ),
         status_bar: crate::ui::status_bar::StatusBarState::default(),
         file_watch: file_watch::FileWatchState::default(),
         script_intel: script_intel::ScriptIntelState::default(),
         cloud: cloud::CloudState::load(),
     };
+    theme::reload(&mut app);
     // ensure at least one tab exists right away - `view()` indexes
     // `app.tabs[app.active_tab_index]` unconditionally, and the real tabs
     // (restored from the saved session) aren't available until the
@@ -714,6 +721,7 @@ pub fn init() -> (Rustrest, Task<Message>) {
 
     let startup_task = Task::batch([
         open_main_window.map(|_id| Message::None),
+        iced::system::theme().map(Message::SystemThemeChanged),
         update_check_task,
         workspace_load_task,
         plugin_load_task,
@@ -1870,7 +1878,23 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         Message::OpenSettingsPressed => settings::open_pressed(app),
         Message::CloseSettingsPressed => settings::close_pressed(app),
         Message::SettingsTabSelected(tab) => settings::tab_selected(app, tab),
-        Message::ThemeSelected(theme) => settings::theme_selected(app, theme),
+        Message::ThemeSelected(name) => theme::selected(app, name),
+        Message::ThemeSelectedFor(appearance, name) => theme::selected_for(app, appearance, name),
+        Message::ThemeModeSelected(mode) => theme::mode_selected(app, mode),
+        Message::SystemThemeChanged(mode) => theme::system_changed(app, mode),
+        Message::ThemeFilesChanged(paths) => theme::files_changed(app, paths),
+        Message::ReloadThemesPressed => theme::reload_pressed(app),
+        Message::OpenThemesFolderPressed => theme::open_folder_pressed(app),
+        Message::ImportThemePressed => theme::import_pressed(app),
+        Message::ThemeFilePicked(path) => theme::file_picked(app, path),
+        Message::ChordStarted => theme::chord_started(app),
+        Message::ChordCancelled => theme::chord_cancelled(app),
+        Message::ToggleThemeSelector => theme::toggle_selector(app),
+        Message::ThemeSelectorQueryChanged(query) => theme::selector_query_changed(app, query),
+        Message::ThemeSelectorMoveSelection(delta) => theme::selector_move(app, delta),
+        Message::ThemeSelectorConfirm => theme::selector_confirm(app),
+        Message::ThemeSelectorClosed => theme::close_selector(app),
+        Message::ThemeSelectorItemClicked(name) => theme::selector_item_clicked(app, name),
         Message::CloseOnOutsideClickToggled(enabled) => {
             settings::close_on_outside_click_toggled(app, enabled)
         }

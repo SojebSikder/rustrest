@@ -226,7 +226,7 @@ where
 
             let body_input: Element<Message> = match tab.body_type {
                 BodyType::None => text("This request does not have a body payload.")
-                    .color(iced::Color::from_rgb(0.5, 0.5, 0.5))
+                    .color(crate::theme::colors().text_muted)
                     .into(),
 
                 BodyType::FormData => super::super::components::form_data_editor_pane(
@@ -380,7 +380,7 @@ where
                     let file_info = if let Some(path) = &tab.binary_file_path {
                         text(format!("Selected file: {}", path))
                     } else {
-                        text("No file selected").color(iced::Color::from_rgb(0.6, 0.6, 0.6))
+                        text("No file selected").color(crate::theme::colors().text_muted)
                     };
 
                     container(
@@ -437,7 +437,6 @@ where
             let script_input = match tab.script_tab {
                 ScriptTab::PreRequest => script_editor(
                     &tab.pre_request_script,
-                    theme,
                     move |action| wrap_msg(TabMessage::PreRequestScriptChanged(action)),
                     wrap_msg(TabMessage::ShowFieldContextMenu(
                         TabFieldTarget::PreRequestScriptEditor,
@@ -446,7 +445,6 @@ where
                 ),
                 ScriptTab::PostResponse => script_editor(
                     &tab.post_response_script,
-                    theme,
                     move |action| wrap_msg(TabMessage::PostResponseScriptChanged(action)),
                     wrap_msg(TabMessage::ShowFieldContextMenu(
                         TabFieldTarget::PostResponseScriptEditor,

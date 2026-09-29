@@ -23,7 +23,7 @@ where
         return container(
             text("No console output. Use console.log(...) in your pre-request or post-response scripts to see output here.")
                 .size(13)
-                .color(iced::Color::from_rgb(0.5, 0.5, 0.5)),
+                .color(crate::theme::colors().text_muted),
         )
         .padding(10)
         .into();
@@ -73,10 +73,11 @@ where
 
 /// splits a "[level] message" line into (LEVEL, message, badge color).
 fn classify_log_line(line: &str) -> (&'static str, &str, iced::Color) {
-    let warn_color = iced::Color::from_rgb(0.85, 0.55, 0.10); // yellow
-    let error_color = iced::Color::from_rgb(0.87, 0.22, 0.22); // red
-    let info_color = iced::Color::from_rgb(0.20, 0.45, 0.85); // blue
-    let log_color = iced::Color::from_rgb(0.45, 0.45, 0.45); // gray
+    let colors = crate::theme::colors();
+    let warn_color = colors.warning;
+    let error_color = colors.error;
+    let info_color = colors.info;
+    let log_color = colors.hint;
 
     if let Some(rest) = line.strip_prefix("[log] ") {
         ("LOG", rest, log_color)
@@ -92,10 +93,11 @@ fn classify_log_line(line: &str) -> (&'static str, &str, iced::Color) {
 }
 
 fn text_color_for(level: &str) -> iced::Color {
+    let colors = crate::theme::colors();
     match level {
-        "WARN" => iced::Color::from_rgb(0.75, 0.5, 0.05), // yellow
-        "ERROR" => iced::Color::from_rgb(0.75, 0.15, 0.15), // red
-        "INFO" => iced::Color::from_rgb(0.20, 0.45, 0.85), // blue
-        _ => iced::Color::from_rgb(0.45, 0.45, 0.45),     // gray
+        "WARN" => colors.warning,
+        "ERROR" => colors.error,
+        "INFO" => colors.info,
+        _ => colors.hint,
     }
 }

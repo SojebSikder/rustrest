@@ -28,7 +28,7 @@ pub fn resize_handle<'a, Message: Clone + 'a>(
             .width(width)
             .height(height)
             .style(|_theme| container::Style {
-                background: Some(iced::Color::from_rgba(0.5, 0.5, 0.5, 0.25).into()),
+                background: Some(crate::theme::colors().border_variant.into()),
                 ..Default::default()
             }),
     )

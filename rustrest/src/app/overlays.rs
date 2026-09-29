@@ -249,6 +249,9 @@ pub fn menu_interaction(
             MenuMessage::CommandPalette => {
                 return super::update(app, Message::ToggleCommandPalette);
             }
+            MenuMessage::ThemeSelector => {
+                return super::update(app, Message::ToggleThemeSelector);
+            }
             MenuMessage::CheckForUpdate => {
                 return super::update(app, Message::CheckForUpdate);
             }

@@ -5,8 +5,6 @@ use iced::widget::canvas::{self, Frame, LineCap, Path, Stroke};
 use iced::{Color, Element, Length, Radians, Rectangle, Renderer, Theme, mouse};
 use std::f32::consts::PI;
 
-const TRACK_COLOR: Color = Color::from_rgba(1.0, 1.0, 1.0, 0.15);
-const FILL_COLOR: Color = Color::from_rgb(0.35, 0.65, 1.0);
 const STROKE_WIDTH: f32 = 2.5;
 
 #[derive(Debug, Clone, Copy)]
@@ -25,6 +23,12 @@ impl<Message> canvas::Program<Message> for ProgressRing {
         bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> Vec<canvas::Geometry> {
+        let colors = crate::theme::colors();
+        let track_color = Color {
+            a: 0.15,
+            ..colors.text
+        };
+        let fill_color = colors.text_accent;
         let mut frame = Frame::new(renderer, bounds.size());
         let center = frame.center();
         let radius = (bounds.width.min(bounds.height) / 2.0) - STROKE_WIDTH / 2.0;
@@ -33,7 +37,7 @@ impl<Message> canvas::Program<Message> for ProgressRing {
         frame.stroke(
             &track,
             Stroke::default()
-                .with_color(TRACK_COLOR)
+                .with_color(track_color)
                 .with_width(STROKE_WIDTH),
         );
 
@@ -51,7 +55,7 @@ impl<Message> canvas::Program<Message> for ProgressRing {
             frame.stroke(
                 &arc,
                 Stroke::default()
-                    .with_color(FILL_COLOR)
+                    .with_color(fill_color)
                     .with_width(STROKE_WIDTH)
                     .with_line_cap(LineCap::Round),
             );

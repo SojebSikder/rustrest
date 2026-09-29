@@ -1,6 +1,5 @@
-//! "Manage Plugins" tab: lists every discovered plugin, lets the user
-//! enable/disable it, and surfaces load errors so a broken plugin doesn't
-//! just silently vanish.
+//! "Manage Plugins" tab: lists every discovered plugin, lets the user enable/disable it,
+//! and surfaces load errors so a broken plugin doesn't just silently vanish.
 
 use crate::app::Rustrest;
 use crate::message::Message;
@@ -241,6 +240,20 @@ fn render_installed_list(app: &Rustrest, is_busy: bool) -> Element<'_, Message> 
                 .align_y(Alignment::Center);
 
                 let mut badges = row![].spacing(6);
+                if !plugin.theme_files.is_empty() {
+                    let label = if plugin.is_theme_only() {
+                        "Theme extension".to_string()
+                    } else {
+                        "Themes".to_string()
+                    };
+                    badges = badges.push(container(text(label).size(10)).padding([2, 6]).style(
+                        |theme: &Theme| {
+                            let mut style = container::rounded_box(theme);
+                            style.text_color = Some(muted_text_color(theme));
+                            style
+                        },
+                    ));
+                }
                 for capability in &manifest.capabilities {
                     let is_external_process = matches!(capability, Capability::ExternalProcess);
                     badges = badges.push(
