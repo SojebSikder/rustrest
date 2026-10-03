@@ -25,8 +25,7 @@ fn sidebar_click_message(app: &Rustrest, key: SidebarItemKey, default: Message) 
 }
 
 /// container style that highlights a row when it's part of the current
-/// sidebar multi-selection, mirroring the selected-item look used by the
-/// command palette.
+/// sidebar multi-selection, mirroring the selected-item look used by the command palette.
 fn sidebar_row_style(is_selected: bool) -> impl Fn(&iced::Theme) -> container::Style {
     move |theme: &iced::Theme| {
         if is_selected {
@@ -130,7 +129,7 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
                             col.info.name.clone(),
                         ),
                     ),
-                    button(text("💾").size(11))
+                    button(text("Save").size(11))
                         .on_press(Message::SaveCollectionNamePressed(col_id))
                         .style(button::text)
                 ]
@@ -361,7 +360,7 @@ pub fn render_workspace_selector(app: &Rustrest) -> Element<'_, Message> {
                     current_name.clone(),
                 ),
             ),
-            button(text("💾").size(11))
+            button(text("Save").size(11))
                 .on_press(Message::SaveWorkspaceNamePressed(active_id))
                 .style(button::text)
         ]
@@ -464,7 +463,7 @@ fn render_sidebar_item<'a>(
                             folder.name.clone(),
                         ),
                     ),
-                    button(text("💾").size(10))
+                    button(text("Save").size(10))
                         .on_press(Message::SaveFolderNamePressed {
                             collection_id,
                             folder_path: current_path.clone(),
@@ -574,7 +573,7 @@ fn render_sidebar_item<'a>(
                         .width(Length::Fixed(120.0))
                         .padding(2)
                         .size(13),
-                    button(text("💾").size(10))
+                    button(text("Save").size(10))
                         .on_press(Message::SaveRequestNamePressed {
                             collection_id,
                             request_id: req_id,
@@ -691,7 +690,7 @@ fn render_saved_response_row<'a>(
                 .width(Length::Fixed(120.0))
                 .padding(2)
                 .size(12),
-            button(text("💾").size(10))
+            button(text("Save").size(10))
                 .on_press(Message::SaveSavedResponseNamePressed)
                 .style(button::text)
         ]
