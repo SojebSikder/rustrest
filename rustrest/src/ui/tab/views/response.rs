@@ -2,11 +2,32 @@ use super::super::Tab;
 use super::super::messages::TabMessage;
 use super::super::types::{ResponseSubTab, ResponseView, SavedResponse};
 use crate::ui::context_menu::{TabFieldTarget, with_context_menu};
+use iced::widget::text::Wrapping;
 use iced::widget::{
-    Space, button, column, container, pick_list, row, scrollable, text, text_editor,
+    Space, button, column, container, pick_list, responsive, row, scrollable, text, text_editor,
 };
 use iced::{Alignment, Element, Font, Length};
 use std::collections::HashMap;
+
+const RESPONSE_BODY_FONT_SIZE: f32 = 13.0;
+
+/// estimated pixel width of the widest line in the response body; errs a bit
+/// wide since monospace advance varies by platform font (~0.55-0.6em)
+fn response_body_content_width(content: &text_editor::Content) -> f32 {
+    let longest = content
+        .lines()
+        .map(|line| {
+            line.text
+                .chars()
+                .map(|c| if c == '\t' { 4 } else { 1 })
+                .sum::<usize>()
+        })
+        .max()
+        .unwrap_or(0);
+
+    // extra space for the editor's padding and the trailing cursor
+    (longest + 4) as f32 * RESPONSE_BODY_FONT_SIZE * 0.62
+}
 
 pub fn render_response_pane<'a, Message>(
     tab: &'a Tab,
@@ -345,24 +366,37 @@ where
 
                     let view_toggle_bar = row![view_dropdown].spacing(8).align_y(Alignment::Center);
 
-                    let response_editor = with_context_menu(
-                        text_editor(&tab.response_body_editor)
+                    let context_menu_msg = wrap_msg(TabMessage::ShowFieldContextMenu(
+                        TabFieldTarget::ResponseBodyEditor,
+                        tab.response_body_editor
+                            .selection()
+                            .unwrap_or_else(|| tab.response_body_editor.text()),
+                    ));
+
+                    let content_width = response_body_content_width(&tab.response_body_editor);
+
+                    let response_editor = responsive(move |size| {
+                        let editor = text_editor(&tab.response_body_editor)
                             .font(Font::MONOSPACE)
-                            .size(13)
+                            .size(RESPONSE_BODY_FONT_SIZE)
+                            .wrapping(Wrapping::None)
+                            .width(content_width.max(size.width))
                             .on_action(move |act| {
                                 wrap_msg(TabMessage::ResponseBodyEditorAction(act))
-                            }),
-                        wrap_msg(TabMessage::ShowFieldContextMenu(
-                            TabFieldTarget::ResponseBodyEditor,
-                            tab.response_body_editor
-                                .selection()
-                                .unwrap_or_else(|| tab.response_body_editor.text()),
-                        )),
-                    );
+                            });
+
+                        scrollable(with_context_menu(editor, context_menu_msg.clone()))
+                            .direction(scrollable::Direction::Both {
+                                vertical: scrollable::Scrollbar::default(),
+                                horizontal: scrollable::Scrollbar::default(),
+                            })
+                            .height(Length::Fill)
+                            .into()
+                    });
 
                     column![
                         view_toggle_bar,
-                        container(scrollable(response_editor).height(Length::Fill))
+                        container(response_editor)
                             .style(container::bordered_box)
                             .width(Length::Fill)
                             .height(Length::Fill)
@@ -486,19 +520,30 @@ where
     let dynamic_pane: Element<Message> = match tab.active_response_tab {
         ResponseSubTab::Body => {
             let body_text = with_context_menu(
-                text(saved.body.clone()).font(Font::MONOSPACE).size(13),
+                text(saved.body.clone())
+                    .font(Font::MONOSPACE)
+                    .size(RESPONSE_BODY_FONT_SIZE)
+                    .wrapping(Wrapping::None),
                 wrap_msg(TabMessage::ShowFieldContextMenu(
                     TabFieldTarget::ResponseBodyEditor,
                     saved.body.clone(),
                 )),
             );
 
-            container(scrollable(body_text).height(Length::Fill))
-                .style(container::bordered_box)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .padding(10)
-                .into()
+            container(
+                scrollable(body_text)
+                    .direction(scrollable::Direction::Both {
+                        vertical: scrollable::Scrollbar::default(),
+                        horizontal: scrollable::Scrollbar::default(),
+                    })
+                    .width(Length::Fill)
+                    .height(Length::Fill),
+            )
+            .style(container::bordered_box)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .padding(10)
+            .into()
         }
 
         ResponseSubTab::Cookies => build_cookie_table(&saved.headers, wrap_msg),
