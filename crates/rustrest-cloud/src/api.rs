@@ -215,6 +215,22 @@ impl CloudClient {
         .await
     }
 
+    pub async fn rename_team(&self, team_id: &str, name: &str) -> Result<Team, CloudError> {
+        self.call(
+            Method::PATCH,
+            &format!("/api/teams/{team_id}"),
+            Some(&serde_json::json!({ "name": name })),
+        )
+        .await
+    }
+
+    /// deletes the team with its collections and environments
+    pub async fn delete_team(&self, team_id: &str) -> Result<(), CloudError> {
+        self.call::<Value, ()>(Method::DELETE, &format!("/api/teams/{team_id}"), None)
+            .await
+            .map(|_| ())
+    }
+
     pub async fn members(&self, team_id: &str) -> Result<Vec<TeamMember>, CloudError> {
         self.get(&format!("/api/teams/{team_id}/members")).await
     }
@@ -229,6 +245,22 @@ impl CloudClient {
         self.call::<Value, _>(
             Method::POST,
             &format!("/api/teams/{team_id}/members"),
+            Some(&body),
+        )
+        .await
+        .map(|_| ())
+    }
+
+    pub async fn update_member_role(
+        &self,
+        team_id: &str,
+        user_id: &str,
+        role: Role,
+    ) -> Result<(), CloudError> {
+        let body = serde_json::json!({ "role": role });
+        self.call::<Value, _>(
+            Method::PATCH,
+            &format!("/api/teams/{team_id}/members/{user_id}"),
             Some(&body),
         )
         .await
@@ -323,6 +355,21 @@ impl CloudClient {
             return Err(CloudError::MetaConflict(required(envelope(&text)?.data)?));
         }
         required(check(status, &text)?)
+    }
+
+    /// moves a collection into another team, needs owner in its current team
+    pub async fn move_collection(
+        &self,
+        collection_id: &str,
+        team_id: &str,
+    ) -> Result<CloudCollection, CloudError> {
+        let body = serde_json::json!({ "team_id": team_id });
+        self.call(
+            Method::POST,
+            &format!("/api/collections/{collection_id}/move"),
+            Some(&body),
+        )
+        .await
     }
 
     pub async fn delete_collection(&self, collection_id: &str) -> Result<(), CloudError> {

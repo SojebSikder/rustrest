@@ -882,6 +882,27 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         Message::CloudTeamCreated(result) => cloud::team_created(app, result),
         Message::CloudInvite => cloud::invite(app),
         Message::CloudInvited(result) => cloud::invited(app, result),
+        Message::CloudInviteRoleChanged(role) => cloud::edit_modal(app, |m| m.invite_role = role),
+        Message::CloudStartRenameTeam => cloud::start_rename_team(app),
+        Message::CloudRenameTeamChanged(v) => cloud::edit_modal(app, |m| m.rename_team = Some(v)),
+        Message::CloudSubmitRenameTeam => cloud::rename_team(app),
+        Message::CloudCancelRenameTeam => cloud::edit_modal(app, |m| m.rename_team = None),
+        Message::CloudDeleteTeam => cloud::delete_team(app),
+        Message::CloudCancelDeleteTeam => cloud::edit_modal(app, |m| m.confirm_delete_team = false),
+        Message::CloudTeamUpdated(result) => cloud::team_updated(app, result),
+        Message::CloudMembersLoaded(team_id, result) => cloud::members_loaded(app, team_id, result),
+        Message::CloudSetMemberRole(user_id, role) => cloud::set_member_role(app, user_id, role),
+        Message::CloudRemoveMember(user_id) => cloud::remove_member(app, user_id),
+        Message::CloudCancelRemoveMember => {
+            cloud::edit_modal(app, |m| m.confirm_remove_member = None)
+        }
+        Message::CloudMembersChanged(result) => cloud::members_changed(app, result),
+        Message::CloudMoveTargetPicked(collection_id, team_id) => {
+            cloud::edit_modal(app, |m| m.move_target = Some((collection_id, team_id)))
+        }
+        Message::CloudCancelMove => cloud::edit_modal(app, |m| m.move_target = None),
+        Message::CloudConfirmMove => cloud::move_collection(app),
+        Message::CloudCollectionMoved(result) => cloud::collection_moved(app, result),
         Message::CloudUpload => cloud::upload(app),
         Message::CloudUploaded(col_id, result) => cloud::uploaded(app, col_id, result),
         Message::CloudOpenCollection(collection_id) => cloud::open_collection(app, collection_id),
@@ -893,6 +914,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         Message::CloudRealtimeChanged(collection_id, seq) => {
             cloud::realtime_changed(app, collection_id, seq)
         }
+        Message::CloudRealtimeDeleted(collection_id) => cloud::realtime_deleted(app, collection_id),
         Message::CloudResolve(col_id, uid, resolution) => {
             cloud::resolve(app, col_id, uid, resolution)
         }

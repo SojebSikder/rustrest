@@ -29,17 +29,30 @@ pub struct User {
     pub name: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
     Owner,
+    #[default]
     Editor,
     Viewer,
 }
 
 impl Role {
+    pub const ALL: [Role; 3] = [Role::Viewer, Role::Editor, Role::Owner];
+
     pub fn can_edit(self) -> bool {
         matches!(self, Role::Owner | Role::Editor)
+    }
+}
+
+impl std::fmt::Display for Role {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Role::Owner => "Owner",
+            Role::Editor => "Editor",
+            Role::Viewer => "Viewer",
+        })
     }
 }
 

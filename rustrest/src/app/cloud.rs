@@ -5,7 +5,7 @@ use crate::message::Message;
 use crate::ui::toast::toast::ToastStatus;
 use iced::Task;
 use rustrest_cloud::sync::{PushOutcome, PushPlan, SyncState};
-use rustrest_cloud::wire::{ChangeSet, CloudCollection, Team};
+use rustrest_cloud::wire::{ChangeSet, CloudCollection, Role, Team, TeamMember};
 use rustrest_cloud::{CloudClient, CloudError, Resolution, Session, SyncReport};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -50,6 +50,17 @@ pub struct CloudModal {
     pub collections: Vec<CloudCollection>,
     pub new_team_name: String,
     pub invite_email: String,
+    pub invite_role: Role,
+    /// members of the selected team
+    pub members: Vec<TeamMember>,
+    /// user id whose removal is waiting for a second click
+    pub confirm_remove_member: Option<String>,
+    /// (cloud collection id, destination team id) waiting for confirmation
+    pub move_target: Option<(String, String)>,
+    /// new name while the selected team is being renamed
+    pub rename_team: Option<String>,
+    /// the selected team's deletion is waiting for a second click
+    pub confirm_delete_team: bool,
     /// set when opened from a collection's "Upload to Cloud..." entry
     pub upload_collection: Option<usize>,
 }
@@ -316,11 +327,55 @@ pub fn select_team(app: &mut Rustrest, team_id: String) -> Task<Message> {
     };
     modal.selected_team = Some(team_id.clone());
     modal.collections.clear();
+    modal.members.clear();
+    modal.confirm_remove_member = None;
+    modal.move_target = None;
+    modal.rename_team = None;
+    modal.confirm_delete_team = false;
     modal.busy = true;
+
+    let personal = modal.teams.iter().any(|t| t.id == team_id && t.is_personal);
+
+    let collections = {
+        let (client, team_id) = (client.clone(), team_id.clone());
+        Task::perform(
+            async move { client.collections(&team_id).await },
+            |result| Message::CloudCollectionsLoaded(result.map_err(|e| e.to_string())),
+        )
+    };
+    if personal {
+        return collections;
+    }
+    Task::batch([collections, load_members(client, team_id)])
+}
+
+fn load_members(client: CloudClient, team_id: String) -> Task<Message> {
     Task::perform(
-        async move { client.collections(&team_id).await },
-        |result| Message::CloudCollectionsLoaded(result.map_err(|e| e.to_string())),
+        async move {
+            let members = client.members(&team_id).await.map_err(|e| e.to_string());
+            (team_id, members)
+        },
+        |(team_id, result)| Message::CloudMembersLoaded(team_id, result),
     )
+}
+
+pub fn members_loaded(
+    app: &mut Rustrest,
+    team_id: String,
+    result: Result<Vec<TeamMember>, String>,
+) -> Task<Message> {
+    let Some(modal) = app.cloud.modal.as_mut() else {
+        return Task::none();
+    };
+    // a reply for a team that's no longer selected
+    if modal.selected_team.as_ref() != Some(&team_id) {
+        return Task::none();
+    }
+    match result {
+        Ok(members) => modal.members = members,
+        Err(err) => modal.error = Some(err),
+    }
+    Task::none()
 }
 
 pub fn collections_loaded(
@@ -369,6 +424,103 @@ pub fn team_created(app: &mut Rustrest, result: Result<Team, String>) -> Task<Me
     }
 }
 
+pub fn start_rename_team(app: &mut Rustrest) -> Task<Message> {
+    if let Some(modal) = app.cloud.modal.as_mut() {
+        modal.rename_team = modal
+            .teams
+            .iter()
+            .find(|t| Some(&t.id) == modal.selected_team.as_ref())
+            .map(|t| t.name.clone());
+        modal.confirm_delete_team = false;
+    }
+    Task::none()
+}
+
+pub fn rename_team(app: &mut Rustrest) -> Task<Message> {
+    let (Some(client), Some(modal)) = (app.cloud.client.clone(), app.cloud.modal.as_mut()) else {
+        return Task::none();
+    };
+    let (Some(team_id), Some(name)) = (
+        modal.selected_team.clone(),
+        modal
+            .rename_team
+            .as_deref()
+            .map(str::trim)
+            .map(str::to_string),
+    ) else {
+        return Task::none();
+    };
+    if name.is_empty() {
+        return Task::none();
+    }
+    modal.busy = true;
+    modal.error = None;
+    Task::perform(
+        async move {
+            client
+                .rename_team(&team_id, &name)
+                .await
+                .map(|team| format!("Renamed the team to '{}'", team.name))
+        },
+        |result| Message::CloudTeamUpdated(result.map_err(|e| e.to_string())),
+    )
+}
+
+pub fn delete_team(app: &mut Rustrest) -> Task<Message> {
+    let (Some(client), Some(modal)) = (app.cloud.client.clone(), app.cloud.modal.as_mut()) else {
+        return Task::none();
+    };
+    let Some(team) = modal
+        .teams
+        .iter()
+        .find(|t| Some(&t.id) == modal.selected_team.as_ref())
+        .cloned()
+    else {
+        return Task::none();
+    };
+
+    // first click only asks for confirmation
+    if !modal.confirm_delete_team {
+        modal.confirm_delete_team = true;
+        modal.rename_team = None;
+        return Task::none();
+    }
+    modal.confirm_delete_team = false;
+    modal.selected_team = None;
+    modal.busy = true;
+    modal.error = None;
+    Task::perform(
+        async move {
+            client
+                .delete_team(&team.id)
+                .await
+                .map(|_| format!("Deleted team '{}'", team.name))
+        },
+        |result| Message::CloudTeamUpdated(result.map_err(|e| e.to_string())),
+    )
+}
+
+pub fn team_updated(app: &mut Rustrest, result: Result<String, String>) -> Task<Message> {
+    match result {
+        Ok(toast) => {
+            if let Some(modal) = app.cloud.modal.as_mut() {
+                modal.rename_team = None;
+            }
+            modal_busy(app, false, None);
+            // a deleted team's collections 404 on sync, which unlinks them
+            Task::batch([
+                load_teams(app),
+                sync_all(app),
+                Task::done(Message::ShowToast(toast, ToastStatus::Success)),
+            ])
+        }
+        Err(err) => {
+            modal_busy(app, false, Some(err));
+            Task::none()
+        }
+    }
+}
+
 pub fn invite(app: &mut Rustrest) -> Task<Message> {
     let (Some(client), Some(modal)) = (app.cloud.client.clone(), app.cloud.modal.as_mut()) else {
         return Task::none();
@@ -382,35 +534,182 @@ pub fn invite(app: &mut Rustrest) -> Task<Message> {
     if email.is_empty() {
         return Task::none();
     }
+    let role = modal.invite_role;
     modal.busy = true;
     Task::perform(
         async move {
             client
-                .add_member(&team_id, &email, rustrest_cloud::wire::Role::Editor)
+                .add_member(&team_id, &email, role)
                 .await
-                .map(|_| email)
+                .map(|_| format!("Added {email} as {}", role.to_string().to_lowercase()))
         },
         |result| Message::CloudInvited(result.map_err(|e| e.to_string())),
     )
 }
 
 pub fn invited(app: &mut Rustrest, result: Result<String, String>) -> Task<Message> {
+    if result.is_ok()
+        && let Some(modal) = app.cloud.modal.as_mut()
+    {
+        modal.invite_email.clear();
+    }
+    members_changed(app, result)
+}
+
+pub fn set_member_role(app: &mut Rustrest, user_id: String, role: Role) -> Task<Message> {
+    let (Some(client), Some(modal)) = (app.cloud.client.clone(), app.cloud.modal.as_mut()) else {
+        return Task::none();
+    };
+    let Some(team_id) = modal.selected_team.clone() else {
+        return Task::none();
+    };
+    let Some(member) = modal.members.iter().find(|m| m.user_id == user_id) else {
+        return Task::none();
+    };
+    if member.role == role {
+        return Task::none();
+    }
+    let who = member_label(member);
+    modal.busy = true;
+    modal.error = None;
+    Task::perform(
+        async move {
+            client
+                .update_member_role(&team_id, &user_id, role)
+                .await
+                .map(|_| format!("{who} is now {}", role.to_string().to_lowercase()))
+        },
+        |result| Message::CloudMembersChanged(result.map_err(|e| e.to_string())),
+    )
+}
+
+pub fn remove_member(app: &mut Rustrest, user_id: String) -> Task<Message> {
+    let (Some(client), Some(modal)) = (app.cloud.client.clone(), app.cloud.modal.as_mut()) else {
+        return Task::none();
+    };
+    let Some(team_id) = modal.selected_team.clone() else {
+        return Task::none();
+    };
+
+    // first click only asks for confirmation
+    if modal.confirm_remove_member.as_ref() != Some(&user_id) {
+        modal.confirm_remove_member = Some(user_id);
+        return Task::none();
+    }
+    modal.confirm_remove_member = None;
+    let who = modal
+        .members
+        .iter()
+        .find(|m| m.user_id == user_id)
+        .map(member_label)
+        .unwrap_or_else(|| "Member".to_string());
+    modal.busy = true;
+    modal.error = None;
+    Task::perform(
+        async move {
+            client
+                .remove_member(&team_id, &user_id)
+                .await
+                .map(|_| format!("Removed {who} from the team"))
+        },
+        |result| Message::CloudMembersChanged(result.map_err(|e| e.to_string())),
+    )
+}
+
+/// after an invite, role change or removal, reload teams (our own role or
+/// membership may have changed) and with them the members
+pub fn members_changed(app: &mut Rustrest, result: Result<String, String>) -> Task<Message> {
     match result {
-        Ok(email) => {
-            if let Some(modal) = app.cloud.modal.as_mut() {
-                modal.invite_email.clear();
-            }
+        Ok(toast) => {
             modal_busy(app, false, None);
-            Task::done(Message::ShowToast(
-                format!("{email} can now edit this team's collections"),
-                ToastStatus::Success,
-            ))
+            Task::batch([
+                load_teams(app),
+                Task::done(Message::ShowToast(toast, ToastStatus::Success)),
+            ])
         }
         Err(err) => {
             modal_busy(app, false, Some(err));
             Task::none()
         }
     }
+}
+
+pub fn member_label(member: &TeamMember) -> String {
+    member
+        .name
+        .clone()
+        .filter(|n| !n.trim().is_empty())
+        .or_else(|| member.email.clone())
+        .unwrap_or_else(|| member.user_id.clone())
+}
+
+// ---- move ----
+
+pub fn move_collection(app: &mut Rustrest) -> Task<Message> {
+    let (Some(client), Some(modal)) = (app.cloud.client.clone(), app.cloud.modal.as_mut()) else {
+        return Task::none();
+    };
+    let Some((collection_id, team_id)) = modal.move_target.take() else {
+        return Task::none();
+    };
+    modal.busy = true;
+    modal.error = None;
+    Task::perform(
+        async move { client.move_collection(&collection_id, &team_id).await },
+        |result| Message::CloudCollectionMoved(result.map_err(|e| e.to_string())),
+    )
+}
+
+pub fn collection_moved(
+    app: &mut Rustrest,
+    result: Result<CloudCollection, String>,
+) -> Task<Message> {
+    let moved = match result {
+        Ok(moved) => moved,
+        Err(err) => {
+            modal_busy(app, false, Some(err));
+            return Task::none();
+        }
+    };
+
+    // keep the local link pointing at the new team
+    let linked = app
+        .cloud
+        .linked
+        .iter_mut()
+        .find(|(_, (_, s))| s.collection_id == moved.id)
+        .map(|(col_id, (_, s))| {
+            s.team_id = moved.team_id.clone();
+            *col_id
+        });
+    if let Some(col_id) = linked {
+        save_state(app, col_id);
+    }
+
+    let team_name = app
+        .cloud
+        .modal
+        .as_ref()
+        .and_then(|m| m.teams.iter().find(|t| t.id == moved.team_id))
+        .map(|t| t.name.clone())
+        .unwrap_or_else(|| "the other team".to_string());
+    let selected = app
+        .cloud
+        .modal
+        .as_ref()
+        .and_then(|m| m.selected_team.clone());
+    let reload = match selected {
+        Some(team_id) => select_team(app, team_id),
+        None => Task::none(),
+    };
+
+    Task::batch([
+        reload,
+        Task::done(Message::ShowToast(
+            format!("Moved '{}' to {team_name}", moved.name),
+            ToastStatus::Success,
+        )),
+    ])
 }
 
 // ---- upload / open ----
@@ -778,16 +1077,9 @@ fn finish(app: &mut Rustrest, col_id: usize, error: Option<CloudError>) -> Task<
                 ToastStatus::Error,
             )));
         }
-        Some(err) if err.is_not_found() => {
-            // deleted in the cloud (or access revoked): keep the local copy
-            if let Some((dir, _)) = app.cloud.linked.remove(&col_id) {
-                let _ = std::fs::remove_file(dir.join(rustrest_cloud::sync::STATE_FILE));
-            }
-            tasks.push(Task::done(Message::ShowToast(
-                format!("'{name}' is no longer in Rustrest Cloud; kept it as a local collection"),
-                ToastStatus::Info,
-            )));
-        }
+
+        // deleted in the cloud (or access revoked)
+        Some(err) if err.is_not_found() => tasks.push(unlink(app, col_id)),
         Some(err) => tasks.push(Task::done(Message::ShowToast(
             format!("Couldn't sync '{name}': {err}"),
             ToastStatus::Error,
@@ -862,6 +1154,42 @@ pub fn realtime_changed(app: &mut Rustrest, collection_id: String, seq: i64) -> 
         Some(col_id) => sync(app, col_id),
         None => Task::none(),
     }
+}
+
+/// the collection (or its whole team) was deleted in the cloud
+pub fn realtime_deleted(app: &mut Rustrest, collection_id: String) -> Task<Message> {
+    let target = app
+        .cloud
+        .linked
+        .iter()
+        .find(|(_, (_, s))| s.collection_id == collection_id)
+        .map(|(col_id, _)| *col_id);
+    match target {
+        Some(col_id) => unlink(app, col_id),
+        None => Task::none(),
+    }
+}
+
+/// stops syncing a collection that's gone from the cloud, keeping the local
+/// copy (unsaved edits included) as a plain local collection
+fn unlink(app: &mut Rustrest, col_id: usize) -> Task<Message> {
+    let Some((dir, _)) = app.cloud.linked.remove(&col_id) else {
+        return Task::none();
+    };
+    let _ = std::fs::remove_file(dir.join(rustrest_cloud::sync::STATE_FILE));
+    app.cloud.waiting.remove(&col_id);
+    app.cloud.resync.remove(&col_id);
+    update_status(app);
+    let name = app
+        .collections
+        .iter()
+        .find(|c| c.id == col_id)
+        .map(|c| c.info.name.clone())
+        .unwrap_or_default();
+    Task::done(Message::ShowToast(
+        format!("'{name}' is no longer in Rustrest Cloud; kept it as a local collection"),
+        ToastStatus::Info,
+    ))
 }
 
 // ---- conflicts ----
@@ -983,16 +1311,17 @@ pub fn realtime_stream(
             {
                 Ok(mut events) => {
                     while let Some(event) = events.recv().await {
-                        if let rustrest_cloud::realtime::RealtimeEvent::CollectionChanged {
-                            collection_id,
-                            seq,
-                            ..
-                        } = event
-                        {
-                            let _ = output
-                                .send(Message::CloudRealtimeChanged(collection_id, seq))
-                                .await;
-                        }
+                        use rustrest_cloud::realtime::RealtimeEvent;
+                        let message = match event {
+                            RealtimeEvent::CollectionChanged {
+                                collection_id, seq, ..
+                            } => Message::CloudRealtimeChanged(collection_id, seq),
+                            RealtimeEvent::CollectionDeleted { collection_id } => {
+                                Message::CloudRealtimeDeleted(collection_id)
+                            }
+                            RealtimeEvent::Denied(_) => continue,
+                        };
+                        let _ = output.send(message).await;
                     }
                 }
                 // signed out / expired: the periodic sync reports it
