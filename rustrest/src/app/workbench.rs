@@ -884,6 +884,8 @@ pub fn tab_name_double_click(app: &mut Rustrest, idx: usize) -> Task<Message> {
 
     if idx < app.tabs.len() {
         app.active_tab_index = idx;
+        // name captures the press, so it arms the tab drag itself
+        app.workbench.dragging_tab_index = Some(idx);
     }
 
     let is_double_click = matches!(

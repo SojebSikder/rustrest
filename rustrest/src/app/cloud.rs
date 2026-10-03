@@ -854,9 +854,11 @@ pub fn downloaded(
     app.next_tab_id += 1;
     collection.storage_dir = Some(dir.clone());
     collection.assign_request_ids(&mut app.next_request_id);
+
     let col_id = collection.id;
     let name = collection.info.name.clone();
     app.collections.push(collection);
+    super::sidebar::collapse_collection_tree(app, col_id);
 
     if let Err(err) = write_local(app, col_id, &dir, &state) {
         app.collections.retain(|c| c.id != col_id);
@@ -1154,6 +1156,88 @@ pub fn realtime_changed(app: &mut Rustrest, collection_id: String, seq: i64) -> 
         Some(col_id) => sync(app, col_id),
         None => Task::none(),
     }
+}
+
+pub fn delete_collection_pressed(app: &mut Rustrest, col_id: usize) -> Task<Message> {
+    if !app.cloud.linked.contains_key(&col_id) {
+        return Task::none();
+    }
+    let name = app
+        .collections
+        .iter()
+        .find(|c| c.id == col_id)
+        .map(|c| c.info.name.clone())
+        .unwrap_or_default();
+
+    Task::done(Message::ShowConfirmDialog(
+        crate::ui::confirm_dialog::ConfirmDialogState {
+            title: "Delete collection from Rustrest Cloud?".to_string(),
+            message: format!(
+                "\"{name}\" will be deleted from the cloud for everyone in its team and closed \
+                 here. This can't be undone."
+            ),
+            confirm_label: "Delete".to_string(),
+            on_confirm: Box::new(Message::CloudDeleteCollectionConfirmed(col_id)),
+        },
+    ))
+}
+
+pub fn delete_collection(app: &mut Rustrest, col_id: usize) -> Task<Message> {
+    let Some(client) = app.cloud.client.clone() else {
+        return Task::done(Message::ShowToast(
+            "Sign in to Rustrest Cloud to delete this collection".to_string(),
+            ToastStatus::Error,
+        ));
+    };
+    let Some((_, state)) = app.cloud.linked.get(&col_id) else {
+        return Task::none();
+    };
+    let collection_id = state.collection_id.clone();
+
+    Task::perform(
+        async move {
+            client
+                .delete_collection(&collection_id)
+                .await
+                .map_err(|e| e.to_string())
+        },
+        move |result| Message::CloudCollectionDeleted(col_id, result),
+    )
+}
+
+pub fn collection_deleted(
+    app: &mut Rustrest,
+    col_id: usize,
+    result: Result<(), String>,
+) -> Task<Message> {
+    if let Err(err) = result {
+        return Task::done(Message::ShowToast(
+            format!("Couldn't delete from the cloud: {err}"),
+            ToastStatus::Error,
+        ));
+    }
+    let name = app
+        .collections
+        .iter()
+        .find(|c| c.id == col_id)
+        .map(|c| c.info.name.clone())
+        .unwrap_or_default();
+
+    // cache dir is ours, nothing else points at it once the collection is gone
+    if let Some((dir, _)) = app.cloud.linked.remove(&col_id) {
+        let _ = std::fs::remove_dir_all(dir);
+    }
+    app.cloud.waiting.remove(&col_id);
+    app.cloud.resync.remove(&col_id);
+    update_status(app);
+
+    Task::batch([
+        super::collections::delete_pressed(app, col_id),
+        Task::done(Message::ShowToast(
+            format!("Deleted '{name}' from Rustrest Cloud"),
+            ToastStatus::Success,
+        )),
+    ])
 }
 
 /// the collection (or its whole team) was deleted in the cloud

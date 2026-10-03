@@ -91,10 +91,9 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
             .on_exit(Message::TabRenameInputHover(false))
             .into()
         } else {
-            button(text(&tab.name).size(13))
+            mouse_area(text(&tab.name).size(13))
                 .on_press(Message::TabNameDoubleClick(idx))
-                .style(button::text)
-                .padding(0)
+                .interaction(iced::mouse::Interaction::Pointer)
                 .into()
         };
 

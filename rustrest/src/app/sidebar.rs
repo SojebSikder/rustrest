@@ -499,6 +499,49 @@ pub fn toggle_collection_collapsed(app: &mut Rustrest, col_id: usize) -> Task<Me
     Task::none()
 }
 
+/// collapses a collection and every folder in it, so expanding the collection
+/// later shows just its top level
+pub fn collapse_collection_tree(app: &mut Rustrest, col_id: usize) {
+    let Some(col) = app.collections.iter().find(|c| c.id == col_id) else {
+        return;
+    };
+    let mut paths = Vec::new();
+    folder_paths(&col.item, &mut Vec::new(), &mut paths);
+    app.sidebar.collapsed_collections.insert(col_id);
+    app.sidebar
+        .collapsed_folders
+        .extend(paths.into_iter().map(|path| (col_id, path)));
+}
+
+pub fn collapse_all(app: &mut Rustrest, col_id: usize) -> Task<Message> {
+    collapse_collection_tree(app, col_id);
+    Task::none()
+}
+
+pub fn expand_all(app: &mut Rustrest, col_id: usize) -> Task<Message> {
+    app.sidebar.collapsed_collections.remove(&col_id);
+    app.sidebar
+        .collapsed_folders
+        .retain(|(id, _)| *id != col_id);
+    Task::none()
+}
+
+/// every folder's path of names from the collection root, the sidebar's collapse key
+fn folder_paths(
+    items: &[crate::collection::collection::CollectionItem],
+    prefix: &mut Vec<String>,
+    out: &mut Vec<Vec<String>>,
+) {
+    for item in items {
+        if let crate::collection::collection::CollectionItem::Folder(folder) = item {
+            prefix.push(folder.name.clone());
+            out.push(prefix.clone());
+            folder_paths(&folder.item, prefix, out);
+            prefix.pop();
+        }
+    }
+}
+
 pub fn toggle_folder_collapsed(
     app: &mut Rustrest,
     collection_id: usize,

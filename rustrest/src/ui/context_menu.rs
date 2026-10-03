@@ -244,6 +244,10 @@ pub fn render_context_menu_overlay<'a>(app: &Rustrest) -> Option<Element<'a, Mes
                 .find(|c| c.id == col_id)
                 .map(|c| c.storage_dir.is_some())
                 .unwrap_or(false);
+            let is_remote = app
+                .collections
+                .iter()
+                .any(|c| c.id == col_id && c.remote_dir.is_some());
 
             let mut opts = vec![
                 ("Rename", Message::RenameCollectionPressed(col_id)),
@@ -283,7 +287,22 @@ pub fn render_context_menu_overlay<'a>(app: &Rustrest) -> Option<Element<'a, Mes
                 ));
             }
             opts.push(("Duplicate", Message::DuplicateCollectionPressed(col_id)));
+            opts.push(("Collapse All", Message::CollapseAllInCollection(col_id)));
+            opts.push(("Expand All", Message::ExpandAllInCollection(col_id)));
             opts.push(("Delete", Message::DeleteCollectionPressed(col_id)));
+
+            if app.cloud.linked.contains_key(&col_id) {
+                opts.push((
+                    "Delete from Cloud...",
+                    Message::CloudDeleteCollectionPressed(col_id),
+                ));
+            }
+            if is_remote {
+                opts.push((
+                    "Delete from Remote Host...",
+                    Message::DeleteCollectionFromRemotePressed(col_id),
+                ));
+            }
             opts
         }
         ContextMenu::Folder { col_id, path } => {

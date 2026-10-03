@@ -574,7 +574,9 @@ pub fn collection_imported_ok(
     collection.id = app.next_tab_id;
     app.next_tab_id += 1;
     collection.assign_request_ids(&mut app.next_request_id);
+    let col_id = collection.id;
     app.collections.push(*collection);
+    super::sidebar::collapse_collection_tree(app, col_id);
 
     Task::done(Message::ShowToast(
         format!("Collection '{}' imported from remote host", col_name),
@@ -777,4 +779,82 @@ pub fn open_config(app: &mut Rustrest) -> Task<Message> {
 pub fn close_config_pressed(app: &mut Rustrest) -> Task<Message> {
     app.remote.remote_config_open = false;
     Task::none()
+}
+
+pub fn delete_collection_pressed(app: &mut Rustrest, col_id: usize) -> Task<Message> {
+    let Some(col) = app.collections.iter().find(|c| c.id == col_id) else {
+        return Task::none();
+    };
+    let Some(remote) = &col.remote_dir else {
+        return Task::none();
+    };
+    let host = app
+        .remote
+        .remote_profiles
+        .iter()
+        .find(|p| p.id == remote.profile_id)
+        .map(|p| p.name.clone())
+        .unwrap_or_else(|| "the remote host".to_string());
+    Task::done(Message::ShowConfirmDialog(ConfirmDialogState {
+        title: "Delete collection from remote host?".to_string(),
+        message: format!(
+            "\"{}\" and its folder {} will be permanently deleted on {host}. \
+             This can't be undone.",
+            col.info.name, remote.root
+        ),
+        confirm_label: "Delete".to_string(),
+        on_confirm: Box::new(Message::DeleteCollectionFromRemoteConfirmed(col_id)),
+    }))
+}
+
+pub fn delete_collection(app: &mut Rustrest, col_id: usize) -> Task<Message> {
+    let Some(remote) = app
+        .collections
+        .iter()
+        .find(|c| c.id == col_id)
+        .and_then(|c| c.remote_dir.clone())
+    else {
+        return Task::none();
+    };
+    let Some(session) = app.remote.remote_sessions.get(&remote.profile_id).cloned() else {
+        return Task::done(Message::ShowToast(
+            "Connect to the remote host first".to_string(),
+            ToastStatus::Error,
+        ));
+    };
+    Task::perform(
+        async move {
+            session
+                .delete(&remote.root)
+                .await
+                .map_err(|e| e.to_string())
+        },
+        move |result| Message::RemoteCollectionDeleted(col_id, result),
+    )
+}
+
+pub fn collection_deleted(
+    app: &mut Rustrest,
+    col_id: usize,
+    result: Result<(), String>,
+) -> Task<Message> {
+    if let Err(err) = result {
+        return Task::done(Message::ShowToast(
+            format!("Couldn't delete on the remote host: {err}"),
+            ToastStatus::Error,
+        ));
+    }
+    let name = app
+        .collections
+        .iter()
+        .find(|c| c.id == col_id)
+        .map(|c| c.info.name.clone())
+        .unwrap_or_default();
+    Task::batch([
+        super::collections::delete_pressed(app, col_id),
+        Task::done(Message::ShowToast(
+            format!("Deleted '{name}' from the remote host"),
+            ToastStatus::Success,
+        )),
+    ])
 }

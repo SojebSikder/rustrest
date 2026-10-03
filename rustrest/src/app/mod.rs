@@ -914,6 +914,22 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         Message::CloudRealtimeChanged(collection_id, seq) => {
             cloud::realtime_changed(app, collection_id, seq)
         }
+        Message::CloudDeleteCollectionPressed(col_id) => {
+            cloud::delete_collection_pressed(app, col_id)
+        }
+        Message::CloudDeleteCollectionConfirmed(col_id) => cloud::delete_collection(app, col_id),
+        Message::CloudCollectionDeleted(col_id, result) => {
+            cloud::collection_deleted(app, col_id, result)
+        }
+        Message::DeleteCollectionFromRemotePressed(col_id) => {
+            remote::delete_collection_pressed(app, col_id)
+        }
+        Message::DeleteCollectionFromRemoteConfirmed(col_id) => {
+            remote::delete_collection(app, col_id)
+        }
+        Message::RemoteCollectionDeleted(col_id, result) => {
+            remote::collection_deleted(app, col_id, result)
+        }
         Message::CloudRealtimeDeleted(collection_id) => cloud::realtime_deleted(app, collection_id),
         Message::CloudResolve(col_id, uid, resolution) => {
             cloud::resolve(app, col_id, uid, resolution)
@@ -970,7 +986,9 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
                         ];
                         collection.set_headers(default_headers);
 
+                        let col_id = collection.id;
                         app.collections.push(collection);
+                        sidebar::collapse_collection_tree(app, col_id);
                         iced::Task::done(Message::ShowToast(
                             format!("Collection '{}' imported successfully", col_name),
                             ToastStatus::Success,
@@ -1147,7 +1165,9 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             app.next_tab_id += 1;
             collection.assign_request_ids(&mut app.next_request_id);
             file_watch::record_baseline(app, collection.id, &collection);
+            let col_id = collection.id;
             app.collections.push(collection);
+            sidebar::collapse_collection_tree(app, col_id);
 
             Task::done(Message::ShowToast(
                 format!("Collection '{}' loaded from {:?}", col_name, path),
@@ -1650,6 +1670,8 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             collection_id,
             folder_path,
         } => sidebar::toggle_folder_collapsed(app, collection_id, folder_path),
+        Message::CollapseAllInCollection(col_id) => sidebar::collapse_all(app, col_id),
+        Message::ExpandAllInCollection(col_id) => sidebar::expand_all(app, col_id),
 
         Message::TabDragStarted(idx) => workbench::tab_drag_started(app, idx),
         Message::TabDragEntered(idx) => workbench::tab_drag_entered(app, idx),

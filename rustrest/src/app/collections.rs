@@ -68,7 +68,10 @@ pub fn loaded(
             // fingerprint what's on disk, before the default headers get merged in
             super::file_watch::record_baseline(app, collection.id, &collection);
             collection.set_headers(default_headers());
+            let col_id = collection.id;
             app.collections.push(collection);
+            // imports start collapsed so a big collection doesn't flood the sidebar
+            super::sidebar::collapse_collection_tree(app, col_id);
 
             iced::Task::done(Message::ShowToast(
                 format!("Collection '{}' imported successfully", col_name),

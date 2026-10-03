@@ -236,6 +236,9 @@ pub enum Message {
 
     // sidebar collapse/expand
     ToggleCollectionCollapsed(usize),
+    /// collapses / expands a collection and every folder in it
+    CollapseAllInCollection(usize),
+    ExpandAllInCollection(usize),
     ToggleFolderCollapsed {
         collection_id: usize,
         folder_path: Vec<String>,
@@ -549,6 +552,10 @@ pub enum Message {
     /// (re)loads a remote-backed collection already in `app.collections`
     /// (e.g. right after connecting). collection id, result.
     RemoteCollectionLoaded(usize, Result<Box<PostmanCollection>, String>),
+    /// asks before deleting a remote-backed collection's folder on the host
+    DeleteCollectionFromRemotePressed(usize),
+    DeleteCollectionFromRemoteConfirmed(usize),
+    RemoteCollectionDeleted(usize, Result<(), String>),
     RemoteNewCollectionNameChanged(usize, String), // profile id, name
     RemoteNewCollectionPressed(usize),             // profile id
 
@@ -639,6 +646,10 @@ pub enum Message {
     ),
     /// cloud collection id, its new change seq
     CloudRealtimeChanged(String, i64),
+    /// asks before deleting a synced collection from the cloud
+    CloudDeleteCollectionPressed(usize),
+    CloudDeleteCollectionConfirmed(usize),
+    CloudCollectionDeleted(usize, Result<(), String>),
     /// cloud collection id
     CloudRealtimeDeleted(String),
     /// app collection id, item uid (None = the collection settings)
