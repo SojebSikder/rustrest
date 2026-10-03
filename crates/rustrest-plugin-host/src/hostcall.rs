@@ -156,7 +156,7 @@ fn execute(
         "download_file" => {
             require_external_process!();
             let (url, filename): (String, String) = decode!();
-            match download_file(storage_dir, &url, &filename) {
+            match download_file(plugin_id, storage_dir, &url, &filename) {
                 Ok(path) => encode_ok(&path),
                 Err(e) => encode_err(&e),
             }
@@ -261,6 +261,7 @@ fn execute(
             let (url, checksum_url, dest_dir): (String, Option<String>, String) = decode!();
             match NetworkTable::spawn_download(
                 network,
+                plugin_id.to_string(),
                 storage_dir.to_path_buf(),
                 url,
                 checksum_url,
@@ -300,14 +301,21 @@ fn which(name: &str) -> Option<String> {
     None
 }
 
-fn download_file(storage_dir: &Path, url: &str, filename: &str) -> Result<String, String> {
+fn download_file(
+    plugin_id: &str,
+    storage_dir: &Path,
+    url: &str,
+    filename: &str,
+) -> Result<String, String> {
     let safe_name: PathBuf = Path::new(filename)
         .file_name()
         .ok_or_else(|| "invalid filename".to_string())?
         .into();
+
     std::fs::create_dir_all(storage_dir).map_err(|e| e.to_string())?;
     let dest = storage_dir.join(&safe_name);
-    crate::network::fetch_to_file(url, &dest)?;
+    crate::network::fetch_to_file(url, &dest, plugin_id)?;
+
     Ok(dest.to_string_lossy().to_string())
 }
 

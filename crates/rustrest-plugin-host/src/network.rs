@@ -5,6 +5,7 @@ use rustrest_plugin_api::HttpResponseData;
 use sha2::{Digest, Sha256};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -12,6 +13,57 @@ const MAX_RESPONSE_BYTES: u64 = 20 * 1024 * 1024; // 20 MB
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 pub const MAX_DOWNLOAD_BYTES: u64 = 200 * 1024 * 1024; // 200 MB
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// a plugin download in flight, for the host UI to show progress
+#[derive(Debug, Clone)]
+pub struct DownloadProgress {
+    pub plugin_id: String,
+    pub file_name: String,
+    pub downloaded: u64,
+    /// from Content-Length, when the server sends one
+    pub total: Option<u64>,
+}
+
+/// every download running right now, across all plugins and threads
+static ACTIVE_DOWNLOADS: Mutex<Vec<(u64, DownloadProgress)>> = Mutex::new(Vec::new());
+static NEXT_DOWNLOAD_ID: AtomicU64 = AtomicU64::new(0);
+
+/// snapshot of the downloads in flight, oldest first
+pub fn active_downloads() -> Vec<DownloadProgress> {
+    ACTIVE_DOWNLOADS
+        .lock()
+        .map(|list| list.iter().map(|(_, p)| p.clone()).collect())
+        .unwrap_or_default()
+}
+
+/// keeps a download listed in `ACTIVE_DOWNLOADS` until dropped, so it's removed however `fetch_to_file` returns
+struct DownloadEntry(u64);
+
+impl DownloadEntry {
+    fn start(progress: DownloadProgress) -> Self {
+        let id = NEXT_DOWNLOAD_ID.fetch_add(1, Ordering::Relaxed);
+        if let Ok(mut list) = ACTIVE_DOWNLOADS.lock() {
+            list.push((id, progress));
+        }
+        Self(id)
+    }
+
+    fn set_downloaded(&self, downloaded: u64) {
+        if let Ok(mut list) = ACTIVE_DOWNLOADS.lock()
+            && let Some((_, progress)) = list.iter_mut().find(|(id, _)| *id == self.0)
+        {
+            progress.downloaded = downloaded;
+        }
+    }
+}
+
+impl Drop for DownloadEntry {
+    fn drop(&mut self) {
+        if let Ok(mut list) = ACTIVE_DOWNLOADS.lock() {
+            list.retain(|(id, _)| *id != self.0);
+        }
+    }
+}
 
 pub enum NetworkEvent {
     /// one line of the response body, delivered as soon as it's read off
@@ -66,6 +118,7 @@ impl NetworkTable {
     /// replacing that directory. Returns a handle immediately, and completion arrives as `NetworkEvent::Download`.
     pub fn spawn_download(
         shared: &Arc<Mutex<NetworkTable>>,
+        plugin_id: String,
         storage_dir: PathBuf,
         url: String,
         checksum_url: Option<String>,
@@ -93,6 +146,7 @@ impl NetworkTable {
         let shared = shared.clone();
         std::thread::spawn(move || {
             let result = download_archive(
+                &plugin_id,
                 &storage_dir,
                 &url,
                 checksum_url.as_deref(),
@@ -185,8 +239,8 @@ fn run_request(
     })
 }
 
-/// streams `url` into `dest`
-pub fn fetch_to_file(url: &str, dest: &Path) -> Result<(), String> {
+/// streams `url` into `dest`, listed in `active_downloads` under `plugin_id` while it runs
+pub fn fetch_to_file(url: &str, dest: &Path, plugin_id: &str) -> Result<(), String> {
     if !url.starts_with("https://") {
         return Err("only https:// urls are allowed".to_string());
     }
@@ -208,8 +262,19 @@ pub fn fetch_to_file(url: &str, dest: &Path) -> Result<(), String> {
         return Err("download exceeds maximum allowed size".to_string());
     }
 
+    let entry = DownloadEntry::start(DownloadProgress {
+        plugin_id: plugin_id.to_string(),
+        file_name: dest
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        downloaded: 0,
+        total: response.content_length(),
+    });
+
     let mut file = std::fs::File::create(dest).map_err(|e| e.to_string())?;
     let mut written: u64 = 0;
+    let mut reported: u64 = 0;
     let mut buf = [0u8; 8192];
     loop {
         let n = response.read(&mut buf).map_err(|e| e.to_string())?;
@@ -217,6 +282,11 @@ pub fn fetch_to_file(url: &str, dest: &Path) -> Result<(), String> {
             break;
         }
         written += n as u64;
+        // the UI polls a few times a second, no need to take the lock per chunk
+        if written - reported >= 256 * 1024 {
+            entry.set_downloaded(written);
+            reported = written;
+        }
         if written > MAX_DOWNLOAD_BYTES {
             drop(file);
             let _ = std::fs::remove_file(dest);
@@ -228,6 +298,7 @@ pub fn fetch_to_file(url: &str, dest: &Path) -> Result<(), String> {
 }
 
 fn download_archive(
+    plugin_id: &str,
     storage_dir: &Path,
     url: &str,
     checksum_url: Option<&str>,
@@ -244,11 +315,11 @@ fn download_archive(
 
     let result = (|| {
         let archive_path = tmp_dir.join(archive_name);
-        fetch_to_file(url, &archive_path)?;
+        fetch_to_file(url, &archive_path, plugin_id)?;
 
         if let Some(checksum_url) = checksum_url {
             let checksum_path = tmp_dir.join("checksum");
-            fetch_to_file(checksum_url, &checksum_path)?;
+            fetch_to_file(checksum_url, &checksum_path, plugin_id)?;
             verify_sha256(&archive_path, &checksum_path)?;
         }
 

@@ -16,6 +16,7 @@ mod state;
 pub use error::PluginError;
 pub use instance::LoadedPlugin;
 pub use manager::{PluginManager, PreparedPlugin};
+pub use network::{DownloadProgress, active_downloads};
 
 pub use wasmtime::{Engine, Module};
 

@@ -633,7 +633,61 @@ pub fn panel_event(
     task
 }
 
+const DOWNLOAD_STATUS_ID: &str = "plugin-downloads";
+
+/// mirrors the plugins' in-flight downloads into the status bar
+fn update_download_status(app: &mut Rustrest) {
+    let downloads = rustrest_plugin_host::active_downloads();
+    let Some(first) = downloads.first() else {
+        app.status_bar.clear(DOWNLOAD_STATUS_ID);
+        return;
+    };
+
+    let label = if downloads.len() == 1 {
+        let plugin = app
+            .plugins
+            .plugin_manager
+            .installed()
+            .iter()
+            .find(|p| p.id() == first.plugin_id)
+            .and_then(|p| p.manifest.as_ref())
+            .map(|m| m.name.clone())
+            .unwrap_or_else(|| first.plugin_id.clone());
+        format!(
+            "{plugin}: downloading {} {}",
+            first.file_name,
+            progress_text(first.downloaded, first.total)
+        )
+    } else {
+        let downloaded = downloads.iter().map(|d| d.downloaded).sum();
+        // only a total when every download knows its size
+        let total = downloads.iter().map(|d| d.total).sum::<Option<u64>>();
+        format!(
+            "Plugins: downloading {} files {}",
+            downloads.len(),
+            progress_text(downloaded, total)
+        )
+    };
+    app.status_bar.set(DOWNLOAD_STATUS_ID, label, true);
+}
+
+/// "42% (12.3 / 29.0 MB)", or just "12.3 MB" without a known size
+fn progress_text(downloaded: u64, total: Option<u64>) -> String {
+    const MB: f64 = 1024.0 * 1024.0;
+    let mb = |bytes: u64| bytes as f64 / MB;
+    match total.filter(|t| *t > 0) {
+        Some(total) => format!(
+            "{}% ({:.1} / {:.1} MB)",
+            (downloaded * 100 / total).min(100),
+            mb(downloaded),
+            mb(total)
+        ),
+        None => format!("({:.1} MB)", mb(downloaded)),
+    }
+}
+
 pub fn process_tick(app: &mut Rustrest) -> Task<Message> {
+    update_download_status(app);
     let mut touched = app.plugins.plugin_manager.pump_processes();
     touched.extend(app.plugins.plugin_manager.pump_network());
     touched.extend(app.plugins.plugin_manager.pump_files());
