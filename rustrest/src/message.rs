@@ -591,6 +591,33 @@ pub enum Message {
     CloudInviteEmailChanged(String),
     CloudInvite,
     CloudInvited(Result<String, String>),
+    CloudInviteRoleChanged(rustrest_cloud::wire::Role),
+    /// opens the inline rename field for the selected team
+    CloudStartRenameTeam,
+    CloudRenameTeamChanged(String),
+    CloudSubmitRenameTeam,
+    CloudCancelRenameTeam,
+    /// first press arms the confirmation, second press deletes
+    CloudDeleteTeam,
+    CloudCancelDeleteTeam,
+    /// Ok carries the toast to show
+    CloudTeamUpdated(Result<String, String>),
+    CloudMembersLoaded(
+        String,
+        Result<Vec<rustrest_cloud::wire::TeamMember>, String>,
+    ),
+    /// (user id, new role)
+    CloudSetMemberRole(String, rustrest_cloud::wire::Role),
+    /// first press arms the confirmation, second press removes
+    CloudRemoveMember(String),
+    CloudCancelRemoveMember,
+    /// Ok carries the toast to show
+    CloudMembersChanged(Result<String, String>),
+    /// (cloud collection id, destination team id), picks the target to confirm
+    CloudMoveTargetPicked(String, String),
+    CloudCancelMove,
+    CloudConfirmMove,
+    CloudCollectionMoved(Result<rustrest_cloud::wire::CloudCollection, String>),
     CloudUpload,
     CloudUploaded(usize, Result<Box<rustrest_cloud::SyncState>, String>),
     /// cloud collection id
@@ -612,6 +639,8 @@ pub enum Message {
     ),
     /// cloud collection id, its new change seq
     CloudRealtimeChanged(String, i64),
+    /// cloud collection id
+    CloudRealtimeDeleted(String),
     /// app collection id, item uid (None = the collection settings)
     CloudResolve(usize, Option<String>, rustrest_cloud::Resolution),
     WindowCloseRequested(iced::window::Id),
