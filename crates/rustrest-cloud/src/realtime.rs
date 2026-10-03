@@ -5,6 +5,7 @@
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use tokio::sync::mpsc;
+use tokio_tungstenite::Connector;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
@@ -58,9 +59,13 @@ pub async fn connect(
             .map_err(|_| CloudError::Unauthorized)?,
     );
 
-    let (socket, _) = tokio_tungstenite::connect_async(request)
-        .await
-        .map_err(|e| CloudError::Network(e.to_string()))?;
+    // explicit rustls config: rustls is built with both ring and aws-lc-rs, so
+    // tungstenite's default `ClientConfig::builder()` panics on wss://
+    let connector = Connector::Rustls(rustrest_core::http::client_config());
+    let (socket, _) =
+        tokio_tungstenite::connect_async_tls_with_config(request, None, false, Some(connector))
+            .await
+            .map_err(|e| CloudError::Network(e.to_string()))?;
     let (mut write, mut read) = socket.split();
 
     let subscribe = serde_json::json!({ "type": "subscribe", "collection_ids": collection_ids });
