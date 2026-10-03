@@ -135,13 +135,21 @@ impl PostmanCollection {
 // helper function to apply headers to a collection item
 fn apply_headers_to_item(item: &mut CollectionItem, headers: &[PostmanHeader]) {
     match item {
-        // if it's a request node, merge the new headers with the existin ones
+        // if it's a request node, merge the new headers with the existing ones,
+        // skipping any default whose key the request already has (header names are case-insensitive)
         CollectionItem::Request(node) => {
-            let mut merged_headers = headers.to_vec();
+            let existing_headers = node.request.header.take().unwrap_or_default();
 
-            if let Some(existing_headers) = node.request.header.take() {
-                merged_headers.extend(existing_headers);
-            }
+            let mut merged_headers: Vec<PostmanHeader> = headers
+                .iter()
+                .filter(|h| {
+                    !existing_headers
+                        .iter()
+                        .any(|e| e.key.trim().eq_ignore_ascii_case(h.key.trim()))
+                })
+                .cloned()
+                .collect();
+            merged_headers.extend(existing_headers);
 
             node.request.header = Some(merged_headers)
         }
