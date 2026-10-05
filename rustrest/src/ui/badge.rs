@@ -15,7 +15,7 @@ pub fn http_method_color(method: &str) -> iced::Color {
     }
 }
 
-/// Renders a compact, color-coded HTTP method badge with a fixed width for perfect column alignment.
+/// Renders a compact, color-coded HTTP method badge with an optional fixed width for column alignment.
 pub fn method_badge<'a, Message: 'a>(
     method: &str,
     fixed_width: Option<f32>,
@@ -26,23 +26,37 @@ pub fn method_badge<'a, Message: 'a>(
         m => m.to_string(),
     };
 
-    let badge_text = text(label)
+    let colors = crate::theme::colors();
+    let text_color = if colors.appearance == crate::theme::Appearance::Light {
+        colors.text
+    } else {
+        color
+    };
+
+    let mut badge_text = text(label)
         .size(10)
         .font(Font {
             weight: iced::font::Weight::Bold,
             ..Font::DEFAULT
         })
-        .color(color);
+        .color(text_color);
+
+    if fixed_width.is_some() {
+        badge_text = badge_text
+            .width(Length::Fill)
+            .align_x(Alignment::Center)
+            .wrapping(text::Wrapping::WordOrGlyph);
+    }
 
     let mut badge_container = container(badge_text)
         .padding(Padding::from([2, 5]))
         .align_x(Alignment::Center)
         .style(move |_theme: &iced::Theme| container::Style {
-            background: Some(iced::Color::from_rgba(color.r, color.g, color.b, 0.12).into()),
+            background: Some(iced::Color::from_rgba(color.r, color.g, color.b, 0.14).into()),
             border: iced::Border {
                 radius: 4.0.into(),
                 width: 1.0,
-                color: iced::Color::from_rgba(color.r, color.g, color.b, 0.28),
+                color: iced::Color::from_rgba(color.r, color.g, color.b, 0.32),
             },
             ..Default::default()
         });

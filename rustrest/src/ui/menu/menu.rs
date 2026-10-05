@@ -8,6 +8,7 @@ pub struct DropdownMenuState {
 }
 
 impl DropdownMenuState {
+    /// Creates a new inactive dropdown menu state.
     pub fn new() -> Self {
         Self { open_index: None }
     }
@@ -51,6 +52,7 @@ pub struct DropdownItem<T> {
 }
 
 impl<T> DropdownItem<T> {
+    /// Creates a new actionable dropdown menu item.
     pub fn new(label: impl Into<String>, action: T) -> Self {
         Self {
             label: label.into(),
@@ -84,12 +86,29 @@ pub struct MenuGroup<T> {
 }
 
 impl<T> MenuGroup<T> {
+    /// Creates a new top-level menu group with the given title and items.
     pub fn new(title: impl Into<String>, items: Vec<DropdownItem<T>>) -> Self {
         Self {
             title: title.into(),
             items,
         }
     }
+}
+
+/// Computes the exact layout width for a menu header button based on its title.
+pub fn menu_button_width(title: &str) -> f32 {
+    let mut text_width: f32 = 0.0;
+    for ch in title.chars() {
+        text_width += match ch {
+            'i' | 'l' | 't' | 'j' | 'r' | ' ' | '.' | ':' | '-' => 4.5,
+            'f' | 'I' => 5.5,
+            'm' | 'w' | 'M' | 'W' => 10.5,
+            'A'..='Z' => 8.5,
+            _ => 7.0,
+        };
+    }
+    // 20.0 padding (10 left + 10 right) + 8.0 breathing room, with minimum width of 44.0
+    (text_width + 28.0_f32).max(44.0).ceil()
 }
 
 /// renders the floating dropdown overlay panel if one is open.
@@ -198,9 +217,7 @@ pub fn render_menu_overlay<'a, T: 'static + Clone>(
     // Compute cumulative horizontal offset matching each header button's position
     let mut horizontal_offset: f32 = 10.0;
     for group in &groups[..open_idx] {
-        let text_w = group.title.len() as f32 * 7.5;
-        let button_w = text_w + 20.0; // padding left + right
-        horizontal_offset += button_w + 2.0; // spacing between buttons
+        horizontal_offset += menu_button_width(&group.title) + 2.0;
     }
 
     let overlay_layer = column![
@@ -225,14 +242,20 @@ pub fn render_menu_bar<'a, T: 'static + Clone>(
 
     for (group_idx, group) in groups.iter().enumerate() {
         let is_open = state.open_index == Some(group_idx);
-        let header_button = button(text(group.title.clone()).size(13).font(iced::Font {
-            weight: if is_open {
-                iced::font::Weight::Bold
-            } else {
-                iced::font::Weight::Normal
-            },
-            ..iced::Font::DEFAULT
-        }))
+        let button_w = menu_button_width(&group.title);
+        let header_button = button(
+            container(text(group.title.clone()).size(13).font(iced::Font {
+                weight: if is_open {
+                    iced::font::Weight::Bold
+                } else {
+                    iced::font::Weight::Normal
+                },
+                ..iced::Font::DEFAULT
+            }))
+            .width(Length::Fill)
+            .align_x(alignment::Horizontal::Center),
+        )
+        .width(Length::Fixed(button_w))
         .padding([4, 10])
         .style(move |theme: &iced::Theme, status| {
             let colors = crate::theme::colors();

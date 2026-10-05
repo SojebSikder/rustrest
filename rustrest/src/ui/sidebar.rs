@@ -613,7 +613,7 @@ fn render_sidebar_item<'a>(
                 }
                 label_row = label_row.push(crate::ui::badge::method_badge(
                     &req_node.request.method,
-                    Some(46.0),
+                    Some(58.0),
                 ));
                 label_row = label_row.push(text(&req_node.name).size(13));
                 if request_is_unsaved(app, req_node) {
