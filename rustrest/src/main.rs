@@ -542,6 +542,7 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
         {
             let mut items = vec![
                 DropdownItem::new("New Collection", MenuMessage::FileNew),
+                DropdownItem::separator(),
                 DropdownItem::new("Import Collection", MenuMessage::FileOpen),
                 DropdownItem::new("Import Git Folder...", MenuMessage::FileOpenGitFolder),
             ];
@@ -551,6 +552,7 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
                     MenuMessage::ImportViaPlugin(plugin_id, format.id, format.extensions),
                 ));
             }
+            items.push(DropdownItem::separator());
             items.push(DropdownItem::new("Exit", MenuMessage::FileExit));
             MenuGroup::new("File", items)
         },
@@ -599,12 +601,14 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
             vec![
                 DropdownItem::new("Check for Updates", MenuMessage::CheckForUpdate),
                 DropdownItem::new("View Release Notes", MenuMessage::ViewReleaseNotes),
+                DropdownItem::separator(),
                 DropdownItem::new("About", MenuMessage::HelpAbout),
             ],
         ),
     ];
 
-    let menu_strip = render_menu_bar(&menu_structure).map(Message::MenuInteraction);
+    let menu_strip =
+        render_menu_bar(&app.overlays.menu_state, &menu_structure).map(Message::MenuInteraction);
 
     let workspace_selector = ui::sidebar::render_workspace_selector(app);
     let top_bar_row = row![workspace_selector, Space::new().width(Length::Fill)]

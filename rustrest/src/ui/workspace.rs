@@ -64,15 +64,15 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
                     HttpMethod::Custom(c) => c.to_uppercase(),
                     other => format!("{}", other),
                 };
-                text(format!("[{}]", method_str)).size(11).into()
+                crate::ui::badge::method_badge(&method_str, None)
             }
             WorkspaceContent::CollectionRoot { .. } => text("").size(11).into(),
             WorkspaceContent::Terminal { .. } => text(">_").size(11).into(),
-            WorkspaceContent::RemoteFile { .. } => text("☁").size(11).into(),
-            WorkspaceContent::Plugin { .. } => text("⚙").size(11).into(),
-            WorkspaceContent::PluginManager => text("🧩").size(11).into(),
-            WorkspaceContent::ReleaseNotes(_) => text("📄").size(11).into(),
-            WorkspaceContent::Folder(_) => text("📁").size(11).into(),
+            WorkspaceContent::RemoteFile { .. } => text("REMOTE").size(10).into(),
+            WorkspaceContent::Plugin { .. } => text("EXT").size(10).into(),
+            WorkspaceContent::PluginManager => text("PLUGINS").size(10).into(),
+            WorkspaceContent::ReleaseNotes(_) => text("DOCS").size(10).into(),
+            WorkspaceContent::Folder(_) => text("DIR").size(10).into(),
             WorkspaceContent::WebSocket(_) => text("WS").size(11).into(),
             WorkspaceContent::GraphQl(_) => text("GQL").size(11).into(),
             WorkspaceContent::Grpc(_) => text("gRPC").size(11).into(),
@@ -116,7 +116,7 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
         // still sees the mouse-down and can arm a drag - buttons only report
         // clicks on release, which is too late to catch the drag motion
         let tab_surface = container(tab_row)
-            .padding(6)
+            .padding([6, 12])
             .style(move |theme: &iced::Theme| {
                 let colors = crate::theme::colors();
                 match (is_active, colors.tab_active_background) {
@@ -127,7 +127,7 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
                         border: iced::Border {
                             color: colors.text_accent,
                             width: 1.0,
-                            radius: 4.0.into(),
+                            radius: 6.0.into(),
                         },
                         ..Default::default()
                     },
@@ -135,7 +135,7 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
                         background: Some(theme.palette().primary.into()),
                         text_color: Some(theme.palette().background),
                         border: iced::Border {
-                            radius: 4.0.into(),
+                            radius: 6.0.into(),
                             ..Default::default()
                         },
                         ..Default::default()
@@ -143,7 +143,7 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
                     (false, _) => container::Style {
                         background: Some(colors.tab_inactive_background.into()),
                         border: iced::Border {
-                            radius: 4.0.into(),
+                            radius: 6.0.into(),
                             ..Default::default()
                         },
                         ..Default::default()
@@ -159,10 +159,10 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
         tab_bar = tab_bar.push(tab_element);
     }
 
-    let add_tab_btn = button("+")
+    let add_tab_btn = button(text("+").size(14))
         .on_press(Message::ShowNewTabMenu)
-        .padding(6)
-        .style(button::success);
+        .padding([4, 10])
+        .style(button::secondary);
 
     tab_bar = tab_bar.push(add_tab_btn);
 

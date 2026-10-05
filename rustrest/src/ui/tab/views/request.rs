@@ -8,7 +8,7 @@ use crate::ui::context_menu::{TabFieldTarget, with_context_menu};
 use crate::ui::multiline_input::multiline_input;
 use crate::ui::script_editor::script_editor;
 use iced::widget::{button, column, container, pick_list, radio, row, text, text_input};
-use iced::{Alignment, Element, Length};
+use iced::{Alignment, Element, Font, Length};
 
 pub fn render_request_bar<'a, Message>(
     tab: &'a Tab,
@@ -57,16 +57,16 @@ where
             ))),
         },
     )
-    .padding(10);
+    .padding([8, 12]);
 
-    let mut request_row = row![method_picker].spacing(10).align_y(Alignment::Center);
+    let mut request_row = row![method_picker].spacing(8).align_y(Alignment::Center);
 
     if let HttpMethod::Custom(custom_val) = &tab.method {
         let custom_method_input = with_context_menu(
             text_input("PURGE", custom_val)
                 .on_input(move |text| wrap_msg(TabMessage::MethodChanged(HttpMethod::Custom(text))))
                 .width(Length::Fixed(100.0))
-                .padding(12),
+                .padding([8, 12]),
             wrap_msg(TabMessage::ShowFieldContextMenu(
                 TabFieldTarget::CustomMethod,
                 custom_val.clone(),
@@ -79,7 +79,8 @@ where
     let url_input = with_context_menu(
         text_input("https://api.example.com/v1/resource", &tab.url)
             .on_input(move |u| wrap_msg(TabMessage::UrlChanged(u)))
-            .padding(12),
+            .padding([8, 12])
+            .width(Length::Fill),
         wrap_msg(TabMessage::ShowFieldContextMenu(
             TabFieldTarget::Url,
             tab.url.clone(),
@@ -87,15 +88,21 @@ where
     );
 
     let send_btn = if tab.is_loading {
-        button("Cancel")
-            .on_press(wrap_msg(TabMessage::CancelRequest))
-            .style(button::danger)
-            .padding(12)
+        button(text("Cancel").size(13).font(Font {
+            weight: iced::font::Weight::Bold,
+            ..Font::DEFAULT
+        }))
+        .on_press(wrap_msg(TabMessage::CancelRequest))
+        .style(button::danger)
+        .padding([8, 18])
     } else {
-        button("Send")
-            .on_press(on_send)
-            .style(button::primary)
-            .padding(12)
+        button(text("Send").size(13).font(Font {
+            weight: iced::font::Weight::Bold,
+            ..Font::DEFAULT
+        }))
+        .on_press(on_send)
+        .style(button::primary)
+        .padding([8, 20])
     };
 
     request_row.push(url_input).push(send_btn).into()
@@ -115,19 +122,69 @@ where
     Message: Clone + 'static,
 {
     let tab_id = tab.id;
-    let mut sub_tab_bar = row![].spacing(10);
+    let mut sub_tab_bar = row![].spacing(6);
     for variant in RequestSubTab::ALL.iter() {
         let is_sub_active = tab.active_sub_tab == *variant;
-        let mut sub_btn = button(text(variant.name()).size(12)).padding(6);
+        let variant_clone = *variant;
+        let sub_btn = button(text(variant.name()).size(12).font(Font {
+            weight: if is_sub_active {
+                iced::font::Weight::Bold
+            } else {
+                iced::font::Weight::Normal
+            },
+            ..Font::DEFAULT
+        }))
+        .padding([5, 12])
+        .style(move |theme: &iced::Theme, status| {
+            let colors = crate::theme::colors();
+            if is_sub_active {
+                button::Style {
+                    background: Some(
+                        iced::Color::from_rgba(
+                            colors.text_accent.r,
+                            colors.text_accent.g,
+                            colors.text_accent.b,
+                            0.12,
+                        )
+                        .into(),
+                    ),
+                    text_color: colors.text_accent,
+                    border: iced::Border {
+                        radius: 6.0.into(),
+                        width: 1.0,
+                        color: iced::Color::from_rgba(
+                            colors.text_accent.r,
+                            colors.text_accent.g,
+                            colors.text_accent.b,
+                            0.35,
+                        ),
+                    },
+                    ..Default::default()
+                }
+            } else {
+                match status {
+                    button::Status::Hovered => button::Style {
+                        background: Some(iced::Background::Color(colors.element_hover)),
+                        text_color: colors.text,
+                        border: iced::Border {
+                            radius: 6.0.into(),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    _ => button::Style {
+                        text_color: colors.text_muted,
+                        ..button::text(theme, status)
+                    },
+                }
+            }
+        });
 
-        if is_sub_active {
-            sub_btn = sub_btn.style(button::primary);
+        let sub_btn = if is_sub_active {
+            sub_btn
         } else {
-            let variant_clone = *variant;
-            sub_btn = sub_btn
-                .style(button::text)
-                .on_press(wrap_msg(TabMessage::SubTabSelected(variant_clone)));
-        }
+            sub_btn.on_press(wrap_msg(TabMessage::SubTabSelected(variant_clone)))
+        };
         sub_tab_bar = sub_tab_bar.push(sub_btn);
     }
 
@@ -299,7 +356,7 @@ where
                     let raw_dropdown = pick_list(&RawType::ALL[..], Some(tab.raw_type), move |t| {
                         wrap_msg(TabMessage::RawTypeChanged(t))
                     })
-                    .padding(5);
+                    .padding([4, 10]);
 
                     let editor = multiline_input(
                         "",
@@ -373,8 +430,9 @@ where
                 }
 
                 BodyType::Binary => {
-                    let select_file_btn = button(text("Select File"))
-                        .padding(10)
+                    let select_file_btn = button(text("Select File").size(13))
+                        .padding([7, 16])
+                        .style(button::secondary)
                         .on_press(wrap_msg(TabMessage::SelectBinaryFile));
 
                     let file_info = if let Some(path) = &tab.binary_file_path {

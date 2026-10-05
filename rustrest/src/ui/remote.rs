@@ -299,7 +299,7 @@ fn render_explorer<'a>(
     let mut entries_col = column![].spacing(2);
     for entry in &explorer.entries {
         let full_path = join_remote_path(&explorer.path, &entry.name);
-        let icon = if entry.is_dir { "📁" } else { "📄" };
+        let icon = if entry.is_dir { "▸" } else { "•" };
         let mut entry_row = row![
             button(text(format!("{icon} {}", entry.name)).size(12))
                 .on_press(Message::RemoteEntryClicked(profile_id, full_path.clone()))

@@ -4,13 +4,26 @@ use iced::{Alignment, Element, Font, Length};
 
 pub fn render_console_clear_bar<'a>() -> Element<'a, Message> {
     row![
+        text("Console Output")
+            .size(12)
+            .font(Font {
+                weight: iced::font::Weight::Bold,
+                ..Font::DEFAULT
+            })
+            .color(crate::theme::colors().text_muted),
         Space::new().width(Length::Fill),
-        button(text("Clear").size(12))
+        button(text("Clear").size(11))
             .style(button::text)
-            .padding([4, 6])
+            .padding([2, 6])
             .on_press(Message::ClearConsoleLogs),
     ]
     .align_y(Alignment::Center)
+    .padding(iced::Padding {
+        top: 0.0,
+        right: 4.0,
+        bottom: 4.0,
+        left: 4.0,
+    })
     .into()
 }
 
@@ -25,7 +38,7 @@ where
                 .size(13)
                 .color(crate::theme::colors().text_muted),
         )
-        .padding(10)
+        .padding(12)
         .into();
     }
 

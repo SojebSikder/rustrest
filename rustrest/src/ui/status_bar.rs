@@ -118,19 +118,27 @@ pub fn render_status_bar(app: &Rustrest) -> Element<'_, Message> {
     } else {
         format!("Console ({})", app.layout.console_logs.len())
     };
-    let console_toggle = button(text(console_label).size(13))
-        .style(if !console_collapsed {
-            button::primary
-        } else {
-            button::secondary
-        })
-        .padding([4, 8])
-        .on_press(Message::ToggleConsolePanel);
+    let console_toggle = button(
+        row![text("≡").size(12), text(console_label).size(12),]
+            .spacing(4)
+            .align_y(Alignment::Center),
+    )
+    .style(if !console_collapsed {
+        button::secondary
+    } else {
+        button::text
+    })
+    .padding([3, 8])
+    .on_press(Message::ToggleConsolePanel);
 
-    let terminal_button = button(text("Terminal").size(13))
-        .style(button::secondary)
-        .padding([4, 8])
-        .on_press(Message::NewTerminalTabPressed);
+    let terminal_button = button(
+        row![text(">_").size(11), text("Terminal").size(12),]
+            .spacing(4)
+            .align_y(Alignment::Center),
+    )
+    .style(button::text)
+    .padding([3, 8])
+    .on_press(Message::NewTerminalTabPressed);
 
     let right = row![console_toggle, terminal_button]
         .spacing(6)

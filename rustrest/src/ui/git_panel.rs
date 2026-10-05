@@ -93,8 +93,22 @@ pub fn render_git_bar(
         None => "Git Actions \u{25BE}".to_string(),
     };
 
+    let commit_label = if change_count > 0 {
+        format!("Commit ({change_count})...")
+    } else {
+        "Commit...".to_string()
+    };
+
     row![
-        text(format!("Branch: {branch_label}")).size(13),
+        row![
+            text("⎇").size(14),
+            text(branch_label).size(13).font(Font {
+                weight: iced::font::Weight::Bold,
+                ..Font::DEFAULT
+            }),
+        ]
+        .spacing(6)
+        .align_y(Alignment::Center),
         Space::new().width(Length::Fill),
         button(text(git_actions_label).size(12))
             .style(button::text)
@@ -104,9 +118,9 @@ pub fn render_git_bar(
             .style(button::text)
             .padding([4, 8])
             .on_press(Message::GitStatusRequested(collection_id)),
-        button(text("Commit...").size(12))
+        button(text(commit_label).size(12))
             .style(button::primary)
-            .padding([4, 8])
+            .padding([4, 10])
             .on_press_maybe(
                 (change_count > 0 && !busy).then_some(Message::CommitChangesPressed(collection_id))
             ),
@@ -140,10 +154,13 @@ pub fn render_git_panel(
     };
 
     if snapshot.files.is_empty() {
-        return text("No changes - working tree clean.")
-            .size(13)
-            .color(crate::theme::colors().text_muted)
-            .into();
+        return container(
+            text("No changes \u{2014} working tree clean.")
+                .size(13)
+                .color(crate::theme::colors().text_muted),
+        )
+        .padding(12)
+        .into();
     }
 
     let mut file_list = column![].spacing(2);
@@ -168,7 +185,7 @@ pub fn render_git_panel(
                 .size(12)
                 .color(crate::theme::colors().text_muted),
         )
-        .padding(10)
+        .padding(12)
         .height(Length::FillPortion(3))
         .into(),
     };

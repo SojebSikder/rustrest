@@ -136,13 +136,17 @@ pub fn view<'a>(
     );
 
     let schema_row = row![
-        button(text(if state.schema_loading {
-            "Loading schema…"
-        } else {
-            "Fetch Schema"
-        }))
+        button(
+            text(if state.schema_loading {
+                "Loading schema…"
+            } else {
+                "Fetch Schema"
+            })
+            .size(12),
+        )
         .on_press_maybe((!state.schema_loading).then(|| wrap(GraphQlTabMessage::FetchSchema)))
-        .padding([6, 12]),
+        .padding([6, 12])
+        .style(button::secondary),
         text_input("Operation name (optional)", &state.operation_name)
             .on_input(move |v| wrap(GraphQlTabMessage::OperationNameChanged(v)))
             .padding(8)

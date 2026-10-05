@@ -19,24 +19,31 @@ where
     let mut bar = row![
         text_input("Enter URL", url)
             .on_input(on_url_change)
-            .padding(10)
+            .padding([8, 12])
             .width(Length::Fill),
     ]
     .spacing(8)
     .align_y(Alignment::Center);
 
-    let mut action_btn = button(text(action_label).size(13)).padding([8, 16]);
+    let mut action_btn = button(text(action_label).size(13).font(iced::Font {
+        weight: iced::font::Weight::Bold,
+        ..iced::Font::DEFAULT
+    }))
+    .padding([8, 18]);
     if let Some(msg) = on_action {
         action_btn = action_btn.on_press(msg);
     }
-    bar = bar.push(action_btn.style(button::success));
+    bar = bar.push(action_btn.style(button::primary));
 
     if let (Some(label), Some(msg)) = (cancel_label, on_cancel) {
         bar = bar.push(
-            button(text(label).size(13))
-                .on_press(msg)
-                .padding([8, 16])
-                .style(button::danger),
+            button(text(label).size(13).font(iced::Font {
+                weight: iced::font::Weight::Bold,
+                ..iced::Font::DEFAULT
+            }))
+            .on_press(msg)
+            .padding([8, 18])
+            .style(button::danger),
         );
     }
 
@@ -82,7 +89,7 @@ where
                         },
                     )
                 })
-                .padding(8),
+                .padding([6, 8]),
             text_input("Value", &item.value)
                 .on_input(move |v| {
                     on_change(
@@ -94,11 +101,11 @@ where
                         },
                     )
                 })
-                .padding(8),
-            button("Delete")
+                .padding([6, 8]),
+            button(text("✕").size(12))
                 .on_press(on_remove(idx))
-                .padding(8)
-                .style(button::danger)
+                .padding([5, 8])
+                .style(button::text)
         ]
         .spacing(8)
         .align_y(Alignment::Center);
@@ -108,7 +115,14 @@ where
 
     column![
         scrollable(content).height(Length::Fixed(120.0)),
-        button("Add Row").on_press(on_add).padding(8)
+        button(
+            row![text("+").size(13), text("Add Row").size(12)]
+                .spacing(6)
+                .align_y(Alignment::Center)
+        )
+        .on_press(on_add)
+        .padding([6, 12])
+        .style(button::secondary)
     ]
     .spacing(10)
     .into()

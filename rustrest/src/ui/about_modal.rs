@@ -34,16 +34,18 @@ pub fn about_info() -> String {
 }
 
 pub fn view_about_modal(state: &AboutModalState) -> Element<'_, Message> {
-    let title = text(format!("About {APP_NAME}")).size(18).font(Font {
-        weight: iced::font::Weight::Bold,
-        ..Font::DEFAULT
-    });
-
-    let subtitle = text("API Testing Platform")
-        .size(12)
-        .style(|theme: &Theme| text::Style {
-            color: Some(muted_text_color(theme)),
-        });
+    let title = column![
+        text(format!("About {APP_NAME}")).size(18).font(Font {
+            weight: iced::font::Weight::Bold,
+            ..Font::DEFAULT
+        }),
+        text("API Testing Platform")
+            .size(12)
+            .style(|theme: &Theme| text::Style {
+                color: Some(muted_text_color(theme)),
+            }),
+    ]
+    .spacing(2);
 
     let info = text_editor(&state.content)
         .on_action(Message::AboutModalAction)
@@ -63,7 +65,6 @@ pub fn view_about_modal(state: &AboutModalState) -> Element<'_, Message> {
 
     let body = column![
         title,
-        subtitle,
         info,
         container(row![copy_btn, close_btn].spacing(8))
             .width(Length::Fill)
