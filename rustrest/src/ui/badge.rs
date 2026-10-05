@@ -23,6 +23,8 @@ pub fn method_badge<'a, Message: 'a>(
     let color = http_method_color(method);
     let label = match method.trim().to_uppercase().as_str() {
         "" => "GET".to_string(),
+        "DELETE" if fixed_width.map_or(false, |w| w <= 40.0) => "DEL".to_string(),
+        "OPTIONS" if fixed_width.map_or(false, |w| w <= 40.0) => "OPT".to_string(),
         m => m.to_string(),
     };
 
@@ -33,8 +35,14 @@ pub fn method_badge<'a, Message: 'a>(
         color
     };
 
+    let (font_size, padding) = if fixed_width.map_or(false, |w| w <= 40.0) {
+        (9, Padding::from([1, 4]))
+    } else {
+        (10, Padding::from([2, 5]))
+    };
+
     let mut badge_text = text(label)
-        .size(10)
+        .size(font_size)
         .font(Font {
             weight: iced::font::Weight::Bold,
             ..Font::DEFAULT
@@ -49,7 +57,7 @@ pub fn method_badge<'a, Message: 'a>(
     }
 
     let mut badge_container = container(badge_text)
-        .padding(Padding::from([2, 5]))
+        .padding(padding)
         .align_x(Alignment::Center)
         .style(move |_theme: &iced::Theme| container::Style {
             background: Some(iced::Color::from_rgba(color.r, color.g, color.b, 0.14).into()),

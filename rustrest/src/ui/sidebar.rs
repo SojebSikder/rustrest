@@ -193,7 +193,7 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
 
                 if let Some(profile_id) = remote_profile_id {
                     header_row = header_row.push(
-                        text("sync")
+                        text("ssh")
                             .size(10)
                             .font(Font::MONOSPACE)
                             .color(crate::theme::colors().text_muted),
@@ -323,7 +323,7 @@ pub fn render_env_selector(app: &Rustrest) -> Element<'_, Message> {
     if let Some(active_idx) = app.env.active_env_index {
         env_row = env_row
             .push(
-                button(text("✎").size(12))
+                button(text("⛭").size(13))
                     .on_press(Message::EditEnvironmentPressed(active_idx))
                     .padding([4, 8])
                     .style(button::secondary),
@@ -613,7 +613,7 @@ fn render_sidebar_item<'a>(
                 }
                 label_row = label_row.push(crate::ui::badge::method_badge(
                     &req_node.request.method,
-                    Some(58.0),
+                    Some(36.0),
                 ));
                 label_row = label_row.push(text(&req_node.name).size(13));
                 if request_is_unsaved(app, req_node) {
