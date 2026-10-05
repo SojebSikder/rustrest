@@ -798,4 +798,12 @@ pub enum Message {
 
     AppExit,
     None,
+
+    // custom titlebar window controls
+    TitleBarDragStarted,
+    TitleBarMinimizePressed,
+    TitleBarMaximizePressed,
+    TitleBarClosePressed,
+    /// sent back when `window::is_maximized` resolves
+    WindowIsMaximized(bool),
 }

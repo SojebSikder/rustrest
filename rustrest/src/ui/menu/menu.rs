@@ -215,13 +215,13 @@ pub fn render_menu_overlay<'a, T: 'static + Clone>(
             });
 
     // Compute cumulative horizontal offset matching each header button's position
-    let mut horizontal_offset: f32 = 10.0;
+    let mut horizontal_offset: f32 = 8.0;
     for group in &groups[..open_idx] {
         horizontal_offset += menu_button_width(&group.title) + 2.0;
     }
 
     let overlay_layer = column![
-        container(text("")).height(30),
+        container(text("")).height(crate::ui::titlebar::TITLEBAR_HEIGHT),
         row![
             container(text("")).width(horizontal_offset),
             opaque(dropdown_panel)
@@ -300,15 +300,10 @@ pub fn render_menu_bar<'a, T: 'static + Clone>(
     }
 
     container(menu_row)
-        .width(Length::Fill)
-        .padding([3, 10])
+        .width(Length::Shrink)
+        .padding([0, 8])
         .style(|_theme| container::Style {
-            background: Some(crate::theme::colors().title_bar_background.into()),
-            border: Border {
-                width: 1.0,
-                color: crate::theme::colors().border_variant,
-                ..Default::default()
-            },
+            background: Some(Color::TRANSPARENT.into()),
             ..Default::default()
         })
         .into()

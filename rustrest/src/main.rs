@@ -18,6 +18,7 @@ mod utils;
 mod workspace;
 
 use crate::ui::about_modal::view_about_modal;
+use crate::ui::titlebar::{TITLEBAR_HEIGHT, render_titlebar};
 use crate::ui::command_palette::view as view_command_palette;
 use crate::ui::commit_modal::view_commit_modal;
 use crate::ui::confirm_dialog::view_confirm_dialog;
@@ -607,9 +608,6 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
         ),
     ];
 
-    let menu_strip =
-        render_menu_bar(&app.overlays.menu_state, &menu_structure).map(Message::MenuInteraction);
-
     let workspace_selector = ui::sidebar::render_workspace_selector(app);
     let top_bar_row = row![workspace_selector, Space::new().width(Length::Fill)]
         .width(Length::Fill)
@@ -693,7 +691,7 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
     let base_layout = column![top_bar, content_row, status_bar]
         .spacing(8)
         .padding(Padding {
-            top: 44.0,
+            top: TITLEBAR_HEIGHT + 8.0,
             left: 15.0,
             bottom: 15.0,
             right: 15.0,
@@ -824,8 +822,11 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
         main_interface_stack = main_interface_stack.push(confirm_overlay);
     }
 
-    // menu bar layer
-    main_interface_stack = main_interface_stack.push(menu_strip);
+    // custom titlebar (sits above all content as top-most non-overlay layer)
+    let menu_strip = render_menu_bar(&app.overlays.menu_state, &menu_structure)
+        .map(Message::MenuInteraction);
+    let titlebar = render_titlebar(app, menu_strip);
+    main_interface_stack = main_interface_stack.push(titlebar);
 
     // dropdown menu overlay
     if let Some(overlay) = render_menu_overlay(&app.overlays.menu_state, &menu_structure) {
