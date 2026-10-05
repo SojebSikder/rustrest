@@ -20,6 +20,56 @@ fn hint(label: &str) -> Element<'_, Message> {
         .into()
 }
 
+fn collection_tab_btn<'a>(
+    label: &'static str,
+    target: CollectionSubTab,
+    is_active: bool,
+) -> iced::widget::Button<'a, Message, Theme, iced::Renderer> {
+    button(text(label).size(12).font(iced::Font {
+        weight: if is_active {
+            iced::font::Weight::Bold
+        } else {
+            iced::font::Weight::Normal
+        },
+        ..iced::Font::DEFAULT
+    }))
+    .padding([5, 12])
+    .style(move |theme: &iced::Theme, status| {
+        let colors = crate::theme::colors();
+        if is_active {
+            button::Style {
+                background: Some(
+                    iced::Color::from_rgba(
+                        colors.text_accent.r,
+                        colors.text_accent.g,
+                        colors.text_accent.b,
+                        0.12,
+                    )
+                    .into(),
+                ),
+                text_color: colors.text_accent,
+                border: iced::Border {
+                    radius: 4.0.into(),
+                    width: 1.0,
+                    color: iced::Color::from_rgba(
+                        colors.text_accent.r,
+                        colors.text_accent.g,
+                        colors.text_accent.b,
+                        0.35,
+                    ),
+                },
+                ..button::text(theme, status)
+            }
+        } else {
+            button::Style {
+                text_color: colors.text_muted,
+                ..button::text(theme, status)
+            }
+        }
+    })
+    .on_press(Message::CollectionSubTabSelected(target))
+}
+
 /// Authorization sub-tab: the auth every request set to "Inherit auth from
 /// parent" uses.
 fn render_collection_auth<'a>(
@@ -115,55 +165,37 @@ pub fn render_collection_root<'a>(
         .map(|c| c.storage_dir.is_some() || c.remote_dir.is_some())
         .unwrap_or(false);
 
-    // tab headers bavigation bar
+    // tab headers navigation bar
     let mut tabs_nav = row![
-        button(text("Docs"))
-            .style(if *active_sub_tab == CollectionSubTab::Documentation {
-                button::primary
-            } else {
-                button::secondary
-            })
-            .on_press(Message::CollectionSubTabSelected(
-                CollectionSubTab::Documentation
-            )),
-        button(text("Authorization"))
-            .style(if *active_sub_tab == CollectionSubTab::Authorization {
-                button::primary
-            } else {
-                button::secondary
-            })
-            .on_press(Message::CollectionSubTabSelected(
-                CollectionSubTab::Authorization
-            )),
-        button(text("Variables"))
-            .style(if *active_sub_tab == CollectionSubTab::Variables {
-                button::primary
-            } else {
-                button::secondary
-            })
-            .on_press(Message::CollectionSubTabSelected(
-                CollectionSubTab::Variables
-            )),
-        button(text("Scripts"))
-            .style(if *active_sub_tab == CollectionSubTab::Scripts {
-                button::primary
-            } else {
-                button::secondary
-            })
-            .on_press(Message::CollectionSubTabSelected(CollectionSubTab::Scripts)),
+        collection_tab_btn(
+            "Docs",
+            CollectionSubTab::Documentation,
+            *active_sub_tab == CollectionSubTab::Documentation,
+        ),
+        collection_tab_btn(
+            "Authorization",
+            CollectionSubTab::Authorization,
+            *active_sub_tab == CollectionSubTab::Authorization,
+        ),
+        collection_tab_btn(
+            "Variables",
+            CollectionSubTab::Variables,
+            *active_sub_tab == CollectionSubTab::Variables,
+        ),
+        collection_tab_btn(
+            "Scripts",
+            CollectionSubTab::Scripts,
+            *active_sub_tab == CollectionSubTab::Scripts,
+        ),
     ]
-    .spacing(10);
+    .spacing(8);
 
     if is_git_backed {
-        tabs_nav = tabs_nav.push(
-            button(text("Git"))
-                .style(if *active_sub_tab == CollectionSubTab::Git {
-                    button::primary
-                } else {
-                    button::secondary
-                })
-                .on_press(Message::CollectionSubTabSelected(CollectionSubTab::Git)),
-        );
+        tabs_nav = tabs_nav.push(collection_tab_btn(
+            "Git",
+            CollectionSubTab::Git,
+            *active_sub_tab == CollectionSubTab::Git,
+        ));
     }
 
     // content pane layout
@@ -247,9 +279,13 @@ pub fn render_collection_root<'a>(
                                     val_str.clone(),
                                 ),
                             ),
-                            button(text("X")).style(button::danger).on_press(
-                                Message::DeleteCollectionVariablePressed(collection_id, idx)
-                            ),
+                            button(text("\u{2715}").size(12))
+                                .padding([4, 8])
+                                .style(button::text)
+                                .on_press(Message::DeleteCollectionVariablePressed(
+                                    collection_id,
+                                    idx,
+                                )),
                         ]
                         .spacing(10)
                         .align_y(Alignment::Center);
@@ -319,7 +355,12 @@ pub fn render_folder_root<'a>(
     let collection = app.collections.iter().find(|c| c.id == docs.collection_id);
     column![
         text(folder_name.to_string()).size(28),
-        row![button(text("Docs")).style(button::primary)].spacing(10),
+        row![collection_tab_btn(
+            "Docs",
+            CollectionSubTab::Documentation,
+            true
+        )]
+        .spacing(10),
         container(crate::ui::docs_view::view(
             docs,
             collection,

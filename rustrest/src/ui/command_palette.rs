@@ -209,10 +209,20 @@ pub fn view<'a>(app: &'a Rustrest, state: &'a PaletteState) -> Element<'a, Messa
                         button::Style {
                             background: Some(theme.extended_palette().primary.weak.color.into()),
                             text_color: theme.extended_palette().primary.weak.text,
+                            border: iced::Border {
+                                radius: 6.0.into(),
+                                ..Default::default()
+                            },
                             ..button::text(theme, status)
                         }
                     } else {
-                        button::text(theme, status)
+                        button::Style {
+                            border: iced::Border {
+                                radius: 6.0.into(),
+                                ..Default::default()
+                            },
+                            ..button::text(theme, status)
+                        }
                     }
                 }),
         );

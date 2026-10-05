@@ -95,14 +95,17 @@ pub fn view<'a>(
         checkbox(state.use_tls)
             .label("TLS")
             .on_toggle(move |v| wrap(GrpcTabMessage::UseTlsToggled(v))),
-        button(text(if state.discovering {
-            "Discovering…"
-        } else {
-            "Discover"
-        }))
+        button(
+            text(if state.discovering {
+                "Discovering…"
+            } else {
+                "Discover"
+            })
+            .size(13),
+        )
         .on_press_maybe((!state.discovering).then(|| wrap(GrpcTabMessage::Discover)))
         .padding([8, 16])
-        .style(button::success),
+        .style(button::primary),
     ]
     .spacing(10)
     .align_y(Alignment::Center);
@@ -116,13 +119,14 @@ pub fn view<'a>(
         .on_press(wrap(GrpcTabMessage::UseReflectionModeSelected))
         .padding([6, 12])
         .style(if state.proto_files.is_empty() {
-            button::success
+            button::primary
         } else {
             button::secondary
         }),
         button("Import .proto files…")
             .on_press(wrap(GrpcTabMessage::PickProtoFiles))
-            .padding([6, 12]),
+            .padding([6, 12])
+            .style(button::secondary),
     ]
     .spacing(10)
     .align_y(Alignment::Center);

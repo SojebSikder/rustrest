@@ -1,6 +1,6 @@
 use crate::message::Message;
 use crate::ui::modal::{card, muted_text_color};
-use iced::widget::{button, column, container, row, text};
+use iced::widget::{Space, button, column, container, row, text};
 use iced::{Alignment, Element, Font, Length, Theme};
 use rustrest_core::http::PhaseTimings;
 use std::time::Duration;
@@ -60,15 +60,17 @@ fn size_row<'a>(label: &'a str, bytes: u64) -> Element<'a, Message> {
 }
 
 pub fn view_response_timing_modal(state: &ResponseTimingModalState) -> Element<'_, Message> {
-    let title = text("Response Time").size(18).font(Font {
+    let title = text("Response Timing").size(18).font(Font {
         weight: iced::font::Weight::Bold,
         ..Font::DEFAULT
     });
 
     let total = state.timings.total();
+    let reason = crate::ui::badge::status_code_reason(state.status);
     let subtitle = text(format!(
-        "Status {} \u{2022} Total {}",
+        "{} {} \u{2022} Total {}",
         state.status,
+        reason,
         fmt_ms(total)
     ))
     .size(12)
@@ -94,9 +96,9 @@ pub fn view_response_timing_modal(state: &ResponseTimingModalState) -> Element<'
     ]
     .spacing(6);
 
-    let close_btn = button(text("Close").size(14))
+    let close_btn = button(text("Close").size(13))
         .on_press(Message::CloseResponseTimingModal)
-        .padding([8, 16])
+        .padding([7, 18])
         .style(button::secondary);
 
     let body = column![
@@ -105,17 +107,23 @@ pub fn view_response_timing_modal(state: &ResponseTimingModalState) -> Element<'
         container(timings_section)
             .padding(12)
             .width(Length::Fill)
-            .style(container::bordered_box),
+            .style(|theme: &Theme| {
+                let mut s = container::bordered_box(theme);
+                s.border.radius = 6.0.into();
+                s
+            }),
         container(sizes_section)
             .padding(12)
             .width(Length::Fill)
-            .style(container::bordered_box),
-        container(close_btn)
-            .width(Length::Fill)
-            .align_x(iced::alignment::Horizontal::Right),
+            .style(|theme: &Theme| {
+                let mut s = container::bordered_box(theme);
+                s.border.radius = 6.0.into();
+                s
+            }),
+        row![Space::new().width(Length::Fill), close_btn].width(Length::Fill),
     ]
     .spacing(16)
     .padding(24);
 
-    card(body, 360.0)
+    card(body, 420.0)
 }

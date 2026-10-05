@@ -51,7 +51,7 @@ where
                     on_resize_start(key),
                 )
             }
-            None => text_input("Value", &item.value).padding(8).into(),
+            None => text_input("Value", &item.value).padding([6, 8]).into(),
         };
 
         let row_element = row![
@@ -77,14 +77,14 @@ where
                             },
                         )
                     })
-                    .padding(8),
+                    .padding([6, 8]),
                 on_show_key_menu(idx, item.key.clone()),
             ),
             value_field,
-            button("Delete")
+            button(text("✕").size(12))
                 .on_press(on_remove(idx))
-                .padding(8)
-                .style(button::danger)
+                .padding([5, 8])
+                .style(button::text)
         ]
         .spacing(8)
         .align_y(Alignment::Center);
@@ -94,7 +94,14 @@ where
 
     column![
         scrollable(content).height(Length::Fixed(150.0)),
-        button(add_button_label).on_press(on_add).padding(8)
+        button(
+            row![text("+").size(13), text(add_button_label).size(12)]
+                .spacing(6)
+                .align_y(Alignment::Center),
+        )
+        .on_press(on_add)
+        .padding([6, 12])
+        .style(button::secondary),
     ]
     .spacing(10)
     .into()
@@ -128,7 +135,7 @@ where
         let type_picker = pick_list(&FormDataType::ALL[..], Some(item.field_type), move |t| {
             on_type_change(idx, t)
         })
-        .padding(6);
+        .padding([6, 8]);
 
         // dynamically toggle value input field based on selected type
         let value_field: Element<'a, Message> = match item.field_type {
@@ -145,7 +152,7 @@ where
                         on_resize_start(key),
                     )
                 }
-                None => text_input("Value", &item.value).padding(8).into(),
+                None => text_input("Value", &item.value).padding([6, 8]).into(),
             },
             FormDataType::File => {
                 let pick_label = if item.files.is_empty() {
@@ -154,7 +161,8 @@ where
                     "Add Files"
                 };
                 let pick_btn = button(text(pick_label).size(12))
-                    .padding(6)
+                    .padding([4, 10])
+                    .style(button::secondary)
                     .on_press(on_file_pick(idx));
 
                 if item.files.is_empty() {
@@ -224,7 +232,7 @@ where
                             },
                         )
                     })
-                    .padding(8)
+                    .padding([6, 8])
                     .width(Length::Fixed(150.0)),
                 on_show_key_menu(idx, item.key.clone()),
             ),
@@ -272,16 +280,16 @@ where
                             },
                         )
                     })
-                    .padding(8)
+                    .padding([6, 8])
                     .width(Length::Fixed(170.0)),
             );
         }
 
         row_element = row_element.push(
-            button("Delete")
+            button(text("✕").size(12))
                 .on_press(on_remove(idx))
-                .padding(8)
-                .style(button::danger),
+                .padding([5, 8])
+                .style(button::text),
         );
 
         content = content.push(row_element);
@@ -302,7 +310,14 @@ where
                 .style(button::text),
         ],
         scrollable(content).height(Length::Fixed(150.0)),
-        button("Add Form Field").on_press(on_add).padding(8)
+        button(
+            row![text("+").size(13), text("Add Form Field").size(12)]
+                .spacing(6)
+                .align_y(Alignment::Center),
+        )
+        .on_press(on_add)
+        .padding([6, 12])
+        .style(button::secondary),
     ]
     .spacing(6)
     .into()

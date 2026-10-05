@@ -1,7 +1,7 @@
 use crate::ui::context_menu::{FieldTarget, with_context_menu};
 use crate::ui::modal::{card, danger_text_color, muted_text_color};
 use crate::{app::Rustrest, message::Message};
-use iced::widget::{button, column, container, pick_list, row, text, text_input};
+use iced::widget::{Space, button, column, pick_list, row, text, text_input};
 use iced::{Element, Font, Length, Theme};
 
 pub fn view_save_request_modal(app: &Rustrest) -> Option<Element<'_, Message>> {
@@ -31,7 +31,7 @@ pub fn view_save_request_modal(app: &Rustrest) -> Option<Element<'_, Message>> {
     let name_input = with_context_menu(
         text_input("e.g. Get user profile", &modal.request_name)
             .on_input(Message::SaveRequestNameChanged)
-            .padding(10)
+            .padding([8, 12])
             .size(14)
             .width(Length::Fill),
         Message::ShowTextFieldContextMenu(FieldTarget::SaveRequestName, modal.request_name.clone()),
@@ -52,7 +52,7 @@ pub fn view_save_request_modal(app: &Rustrest) -> Option<Element<'_, Message>> {
         Message::SaveRequestModalCollectionSelected(col_id)
     })
     .placeholder("Choose a collection...")
-    .padding(10)
+    .padding([8, 12])
     .width(Length::Fill);
 
     let no_collections_hint: Option<Element<Message>> = if app.collections.is_empty() {
@@ -68,21 +68,23 @@ pub fn view_save_request_modal(app: &Rustrest) -> Option<Element<'_, Message>> {
         None
     };
 
-    let cancel_btn = button(text("Cancel").size(14))
+    let cancel_btn = button(text("Cancel").size(13))
         .on_press(Message::CloseSaveRequestModal)
-        .padding([8, 16])
+        .padding([7, 16])
         .style(button::secondary);
 
-    let save_btn = button(text("Save").size(14))
+    let save_btn = button(text("Save").size(13))
         .on_press_maybe(
             modal
                 .selected_collection_id
                 .map(|_| Message::SaveRequestConfirmed),
         )
-        .padding([8, 16])
+        .padding([7, 18])
         .style(button::primary);
 
-    let footer = row![cancel_btn, save_btn].spacing(10).width(Length::Fill);
+    let footer = row![Space::new().width(Length::Fill), cancel_btn, save_btn]
+        .spacing(10)
+        .align_y(iced::Alignment::Center);
 
     let mut body = column![
         title,
@@ -95,11 +97,7 @@ pub fn view_save_request_modal(app: &Rustrest) -> Option<Element<'_, Message>> {
         body = body.push(hint);
     }
 
-    body = body.push(
-        container(footer)
-            .width(Length::Fill)
-            .align_x(iced::alignment::Horizontal::Right),
-    );
+    body = body.push(footer);
 
-    Some(card(body.spacing(18).padding(24), 380.0))
+    Some(card(body.spacing(18).padding(24), 420.0))
 }

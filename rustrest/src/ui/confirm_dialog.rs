@@ -1,7 +1,7 @@
 use crate::message::Message;
 use crate::ui::modal::{card, muted_text_color};
-use iced::widget::{button, column, container, row, text};
-use iced::{Font, Length, Theme};
+use iced::widget::{Space, button, column, row, text};
+use iced::{Alignment, Font, Length, Theme};
 
 /// generic yes/no confirmation dialog. `on_confirm` is dispatched (and the dialog closed)
 /// when the user accepts; cancelling just clears the dialog.
@@ -25,29 +25,22 @@ pub fn view_confirm_dialog(state: &ConfirmDialogState) -> iced::Element<'static,
             color: Some(muted_text_color(theme)),
         });
 
-    let cancel_btn = button(text("Cancel").size(14))
+    let cancel_btn = button(text("Cancel").size(13))
         .on_press(Message::ConfirmDialogCancelled)
-        .padding([8, 16])
+        .padding([7, 16])
         .style(button::secondary);
 
-    let confirm_btn = button(text(state.confirm_label.clone()).size(14))
+    let confirm_btn = button(text(state.confirm_label.clone()).size(13))
         .on_press(Message::ConfirmDialogAccepted)
-        .padding([8, 16])
+        .padding([7, 18])
         .style(button::danger);
 
-    let footer = row![cancel_btn, confirm_btn]
+    let footer = row![Space::new().width(Length::Fill), cancel_btn, confirm_btn]
         .spacing(10)
+        .align_y(Alignment::Center)
         .width(Length::Fill);
 
-    let body = column![
-        title,
-        body_text,
-        container(footer)
-            .width(Length::Fill)
-            .align_x(iced::alignment::Horizontal::Right),
-    ]
-    .spacing(18)
-    .padding(24);
+    let body = column![title, body_text, footer,].spacing(18).padding(24);
 
     card(body, 420.0)
 }

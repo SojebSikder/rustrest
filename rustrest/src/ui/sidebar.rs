@@ -156,15 +156,15 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
 
                 let mut header_row = row![
                     collapse_arrow,
-                    text(format!("📁 {}", col.info.name))
+                    text(&col.info.name)
                         .font(Font {
                             weight: iced::font::Weight::Bold,
                             ..Font::DEFAULT
                         })
-                        .size(14)
+                        .size(13)
                         .style(move |_theme: &iced::Theme| text::Style { color: name_color }),
                 ]
-                .spacing(4)
+                .spacing(6)
                 .align_y(Alignment::Center);
 
                 if collection_is_unsaved(app, col) {
@@ -179,7 +179,12 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
                         .map(|r| matches!(r, Ok(s) if !s.files.is_empty()))
                         .unwrap_or(false);
 
-                    header_row = header_row.push(text("🌿").size(11));
+                    header_row = header_row.push(
+                        text("git")
+                            .size(10)
+                            .font(Font::MONOSPACE)
+                            .color(crate::theme::colors().text_muted),
+                    );
                     if has_changes {
                         header_row = header_row
                             .push(text("●").size(9).color(crate::theme::colors().modified));
@@ -187,7 +192,12 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
                 }
 
                 if let Some(profile_id) = remote_profile_id {
-                    header_row = header_row.push(text("🔗").size(11));
+                    header_row = header_row.push(
+                        text("ssh")
+                            .size(10)
+                            .font(Font::MONOSPACE)
+                            .color(crate::theme::colors().text_muted),
+                    );
                     if !is_online {
                         header_row = header_row.push(Space::new().width(Length::Fill));
                         header_row = header_row.push(
@@ -245,10 +255,10 @@ fn render_plugins_section(app: &Rustrest) -> Element<'_, Message> {
         row![
             text("PLUGINS").size(10).style(text::secondary),
             Space::new().width(Length::Fill),
-            button(text("⚙").size(11))
+            button(text("Manage").size(11))
                 .on_press(Message::OpenPluginManagerPressed)
                 .style(button::text)
-                .padding(2),
+                .padding([2, 4]),
         ]
         .align_y(Alignment::Center)
     ]
@@ -298,9 +308,10 @@ pub fn render_env_selector(app: &Rustrest) -> Element<'_, Message> {
             Message::EnvSelected(Some(selected))
         })
         .placeholder("No Environment")
-        .width(Length::Fixed(150.0)),
+        .width(Length::Fixed(150.0))
+        .padding([4, 8]),
         // add Environment button
-        button(text("+").size(14))
+        button(text("+").size(13))
             .on_press(Message::CreateEnvironmentPressed)
             .padding([4, 8])
             .style(button::secondary)
@@ -312,16 +323,16 @@ pub fn render_env_selector(app: &Rustrest) -> Element<'_, Message> {
     if let Some(active_idx) = app.env.active_env_index {
         env_row = env_row
             .push(
-                button(text("⚙️").size(12))
+                button(text("⛭").size(13))
                     .on_press(Message::EditEnvironmentPressed(active_idx))
-                    .padding([4, 6])
+                    .padding([4, 8])
                     .style(button::secondary),
             )
             .push(
                 button(text("✕").size(12))
                     .on_press(Message::DeleteEnvironmentPressed(active_idx))
-                    .padding([4, 6])
-                    .style(button::danger),
+                    .padding([4, 8])
+                    .style(button::secondary),
             );
     }
 
@@ -353,18 +364,19 @@ pub fn render_workspace_selector(app: &Rustrest) -> Element<'_, Message> {
                 text_input("Workspace Name...", &current_name)
                     .on_input(move |txt| Message::WorkspaceNameChanged(active_id, txt))
                     .on_submit(Message::SaveWorkspaceNamePressed(active_id))
-                    .width(Length::Fixed(120.0))
-                    .padding(2),
+                    .width(Length::Fixed(140.0))
+                    .padding([4, 8]),
                 Message::ShowTextFieldContextMenu(
                     FieldTarget::WorkspaceName(active_id),
                     current_name.clone(),
                 ),
             ),
-            button(text("Save").size(11))
+            button(text("Save").size(12))
                 .on_press(Message::SaveWorkspaceNamePressed(active_id))
-                .style(button::text)
+                .padding([4, 10])
+                .style(button::primary)
         ]
-        .spacing(5)
+        .spacing(6)
         .align_y(Alignment::Center)
         .into()
     } else {
@@ -380,14 +392,15 @@ pub fn render_workspace_selector(app: &Rustrest) -> Element<'_, Message> {
                 Message::WorkspaceSelected(selected)
             })
             .placeholder("Workspace")
-            .width(Length::Fixed(140.0)),
-            button(text("+").size(14))
+            .width(Length::Fixed(140.0))
+            .padding([4, 8]),
+            button(text("+").size(13))
                 .on_press(Message::CreateWorkspacePressed)
                 .padding([4, 8])
                 .style(button::secondary),
             button(text("✎").size(12))
                 .on_press(Message::RenameWorkspacePressed(active_id))
-                .padding([4, 6])
+                .padding([4, 8])
                 .style(button::secondary),
         ]
         .spacing(6)
@@ -397,8 +410,8 @@ pub fn render_workspace_selector(app: &Rustrest) -> Element<'_, Message> {
             ws_row = ws_row.push(
                 button(text("✕").size(12))
                     .on_press(Message::DeleteWorkspacePressed(active_id))
-                    .padding([4, 6])
-                    .style(button::danger),
+                    .padding([4, 8])
+                    .style(button::secondary),
             );
         }
 
@@ -482,10 +495,9 @@ fn render_sidebar_item<'a>(
                     .style(button::text)
                     .padding(2);
 
-                let mut title_row =
-                    row![collapse_arrow, text(format!("📁 {}", folder.name)).size(14)]
-                        .spacing(4)
-                        .align_y(Alignment::Center);
+                let mut title_row = row![collapse_arrow, text(&folder.name).size(13)]
+                    .spacing(6)
+                    .align_y(Alignment::Center);
 
                 if folder_is_unsaved(app, &folder.item) {
                     title_row = title_row.push(unsaved_dot());
@@ -590,7 +602,7 @@ fn render_sidebar_item<'a>(
                 })
                 .into()
             } else {
-                let mut label_row = row![].spacing(4).align_y(Alignment::Center);
+                let mut label_row = row![].spacing(6).align_y(Alignment::Center);
                 if has_saved_responses {
                     label_row = label_row.push(
                         button(text(if is_responses_collapsed { "▶" } else { "▼" }).size(9))
@@ -599,9 +611,11 @@ fn render_sidebar_item<'a>(
                             .padding(1),
                     );
                 }
-                label_row = label_row.push(
-                    text(format!("{} - {}", req_node.request.method, req_node.name)).size(13),
-                );
+                label_row = label_row.push(crate::ui::badge::method_badge(
+                    &req_node.request.method,
+                    Some(36.0),
+                ));
+                label_row = label_row.push(text(&req_node.name).size(13));
                 if request_is_unsaved(app, req_node) {
                     label_row = label_row.push(unsaved_dot());
                 }
@@ -705,12 +719,12 @@ fn render_saved_response_row<'a>(
         .into()
     } else {
         let title_row = row![
-            text("📄").size(11),
+            text("•").size(11).color(crate::theme::colors().text_muted),
             text(example.name.clone())
                 .size(12)
                 .color(crate::theme::colors().text_muted),
         ]
-        .spacing(4)
+        .spacing(6)
         .align_y(Alignment::Center);
 
         mouse_area(container(title_row).padding(Padding {

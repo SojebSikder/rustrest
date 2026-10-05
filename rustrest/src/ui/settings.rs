@@ -34,17 +34,49 @@ pub fn view_settings_modal(app: &Rustrest) -> iced::Element<'_, Message> {
         ..Font::DEFAULT
     });
 
-    let mut nav = column![].spacing(4).width(Length::Fixed(140.0));
+    let mut nav = column![].spacing(6).width(Length::Fixed(140.0));
     for tab in SettingsTab::ALL {
+        let is_active = app.settings.settings_tab == tab;
         nav = nav.push(
             button(text(tab.label()).size(14))
                 .on_press(Message::SettingsTabSelected(tab))
                 .width(Length::Fill)
-                .padding([8, 12])
-                .style(if app.settings.settings_tab == tab {
-                    button::primary
-                } else {
-                    button::text
+                .padding([8, 14])
+                .style(move |theme: &Theme, status| {
+                    let palette = theme.extended_palette();
+                    if is_active {
+                        let mut base = palette.primary.base.color;
+                        base.a = 0.14;
+                        button::Style {
+                            background: Some(iced::Background::Color(base)),
+                            text_color: palette.primary.base.color,
+                            border: iced::Border {
+                                color: palette.primary.base.color,
+                                width: 1.0,
+                                radius: 6.0.into(),
+                            },
+                            ..Default::default()
+                        }
+                    } else {
+                        match status {
+                            button::Status::Hovered => button::Style {
+                                background: Some(iced::Background::Color(
+                                    palette.background.weak.color,
+                                )),
+                                text_color: palette.background.weak.text,
+                                border: iced::Border {
+                                    radius: 6.0.into(),
+                                    ..Default::default()
+                                },
+                                ..Default::default()
+                            },
+                            _ => button::Style {
+                                background: None,
+                                text_color: palette.background.base.text,
+                                ..Default::default()
+                            },
+                        }
+                    }
                 }),
         );
     }
@@ -69,13 +101,19 @@ pub fn view_settings_modal(app: &Rustrest) -> iced::Element<'_, Message> {
     .spacing(18)
     .padding(24);
 
-    card(body, 560.0)
+    card(body, 580.0)
 }
 
 fn section_label(label: &str) -> iced::widget::Text<'_> {
-    text(label).size(12).style(|theme: &Theme| text::Style {
-        color: Some(muted_text_color(theme)),
-    })
+    text(label)
+        .size(12)
+        .font(Font {
+            weight: iced::font::Weight::Bold,
+            ..Font::DEFAULT
+        })
+        .style(|theme: &Theme| text::Style {
+            color: Some(muted_text_color(theme)),
+        })
 }
 
 fn view_theme_tab(app: &Rustrest) -> iced::Element<'_, Message> {
@@ -84,14 +122,52 @@ fn view_theme_tab(app: &Rustrest) -> iced::Element<'_, Message> {
 
     let mut modes = row![].spacing(6);
     for mode in ThemeMode::ALL {
+        let is_active = selection.mode() == Some(mode);
         modes = modes.push(
             button(text(mode.label()).size(13))
                 .on_press(Message::ThemeModeSelected(mode))
-                .padding([6, 12])
-                .style(if selection.mode() == Some(mode) {
-                    button::primary
-                } else {
-                    button::secondary
+                .padding([6, 14])
+                .style(move |theme: &Theme, status| {
+                    let palette = theme.extended_palette();
+                    if is_active {
+                        let mut base = palette.primary.base.color;
+                        base.a = 0.14;
+                        button::Style {
+                            background: Some(iced::Background::Color(base)),
+                            text_color: palette.primary.base.color,
+                            border: iced::Border {
+                                color: palette.primary.base.color,
+                                width: 1.0,
+                                radius: 6.0.into(),
+                            },
+                            ..Default::default()
+                        }
+                    } else {
+                        match status {
+                            button::Status::Hovered => button::Style {
+                                background: Some(iced::Background::Color(
+                                    palette.background.weak.color,
+                                )),
+                                text_color: palette.background.weak.text,
+                                border: iced::Border {
+                                    color: palette.background.weak.color,
+                                    width: 1.0,
+                                    radius: 6.0.into(),
+                                },
+                                ..Default::default()
+                            },
+                            _ => button::Style {
+                                background: None,
+                                text_color: palette.background.base.text,
+                                border: iced::Border {
+                                    color: palette.background.weak.color,
+                                    width: 1.0,
+                                    radius: 6.0.into(),
+                                },
+                                ..Default::default()
+                            },
+                        }
+                    }
                 }),
         );
     }
