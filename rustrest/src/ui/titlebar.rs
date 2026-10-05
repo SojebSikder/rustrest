@@ -3,7 +3,7 @@
 
 use crate::app::Rustrest;
 use crate::message::Message;
-use iced::widget::{Space, button, column, container, mouse_area, row, text};
+use iced::widget::{Space, button, column, container, mouse_area, row, stack, text};
 use iced::{Alignment, Border, Color, Element, Length, Padding};
 
 /// Height of the title bar in logical pixels - keep in sync with the
@@ -185,3 +185,136 @@ fn win_btn_close(
     .on_press(msg)
     .into()
 }
+
+/// Renders invisible edge and corner handles along the perimeter of the window
+/// to allow drag-resizing an undecorated (`decorations: false`) window.
+pub fn render_window_resize_handles<'a>() -> Element<'a, Message> {
+    const HANDLE_THICKNESS: f32 = 5.0;
+    const CORNER_SIZE: f32 = 14.0;
+
+    // Left edge
+    let left_edge = container(
+        mouse_area(
+            container(Space::new())
+                .width(Length::Fixed(HANDLE_THICKNESS))
+                .height(Length::Fill),
+        )
+        .interaction(iced::mouse::Interaction::ResizingHorizontally)
+        .on_press(Message::WindowResizeDrag(iced::window::Direction::West)),
+    )
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .align_x(Alignment::Start);
+
+    // Right edge
+    let right_edge = container(
+        mouse_area(
+            container(Space::new())
+                .width(Length::Fixed(HANDLE_THICKNESS))
+                .height(Length::Fill),
+        )
+        .interaction(iced::mouse::Interaction::ResizingHorizontally)
+        .on_press(Message::WindowResizeDrag(iced::window::Direction::East)),
+    )
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .align_x(Alignment::End);
+
+    // Bottom edge
+    let bottom_edge = container(
+        mouse_area(
+            container(Space::new())
+                .width(Length::Fill)
+                .height(Length::Fixed(HANDLE_THICKNESS)),
+        )
+        .interaction(iced::mouse::Interaction::ResizingVertically)
+        .on_press(Message::WindowResizeDrag(iced::window::Direction::South)),
+    )
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .align_y(Alignment::End);
+
+    // Top edge (excludes the top-right 140px window control button area)
+    let top_row = row![
+        mouse_area(
+            container(Space::new())
+                .width(Length::Fill)
+                .height(Length::Fixed(HANDLE_THICKNESS)),
+        )
+        .interaction(iced::mouse::Interaction::ResizingVertically)
+        .on_press(Message::WindowResizeDrag(iced::window::Direction::North)),
+        Space::new().width(Length::Fixed(140.0)),
+    ]
+    .width(Length::Fill)
+    .height(Length::Fixed(HANDLE_THICKNESS));
+
+    let top_edge = container(top_row)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_y(Alignment::Start);
+
+    // Bottom-Left corner
+    let bottom_left_corner = container(
+        mouse_area(
+            container(Space::new())
+                .width(Length::Fixed(CORNER_SIZE))
+                .height(Length::Fixed(CORNER_SIZE)),
+        )
+        .interaction(iced::mouse::Interaction::ResizingHorizontally)
+        .on_press(Message::WindowResizeDrag(
+            iced::window::Direction::SouthWest,
+        )),
+    )
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .align_x(Alignment::Start)
+    .align_y(Alignment::End);
+
+    // Bottom-Right corner
+    let bottom_right_corner = container(
+        mouse_area(
+            container(Space::new())
+                .width(Length::Fixed(CORNER_SIZE))
+                .height(Length::Fixed(CORNER_SIZE)),
+        )
+        .interaction(iced::mouse::Interaction::ResizingHorizontally)
+        .on_press(Message::WindowResizeDrag(
+            iced::window::Direction::SouthEast,
+        )),
+    )
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .align_x(Alignment::End)
+    .align_y(Alignment::End);
+
+    // Top-Left corner
+    let top_left_corner = container(
+        mouse_area(
+            container(Space::new())
+                .width(Length::Fixed(CORNER_SIZE))
+                .height(Length::Fixed(CORNER_SIZE)),
+        )
+        .interaction(iced::mouse::Interaction::ResizingHorizontally)
+        .on_press(Message::WindowResizeDrag(
+            iced::window::Direction::NorthWest,
+        )),
+    )
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .align_x(Alignment::Start)
+    .align_y(Alignment::Start);
+
+    stack![
+        left_edge,
+        right_edge,
+        bottom_edge,
+        top_edge,
+        bottom_left_corner,
+        bottom_right_corner,
+        top_left_corner,
+    ]
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .into()
+}
+

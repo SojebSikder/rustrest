@@ -2008,14 +2008,27 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             iced::window::minimize(app.main_window_id, true)
         }
         Message::TitleBarMaximizePressed => {
-            let maximized = !app.is_window_maximized;
-            app.is_window_maximized = maximized;
-            iced::window::maximize(app.main_window_id, maximized)
+            let target = !app.is_window_maximized;
+            app.is_window_maximized = target;
+            Task::batch([
+                iced::window::maximize(app.main_window_id, target),
+                iced::window::is_maximized(app.main_window_id).map(Message::WindowIsMaximized),
+            ])
         }
         Message::TitleBarClosePressed => update(app, Message::AppExit),
         Message::WindowIsMaximized(maximized) => {
             app.is_window_maximized = maximized;
             Task::none()
+        }
+        Message::CheckWindowMaximized(id) => {
+            iced::window::is_maximized(id).map(Message::WindowIsMaximized)
+        }
+        Message::WindowResizeDrag(direction) => {
+            if !app.is_window_maximized {
+                iced::window::drag_resize(app.main_window_id, direction)
+            } else {
+                Task::none()
+            }
         }
     }
 }

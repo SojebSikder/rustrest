@@ -18,7 +18,6 @@ mod utils;
 mod workspace;
 
 use crate::ui::about_modal::view_about_modal;
-use crate::ui::titlebar::{TITLEBAR_HEIGHT, render_titlebar};
 use crate::ui::command_palette::view as view_command_palette;
 use crate::ui::commit_modal::view_commit_modal;
 use crate::ui::confirm_dialog::view_confirm_dialog;
@@ -34,6 +33,7 @@ use crate::ui::resize_handle::{DividerOrientation, resize_handle};
 use crate::ui::response_timing_modal::view_response_timing_modal;
 use crate::ui::save_request_model::save_request_model::view_save_request_modal;
 use crate::ui::settings::view_settings_modal;
+use crate::ui::titlebar::{TITLEBAR_HEIGHT, render_titlebar, render_window_resize_handles};
 use crate::ui::tooltip::with_tooltip;
 use app::Rustrest;
 use iced::futures::{SinkExt, StreamExt, stream::BoxStream};
@@ -303,6 +303,9 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
     let close_requested = event::listen_with(|event, _status, window_id| match event {
         Event::Window(iced::window::Event::CloseRequested) => {
             Some(Message::WindowCloseRequested(window_id))
+        }
+        Event::Window(iced::window::Event::Resized(_)) => {
+            Some(Message::CheckWindowMaximized(window_id))
         }
         _ => None,
     });
@@ -823,10 +826,15 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
     }
 
     // custom titlebar (sits above all content as top-most non-overlay layer)
-    let menu_strip = render_menu_bar(&app.overlays.menu_state, &menu_structure)
-        .map(Message::MenuInteraction);
+    let menu_strip =
+        render_menu_bar(&app.overlays.menu_state, &menu_structure).map(Message::MenuInteraction);
     let titlebar = render_titlebar(app, menu_strip);
     main_interface_stack = main_interface_stack.push(titlebar);
+
+    // edge resize handles for borderless window (active only when not maximized)
+    if !app.is_window_maximized {
+        main_interface_stack = main_interface_stack.push(render_window_resize_handles());
+    }
 
     // dropdown menu overlay
     if let Some(overlay) = render_menu_overlay(&app.overlays.menu_state, &menu_structure) {
