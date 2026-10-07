@@ -1,4 +1,4 @@
-//! Rustrest Cloud modal: sign in, manage teams and members, open or upload collections and resolve sync conflicts.
+//! Rustrest Cloud modal: sign in, manage teams and members, open or upload collections and environments, and resolve sync conflicts.
 
 use crate::app::Rustrest;
 use crate::app::cloud::CloudModal;
@@ -354,7 +354,12 @@ fn signed_in_view<'a>(app: &'a Rustrest, modal: &'a CloudModal) -> Column<'a, Me
     if let Some(upload) = upload_section(app, modal, team) {
         body = body.push(upload);
     }
+    if let Some(upload) = upload_environment_section(app, modal, team) {
+        body = body.push(upload);
+    }
+
     body = body.push(collections_section(app, modal, team));
+    body = body.push(environments_section(app, modal, team));
     if let Some(team) = team.filter(|t| !t.is_personal) {
         body = body.push(members_section(app, modal, team));
     }
@@ -512,6 +517,135 @@ fn upload_section<'a>(
         content = content.push(muted("You need the editor role in this team to upload."));
     }
     Some(section("Upload", None, content))
+}
+
+fn upload_environment_section<'a>(
+    app: &'a Rustrest,
+    modal: &'a CloudModal,
+    team: Option<&'a Team>,
+) -> Option<Element<'a, Message>> {
+    let env = modal
+        .upload_environment
+        .and_then(|idx| app.env.environments.get(idx))?;
+    let can_edit = team.is_some_and(|t| t.role.can_edit());
+    let local = env.local_keys.len();
+
+    let mut content = column![
+        row![
+            fill_text(format!("Upload '{}' to this team", env.name), 13),
+            button(text("Upload").size(13))
+                .padding([6, 16])
+                .style(button::primary)
+                .on_press_maybe(
+                    (can_edit && !modal.busy).then_some(Message::CloudUploadEnvironment)
+                ),
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center),
+        muted(match local {
+            0 => "Every variable's value will be shared with the team. Uncheck Sync on a \
+                  variable in the editor to keep its value on this machine."
+                .to_string(),
+            n => format!(
+                "{n} local variable(s) keep their values on this machine; teammates only \
+                 see their keys."
+            ),
+        }),
+    ]
+    .spacing(6);
+    if !can_edit && team.is_some() {
+        content = content.push(muted("You need the editor role in this team to upload."));
+    }
+    Some(section("Upload environment", None, content))
+}
+
+fn environments_section<'a>(
+    app: &'a Rustrest,
+    modal: &'a CloudModal,
+    team: Option<&'a Team>,
+) -> Element<'a, Message> {
+    let can_edit = team.is_some_and(|t| t.role.can_edit());
+
+    let mut rows: Vec<Element<'a, Message>> = Vec::new();
+    for remote in &modal.environments {
+        let open = app
+            .env
+            .environments
+            .iter()
+            .any(|e| e.cloud.as_ref().is_some_and(|l| l.id == remote.id));
+        let confirming = modal.confirm_delete_environment.as_ref() == Some(&remote.id);
+
+        let mut entry = row![fill_text(remote.name.as_str(), 13)]
+            .spacing(8)
+            .align_y(Alignment::Center);
+        if can_edit && !confirming {
+            entry = entry.push(
+                small_button("Delete")
+                    .on_press_maybe(
+                        (!modal.busy).then(|| Message::CloudDeleteEnvironment(remote.id.clone())),
+                    )
+                    .style(button::secondary),
+            );
+        }
+        entry = entry.push(if open {
+            badge("Open", crate::theme::colors().success)
+        } else {
+            small_button("Open")
+                .on_press_maybe(
+                    (!modal.busy).then(|| Message::CloudOpenEnvironment(remote.id.clone())),
+                )
+                .style(button::primary)
+                .into()
+        });
+
+        let mut item = column![entry].spacing(8);
+        if confirming {
+            item = item.push(callout(
+                column![
+                    fill_text(format!("Delete '{}'?", remote.name), 12).font(semibold()),
+                    muted(
+                        "It's deleted for everyone in the team and closed here. Copies open \
+                         on someone else's machine are kept as local environments."
+                    ),
+                    row![
+                        Space::new().width(Length::Fill),
+                        small_button("Cancel")
+                            .on_press(Message::CloudCancelDeleteEnvironment)
+                            .style(button::secondary),
+                        small_button("Delete")
+                            .on_press_maybe(
+                                (!modal.busy)
+                                    .then(|| Message::CloudDeleteEnvironment(remote.id.clone())),
+                            )
+                            .style(button::danger),
+                    ]
+                    .spacing(8),
+                ]
+                .spacing(6),
+                true,
+            ));
+        }
+        rows.push(item.into());
+    }
+
+    let content: Element<'a, Message> = if rows.is_empty() {
+        muted(if modal.busy {
+            "Loading..."
+        } else {
+            "No environments yet. Open an environment's settings and choose \
+             \"Upload to Cloud...\" to share it."
+        })
+        .into()
+    } else {
+        divided(rows).into()
+    };
+    let count = (!modal.environments.is_empty()).then(|| {
+        badge(
+            modal.environments.len().to_string(),
+            crate::theme::colors().text_muted,
+        )
+    });
+    section("Environments", count, content)
 }
 
 fn collections_section<'a>(

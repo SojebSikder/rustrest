@@ -1,6 +1,5 @@
 //! Environments (the `pm.environment`-style variable sets a request can be
-//! sent against) and the inline environment editor's rename/variable-edit
-//! state.
+//! sent against) and the inline environment editor's rename/variable-edit state.
 
 use super::Rustrest;
 use crate::collection::env::Environment;
@@ -19,12 +18,8 @@ pub struct EnvState {
     pub globals: Vec<KeyValuePair>,
 }
 
-pub fn selected(app: &mut Rustrest, selected_name: Option<String>) -> Task<Message> {
-    if let Some(name) = selected_name {
-        app.env.active_env_index = app.env.environments.iter().position(|e| e.name == name);
-    } else {
-        app.env.active_env_index = None;
-    }
+pub fn selected(app: &mut Rustrest, idx: Option<usize>) -> Task<Message> {
+    app.env.active_env_index = idx.filter(|i| *i < app.env.environments.len());
     Task::none()
 }
 
@@ -35,6 +30,7 @@ pub fn create_pressed(app: &mut Rustrest) -> Task<Message> {
     app.env.environments.push(Environment {
         name: new_env_name,
         variables: Vec::new(),
+        ..Environment::default()
     });
 
     let new_idx = app.env.environments.len() - 1;
@@ -88,10 +84,14 @@ pub fn edit_pressed(app: &mut Rustrest, idx: usize) -> Task<Message> {
 }
 
 pub fn close_editor_pressed(app: &mut Rustrest) -> Task<Message> {
-    app.env.editing_env_index = None;
+    let closed = app.env.editing_env_index.take();
     app.env.editing_env_name = false;
     app.env.env_var_value_contents = Vec::new();
-    Task::none()
+
+    match closed {
+        Some(idx) => super::cloud_env::editor_closed(app, idx),
+        None => Task::none(),
+    }
 }
 
 pub fn add_variable_pressed(app: &mut Rustrest, env_idx: usize) -> Task<Message> {
@@ -113,7 +113,12 @@ pub fn delete_variable_pressed(
 ) -> Task<Message> {
     if let Some(env) = app.env.environments.get_mut(env_idx) {
         if var_idx < env.variables.len() {
-            env.variables.remove(var_idx);
+            let removed = env.variables.remove(var_idx);
+            let key = removed.key.trim();
+
+            if !env.variables.iter().any(|v| v.key.trim() == key) {
+                env.local_keys.remove(key);
+            }
             if app.env.editing_env_index == Some(env_idx)
                 && var_idx < app.env.env_var_value_contents.len()
             {
@@ -132,7 +137,40 @@ pub fn variable_key_changed(
 ) -> Task<Message> {
     if let Some(env) = app.env.environments.get_mut(env_idx) {
         if let Some(var) = env.variables.get_mut(var_idx) {
-            var.key = key;
+            let old = std::mem::replace(&mut var.key, key).trim().to_string();
+            let new = var.key.trim().to_string();
+
+            // a local variable stays local while its key is being edited
+            if old != new && env.local_keys.contains(&old) {
+                if !env.variables.iter().any(|v| v.key.trim() == old) {
+                    env.local_keys.remove(&old);
+                }
+                if !new.is_empty() {
+                    env.local_keys.insert(new);
+                }
+            }
+        }
+    }
+    Task::none()
+}
+
+/// `sync` false keeps the variable's value on this machine
+pub fn variable_sync_toggled(
+    app: &mut Rustrest,
+    env_idx: usize,
+    var_idx: usize,
+    sync: bool,
+) -> Task<Message> {
+    if let Some(env) = app.env.environments.get_mut(env_idx) {
+        if let Some(key) = env.variables.get(var_idx).map(|v| v.key.trim().to_string()) {
+            if key.is_empty() {
+                return Task::none();
+            }
+            if sync {
+                env.local_keys.remove(&key);
+            } else {
+                env.local_keys.insert(key);
+            }
         }
     }
     Task::none()

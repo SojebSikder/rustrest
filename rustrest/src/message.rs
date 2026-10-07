@@ -252,7 +252,8 @@ pub enum Message {
     // environment Actions
     EditEnvironmentPressed(usize),
     CloseEnvEditorPressed,
-    EnvSelected(Option<String>),
+    /// index into the environments, None = no environment
+    EnvSelected(Option<usize>),
     CreateEnvironmentPressed,
     DeleteEnvironmentPressed(usize),
     AddEnvVariablePressed(usize),
@@ -275,6 +276,16 @@ pub enum Message {
         var_idx: usize,
         is_active: bool,
     },
+    /// whether the variable's value syncs to the cloud (false = stays local)
+    EnvVariableSyncToggled {
+        env_idx: usize,
+        var_idx: usize,
+        sync: bool,
+    },
+    /// opens the cloud modal to upload this environment
+    OpenCloudEnvUpload(usize),
+    /// stops syncing the environment, keeping it as a local one
+    CloudUnlinkEnvironment(usize),
 
     RenameEnvironmentPressed(usize),
     EnvNameChanged(usize, String),
@@ -654,6 +665,35 @@ pub enum Message {
     CloudRealtimeDeleted(String),
     /// app collection id, item uid (None = the collection settings)
     CloudResolve(usize, Option<String>, rustrest_cloud::Resolution),
+    /// team id, its environments
+    CloudEnvironmentsLoaded(
+        String,
+        Result<Vec<rustrest_cloud::wire::CloudEnvironment>, String>,
+    ),
+    CloudUploadEnvironment,
+    /// cloud environment id
+    CloudOpenEnvironment(String),
+    /// cloud environment id; the first press only asks for confirmation
+    CloudDeleteEnvironment(String),
+    CloudCancelDeleteEnvironment,
+    /// cloud environment id, toast
+    CloudEnvironmentDeleted(String, Result<String, String>),
+    /// team id: sync its linked environments
+    CloudEnvSync(String),
+    CloudEnvSynced(
+        String,
+        Result<
+            Vec<(
+                rustrest_cloud::env_sync::EnvJob,
+                rustrest_cloud::env_sync::EnvOutcome,
+            )>,
+            rustrest_cloud::CloudError,
+        >,
+    ),
+    /// team id, environment id, its new rev
+    CloudRealtimeEnvChanged(String, String, i64),
+    /// team id, environment id (None = every environment of the team)
+    CloudRealtimeEnvDeleted(String, Option<String>),
     WindowCloseRequested(iced::window::Id),
 
     // native plugins (wasm)

@@ -425,14 +425,7 @@ pub fn send_pressed(app: &mut Rustrest) -> Task<Message> {
             if let Some(env) = app.env.environments.get_mut(idx) {
                 for (k, v) in &script_vars {
                     if script_vars_snapshot.get(k) != Some(v) {
-                        if let Some(existing) = env.variables.iter_mut().find(|kv| &kv.key == k) {
-                            existing.value = v.clone();
-                            existing.is_active = true;
-                        } else {
-                            let mut kv = KeyValuePair::new(k, v);
-                            kv.is_active = true;
-                            env.variables.push(kv);
-                        }
+                        env.set_var(k, v.clone());
                     }
                 }
             }
@@ -766,18 +759,8 @@ pub fn response_received(
                         if let Some(idx) = app.env.active_env_index {
                             if let Some(env) = app.env.environments.get_mut(idx) {
                                 for (k, v) in updated_vars {
-                                    if base_vars_snapshot.get(&k) == Some(&v) {
-                                        continue;
-                                    }
-                                    if let Some(existing) =
-                                        env.variables.iter_mut().find(|kv| kv.key == k)
-                                    {
-                                        existing.value = v;
-                                        existing.is_active = true;
-                                    } else {
-                                        let mut kv = KeyValuePair::new(&k, &v);
-                                        kv.is_active = true;
-                                        env.variables.push(kv);
+                                    if base_vars_snapshot.get(&k) != Some(&v) {
+                                        env.set_var(&k, v);
                                     }
                                 }
                             }
@@ -847,16 +830,8 @@ pub fn response_received(
             if let Some(idx) = app.env.active_env_index {
                 if let Some(env) = app.env.environments.get_mut(idx) {
                     for (k, v) in plugin_ctx.variables {
-                        if plugin_vars_snapshot.get(&k) == Some(&v) {
-                            continue;
-                        }
-                        if let Some(existing) = env.variables.iter_mut().find(|kv| kv.key == k) {
-                            existing.value = v;
-                            existing.is_active = true;
-                        } else {
-                            let mut kv = KeyValuePair::new(&k, &v);
-                            kv.is_active = true;
-                            env.variables.push(kv);
+                        if plugin_vars_snapshot.get(&k) != Some(&v) {
+                            env.set_var(&k, v);
                         }
                     }
                 }

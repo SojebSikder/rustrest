@@ -455,10 +455,11 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         Subscription::run_with(watch_targets, app::file_watch::watch_stream)
     };
 
-    // Rustrest Cloud: live change hints for every cloud collection, plus a
+    // Rustrest Cloud: live change hints for every cloud collection and environment, plus a
     // slow periodic sync as a fallback for anything the socket missed
+    let env_teams = app::cloud_env::linked_teams(app);
     let (cloud_realtime_sub, cloud_poll_sub) = match &app.cloud.client {
-        Some(client) if !app.cloud.linked.is_empty() => {
+        Some(client) if !app.cloud.linked.is_empty() || !env_teams.is_empty() => {
             let target = app::cloud::RealtimeTarget {
                 client: client.clone(),
                 collection_ids: app
@@ -467,6 +468,7 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
                     .into_iter()
                     .map(|(id, _)| id)
                     .collect(),
+                team_ids: env_teams,
             };
             (
                 Subscription::run_with(target, app::cloud::realtime_stream),

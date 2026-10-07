@@ -18,6 +18,8 @@ pub enum CloudError {
     Conflicts(Vec<WireConflict>),
     /// the collection meta changed under us; carries the server's copy
     MetaConflict(CloudCollection),
+    /// the environment changed under us; carries the server's copy
+    EnvironmentConflict(Box<CloudEnvironment>),
     /// any other non-2xx answer
     Api {
         status: u16,
@@ -35,6 +37,7 @@ impl std::fmt::Display for CloudError {
                 write!(f, "{} change(s) conflicted with the server", c.len())
             }
             CloudError::MetaConflict(_) => write!(f, "Collection settings changed on the server"),
+            CloudError::EnvironmentConflict(_) => write!(f, "Environment changed on the server"),
             CloudError::Api { status, message } => write!(f, "Cloud error {status}: {message}"),
             CloudError::Network(e) => write!(f, "Couldn't reach Rustrest Cloud: {e}"),
             CloudError::Decode(e) => write!(f, "Unexpected response from Rustrest Cloud: {e}"),
@@ -47,6 +50,10 @@ impl std::error::Error for CloudError {}
 impl CloudError {
     pub fn is_not_found(&self) -> bool {
         matches!(self, CloudError::Api { status: 404, .. })
+    }
+
+    pub fn is_forbidden(&self) -> bool {
+        matches!(self, CloudError::Api { status: 403, .. })
     }
 }
 
@@ -389,14 +396,16 @@ impl CloudClient {
             .await
     }
 
+    /// `id` lets the client pick the new environment's id
     pub async fn create_environment(
         &self,
         team_id: &str,
+        id: Option<&str>,
         name: &str,
         data: &Value,
     ) -> Result<CloudEnvironment, CloudError> {
         let body = EnvironmentBody {
-            id: None,
+            id,
             name,
             data,
             base_rev: 0,
@@ -422,8 +431,13 @@ impl CloudClient {
             data,
             base_rev,
         };
-        self.call(Method::PUT, &format!("/api/environments/{id}"), Some(&body))
-            .await
+        let path = format!("/api/environments/{id}");
+        let (status, text) = self.authed(Method::PUT, &path, Some(&body)).await?;
+        if status == StatusCode::CONFLICT {
+            let current: CloudEnvironment = required(envelope(&text)?.data)?;
+            return Err(CloudError::EnvironmentConflict(Box::new(current)));
+        }
+        required(check(status, &text)?)
     }
 
     pub async fn delete_environment(&self, id: &str) -> Result<(), CloudError> {
