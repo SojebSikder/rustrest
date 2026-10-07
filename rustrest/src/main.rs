@@ -92,6 +92,7 @@ enum ActiveOverlay {
     ThemeSelector,
     ResponseTiming,
     About,
+    Notifications,
 }
 
 macro_rules! outside_click_sub {
@@ -131,7 +132,9 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         Subscription::none()
     };
 
-    let active_overlay = if app.theme.selector.is_some() {
+    let active_overlay = if app.cloud.notifications.open {
+        Some(ActiveOverlay::Notifications)
+    } else if app.theme.selector.is_some() {
         Some(ActiveOverlay::ThemeSelector)
     } else if app.overlays.command_palette.is_some() {
         Some(ActiveOverlay::CommandPalette)
@@ -194,7 +197,8 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
             Some(ActiveOverlay::ThemeSelector) => {
                 outside_click_sub!(Message::ThemeSelectorClosed)
             }
-            None => Subscription::none(),
+            // closed by `notification_center_sub` regardless of the setting
+            Some(ActiveOverlay::Notifications) | None => Subscription::none(),
         }
     } else {
         Subscription::none()
@@ -236,6 +240,9 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         Some(ActiveOverlay::Cloud) => escape_close_sub!(Message::CloseCloudModal),
         Some(ActiveOverlay::CommandPalette) => escape_close_sub!(Message::CommandPaletteClosed),
         Some(ActiveOverlay::ThemeSelector) => escape_close_sub!(Message::ThemeSelectorClosed),
+        Some(ActiveOverlay::Notifications) => {
+            escape_close_sub!(Message::CloseNotificationCenter)
+        }
         None => Subscription::none(),
     };
 
@@ -459,11 +466,12 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         Subscription::run_with(watch_targets, app::file_watch::watch_stream)
     };
 
-    // Rustrest Cloud: live change hints for every cloud collection and environment, plus a
-    // slow periodic sync as a fallback for anything the socket missed
+    // Rustrest Cloud: notifications plus live change hints for every cloud collection and
+    // environment, and a slow periodic sync as a fallback for anything the socket missed
     let env_teams = app::cloud_env::linked_teams(app);
     let (cloud_realtime_sub, cloud_poll_sub) = match &app.cloud.client {
-        Some(client) if !app.cloud.linked.is_empty() || !env_teams.is_empty() => {
+        Some(client) => {
+            let linked = !app.cloud.linked.is_empty() || !env_teams.is_empty();
             let target = app::cloud::RealtimeTarget {
                 client: client.clone(),
                 collection_ids: app
@@ -476,16 +484,36 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
             };
             (
                 Subscription::run_with(target, app::cloud::realtime_stream),
-                iced::time::every(std::time::Duration::from_secs(120))
-                    .map(|_| Message::CloudSyncAll),
+                if linked {
+                    iced::time::every(std::time::Duration::from_secs(120))
+                        .map(|_| Message::CloudSyncAll)
+                } else {
+                    Subscription::none()
+                },
             )
         }
-        _ => (Subscription::none(), Subscription::none()),
+        None => (Subscription::none(), Subscription::none()),
+    };
+
+    // the notification panel is a dropdown: like the menus, any click outside
+    // it closes it, whatever `close_on_outside_click` says
+    let notification_center_sub = if app.cloud.notifications.open {
+        event::listen_with(|event, status, _window| match event {
+            Event::Mouse(iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left))
+                if status == iced::event::Status::Ignored =>
+            {
+                Some(Message::CloseNotificationCenter)
+            }
+            _ => None,
+        })
+    } else {
+        Subscription::none()
     };
 
     Subscription::batch([
         cloud_realtime_sub,
         cloud_poll_sub,
+        notification_center_sub,
         context_menu_sub,
         menu_bar_sub,
         click_outside_sub,
@@ -836,6 +864,11 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
     // edge resize handles for borderless window (active only when not maximized)
     if !app.is_window_maximized {
         main_interface_stack = main_interface_stack.push(render_window_resize_handles());
+    }
+
+    // notification center dropdown, under its titlebar bell
+    if app.cloud.notifications.open && app.cloud.client.is_some() {
+        main_interface_stack = main_interface_stack.push(ui::notifications::view_panel(app));
     }
 
     // dropdown menu overlay

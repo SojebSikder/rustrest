@@ -446,6 +446,36 @@ impl CloudClient {
             .map(|_| ())
     }
 
+    // ---- notifications ----
+
+    /// the newest `limit` notifications plus the unread count
+    pub async fn notifications(&self, limit: usize) -> Result<NotificationPage, CloudError> {
+        self.get(&format!("/api/notifications?limit={limit}")).await
+    }
+
+    /// marks `ids` read, or every notification when `ids` is None
+    pub async fn mark_notifications_read(&self, ids: Option<&[String]>) -> Result<(), CloudError> {
+        let body = match ids {
+            Some(ids) => serde_json::json!({ "ids": ids }),
+            None => serde_json::json!({ "all": true }),
+        };
+        self.call::<Value, _>(Method::POST, "/api/notifications/read", Some(&body))
+            .await
+            .map(|_| ())
+    }
+
+    pub async fn delete_notification(&self, id: &str) -> Result<(), CloudError> {
+        self.call::<Value, ()>(Method::DELETE, &format!("/api/notifications/{id}"), None)
+            .await
+            .map(|_| ())
+    }
+
+    pub async fn clear_notifications(&self) -> Result<(), CloudError> {
+        self.call::<Value, ()>(Method::DELETE, "/api/notifications", None)
+            .await
+            .map(|_| ())
+    }
+
     // ---- plumbing ----
 
     async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T, CloudError> {

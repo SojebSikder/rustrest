@@ -1,7 +1,4 @@
-//! realtime change hints over the cloud websocket. events carry no item
-//! data: on `CollectionChanged`, run a sync for that collection, on
-//! `EnvironmentChanged`, sync that team's environments. a dropped
-//! connection only delays updates, so callers can simply reconnect.
+//! realtime change hints over the cloud websocket.
 
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
@@ -11,9 +8,12 @@ use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
 use crate::api::{CloudClient, CloudError};
+use crate::wire::Notification;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum RealtimeEvent {
+    /// the socket is up; anything sent while it was down has to be fetched
+    Connected,
     /// `seq` is the collection's new change seq, nothing to do if we're
     /// already there. `actor_id` lets a client ignore its own echoes.
     CollectionChanged {
@@ -38,6 +38,8 @@ pub enum RealtimeEvent {
     },
     /// server refused these subscriptions (no access / not found)
     Denied(Vec<String>),
+    /// a new notification for the signed-in user
+    Notification(Box<Notification>),
 }
 
 #[derive(Debug, Deserialize)]
@@ -58,6 +60,8 @@ struct ServerMessage {
     environment_id: String,
     #[serde(default)]
     rev: i64,
+    #[serde(default)]
+    notification: Option<Notification>,
 }
 
 /// the server sends unset ids as the nil uuid
@@ -66,8 +70,8 @@ fn present(id: String) -> Option<String> {
 }
 
 /// connects, subscribes to `collection_ids` and to the environments of
-/// `team_ids`, and forwards events until the socket closes. the returned
-/// receiver ends when the connection does.
+/// `team_ids`, and forwards events (starting with `Connected`) until the
+/// socket closes. the returned receiver ends when the connection does.
 pub async fn connect(
     client: &CloudClient,
     collection_ids: Vec<String>,
@@ -94,17 +98,21 @@ pub async fn connect(
             .map_err(|e| CloudError::Network(e.to_string()))?;
     let (mut write, mut read) = socket.split();
 
-    let subscribe = serde_json::json!({
-        "type": "subscribe",
-        "collection_ids": collection_ids,
-        "team_ids": team_ids,
-    });
-    write
-        .send(Message::Text(subscribe.to_string()))
-        .await
-        .map_err(|e| CloudError::Network(e.to_string()))?;
+    // notifications need no subscription, so the socket may have none
+    if !collection_ids.is_empty() || !team_ids.is_empty() {
+        let subscribe = serde_json::json!({
+            "type": "subscribe",
+            "collection_ids": collection_ids,
+            "team_ids": team_ids,
+        });
+        write
+            .send(Message::Text(subscribe.to_string()))
+            .await
+            .map_err(|e| CloudError::Network(e.to_string()))?;
+    }
 
     let (tx, rx) = mpsc::channel(64);
+    let _ = tx.send(RealtimeEvent::Connected).await;
     tokio::spawn(async move {
         while let Some(Ok(msg)) = read.next().await {
             let text = match msg {
@@ -136,6 +144,10 @@ pub async fn connect(
                 "environment.deleted" => RealtimeEvent::EnvironmentDeleted {
                     team_id: msg.team_id,
                     environment_id: present(msg.environment_id),
+                },
+                "notification.created" => match msg.notification {
+                    Some(notification) => RealtimeEvent::Notification(Box::new(notification)),
+                    None => continue,
                 },
                 "subscribed" if !msg.denied.is_empty() => RealtimeEvent::Denied(msg.denied),
                 _ => continue,

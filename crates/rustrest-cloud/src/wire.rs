@@ -252,3 +252,39 @@ pub(crate) struct EnvironmentBody<'a> {
     pub data: &'a Value,
     pub base_rev: i64,
 }
+
+/// one entry of the user's notification center. `title` and `body` are
+/// rendered by the server, `data` carries ids to act on (`team_id`, ...)
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct Notification {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub title: String,
+    #[serde(default)]
+    pub body: String,
+    #[serde(default)]
+    pub data: Value,
+    pub actor_id: Option<String>,
+    pub read_at: Option<String>,
+    pub created_at: String,
+}
+
+impl Notification {
+    pub fn is_read(&self) -> bool {
+        self.read_at.is_some()
+    }
+
+    /// the team this notification is about, if any
+    pub fn team_id(&self) -> Option<&str> {
+        self.data.get("team_id").and_then(Value::as_str)
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct NotificationPage {
+    #[serde(default)]
+    pub notifications: Vec<Notification>,
+    #[serde(default)]
+    pub unread_count: usize,
+}

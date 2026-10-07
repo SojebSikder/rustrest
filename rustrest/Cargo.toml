@@ -17,7 +17,7 @@ rustrest-grpc = { path = "../crates/rustrest-grpc" }
 rustrest-lsp = { path = "../crates/rustrest-lsp" }
 rustrest-cloud = { path = "../crates/rustrest-cloud" }
 
-iced = { version = "0.14", features = ["tokio", "image", "advanced", "canvas", "sipper", "markdown", "highlighter"] }
+iced = { version = "0.14", features = ["tokio", "image", "svg", "advanced", "canvas", "sipper", "markdown", "highlighter"] }
 
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["compat"] }
@@ -36,6 +36,7 @@ sha2 = "0.10"
 htmd = "0.5"
 dirs = "7.0.0"
 mimalloc = "0.1.52"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 
 [build-dependencies]
 winres = "0.1"

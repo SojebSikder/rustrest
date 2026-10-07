@@ -21,46 +21,57 @@ pub fn render_titlebar<'a>(
     let colors = crate::theme::colors();
 
     // ── Right: window controls ─────────────────────────────────────────────────
-    let neutral_hover = Color::from_rgba(
-        colors.text.r,
-        colors.text.g,
-        colors.text.b,
-        0.12,
-    );
-    let neutral_pressed = Color::from_rgba(
-        colors.text.r,
-        colors.text.g,
-        colors.text.b,
-        0.22,
-    );
+    let neutral_hover = Color::from_rgba(colors.text.r, colors.text.g, colors.text.b, 0.12);
+    let neutral_pressed = Color::from_rgba(colors.text.r, colors.text.g, colors.text.b, 0.22);
     let close_hover = Color::from_rgba(0.86, 0.21, 0.27, 0.90);
     let close_pressed = Color::from_rgba(0.72, 0.15, 0.20, 0.95);
 
     // Minimize: heavy horizontal bar, properly centered and thick
-    let btn_minimize = win_btn("━", 20.0, neutral_hover, neutral_pressed, Message::TitleBarMinimizePressed);
+    let btn_minimize = win_btn(
+        "━",
+        20.0,
+        neutral_hover,
+        neutral_pressed,
+        Message::TitleBarMinimizePressed,
+    );
 
     // Maximize / Restore: large, clear box
-    let maximize_icon = if app.is_window_maximized { "❐" } else { "□" };
+    let maximize_icon = if app.is_window_maximized {
+        "❐"
+    } else {
+        "□"
+    };
     let maximize_size = if app.is_window_maximized { 20.0 } else { 22.0 };
-    let btn_maximize = win_btn(maximize_icon, maximize_size, neutral_hover, neutral_pressed, Message::TitleBarMaximizePressed);
+    let btn_maximize = win_btn(
+        maximize_icon,
+        maximize_size,
+        neutral_hover,
+        neutral_pressed,
+        Message::TitleBarMaximizePressed,
+    );
 
     // Close: crisp multiplication cross
-    let btn_close = win_btn_close("✕", 18.0, close_hover, close_pressed, Message::TitleBarClosePressed);
+    let btn_close = win_btn_close(
+        "✕",
+        18.0,
+        close_hover,
+        close_pressed,
+        Message::TitleBarClosePressed,
+    );
 
     let controls = row![btn_minimize, btn_maximize, btn_close]
         .spacing(0)
         .align_y(Alignment::Center)
         .height(Length::Fill);
 
-    // ── Assemble the bar: menu on left, draggable space in middle, controls on right ──
-    let bar_content = row![
-        menu_strip,
-        Space::new().width(Length::Fill),
-        controls,
-    ]
-    .width(Length::Fill)
-    .height(Length::Fixed(TITLEBAR_HEIGHT - 1.0))
-    .align_y(Alignment::Center);
+    // Assemble the bar: menu on left, draggable space in middle, notification
+    // bell (while signed in to Rustrest Cloud) and controls on right
+    let bar_content = row![menu_strip, Space::new().width(Length::Fill)]
+        .push(super::notifications::bell(app))
+        .push(controls)
+        .width(Length::Fill)
+        .height(Length::Fixed(TITLEBAR_HEIGHT - 1.0))
+        .align_y(Alignment::Center);
 
     // mouse_area: drag anywhere not captured by a button moves the window;
     // double-click toggles maximize.
@@ -317,4 +328,3 @@ pub fn render_window_resize_handles<'a>() -> Element<'a, Message> {
     .height(Length::Fill)
     .into()
 }
-

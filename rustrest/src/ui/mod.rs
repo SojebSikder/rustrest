@@ -15,6 +15,7 @@ pub mod git_panel;
 pub mod menu;
 pub mod modal;
 pub mod multiline_input;
+pub mod notifications;
 pub mod plugin_manager;
 pub mod plugin_panel;
 pub mod progress_ring;
