@@ -141,6 +141,10 @@ pub struct Rustrest {
     pub file_watch: file_watch::FileWatchState,
     pub script_intel: script_intel::ScriptIntelState,
     pub cloud: cloud::CloudState,
+
+    /// tracks whether the main window is currently maximized so the custom
+    /// titlebar can show the correct restore/maximize icon.
+    pub is_window_maximized: bool,
 }
 
 impl Rustrest {
@@ -504,6 +508,7 @@ pub fn init() -> (Rustrest, Task<Message>) {
         size: iced::Size::new(1250.0, 850.0),
         icon,
         exit_on_close_request: false,
+        decorations: false,
         ..Default::default()
     });
 
@@ -618,6 +623,7 @@ pub fn init() -> (Rustrest, Task<Message>) {
         file_watch: file_watch::FileWatchState::default(),
         script_intel: script_intel::ScriptIntelState::default(),
         cloud: cloud::CloudState::load(),
+        is_window_maximized: false,
     };
     theme::reload(&mut app);
     // ensure at least one tab exists right away - `view()` indexes
@@ -2020,6 +2026,35 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             // matters is already persisted above, so there's nothing left
             // worth waiting for.
             std::process::exit(0);
+        }
+
+        // custom titlebar window controls
+        Message::TitleBarDragStarted => iced::window::drag(app.main_window_id),
+        Message::TitleBarMinimizePressed => {
+            iced::window::minimize(app.main_window_id, true)
+        }
+        Message::TitleBarMaximizePressed => {
+            let target = !app.is_window_maximized;
+            app.is_window_maximized = target;
+            Task::batch([
+                iced::window::maximize(app.main_window_id, target),
+                iced::window::is_maximized(app.main_window_id).map(Message::WindowIsMaximized),
+            ])
+        }
+        Message::TitleBarClosePressed => update(app, Message::AppExit),
+        Message::WindowIsMaximized(maximized) => {
+            app.is_window_maximized = maximized;
+            Task::none()
+        }
+        Message::CheckWindowMaximized(id) => {
+            iced::window::is_maximized(id).map(Message::WindowIsMaximized)
+        }
+        Message::WindowResizeDrag(direction) => {
+            if !app.is_window_maximized {
+                iced::window::drag_resize(app.main_window_id, direction)
+            } else {
+                Task::none()
+            }
         }
     }
 }

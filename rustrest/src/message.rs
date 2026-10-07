@@ -838,4 +838,16 @@ pub enum Message {
 
     AppExit,
     None,
+
+    // custom titlebar window controls
+    TitleBarDragStarted,
+    TitleBarMinimizePressed,
+    TitleBarMaximizePressed,
+    TitleBarClosePressed,
+    /// sent back when `window::is_maximized` resolves
+    WindowIsMaximized(bool),
+    /// check maximized status after window manager resize/movement
+    CheckWindowMaximized(iced::window::Id),
+    /// initiate edge/corner drag-resize for undecorated window
+    WindowResizeDrag(iced::window::Direction),
 }
