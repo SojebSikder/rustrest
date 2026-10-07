@@ -694,6 +694,21 @@ pub enum Message {
     CloudRealtimeEnvChanged(String, String, i64),
     /// team id, environment id (None = every environment of the team)
     CloudRealtimeEnvDeleted(String, Option<String>),
+    // Rustrest Cloud notification center
+    ToggleNotificationCenter,
+    CloseNotificationCenter,
+    /// refetch the inbox, e.g. after the realtime socket (re)connects
+    CloudNotificationsRefresh,
+    CloudNotificationsLoaded(Result<rustrest_cloud::wire::NotificationPage, String>),
+    CloudNotificationReceived(Box<rustrest_cloud::wire::Notification>),
+    /// a notification row was clicked
+    CloudNotificationPressed(String),
+    CloudMarkNotificationRead(String),
+    CloudMarkAllNotificationsRead,
+    CloudDismissNotification(String),
+    CloudClearNotifications,
+    /// result of a read/delete sent to the server
+    CloudNotificationsSynced(Result<(), String>),
     WindowCloseRequested(iced::window::Id),
 
     // native plugins (wasm)

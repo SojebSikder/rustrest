@@ -1,5 +1,6 @@
 pub mod cloud;
 pub mod cloud_env;
+mod cloud_notifications;
 mod collection_settings;
 mod collections;
 mod docs;
@@ -961,6 +962,19 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         Message::CloudRealtimeEnvDeleted(team_id, env_id) => {
             cloud_env::realtime_deleted(app, team_id, env_id)
         }
+        Message::ToggleNotificationCenter => cloud_notifications::toggle(app),
+        Message::CloseNotificationCenter => cloud_notifications::close(app),
+        Message::CloudNotificationsRefresh => cloud_notifications::refresh(app),
+        Message::CloudNotificationsLoaded(result) => cloud_notifications::loaded(app, result),
+        Message::CloudNotificationReceived(notification) => {
+            cloud_notifications::received(app, *notification)
+        }
+        Message::CloudNotificationPressed(id) => cloud_notifications::pressed(app, id),
+        Message::CloudMarkNotificationRead(id) => cloud_notifications::mark_read(app, id),
+        Message::CloudMarkAllNotificationsRead => cloud_notifications::mark_all_read(app),
+        Message::CloudDismissNotification(id) => cloud_notifications::dismiss(app, id),
+        Message::CloudClearNotifications => cloud_notifications::clear(app),
+        Message::CloudNotificationsSynced(result) => cloud_notifications::synced(app, result),
         Message::ImportCollectionPressed => collections::import_pressed(),
         // process file contents once loaded from disk
         Message::CollectionLoaded(path, content) => collections::loaded(app, path, content),

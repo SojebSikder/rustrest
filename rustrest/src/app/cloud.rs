@@ -100,6 +100,7 @@ pub struct CloudState {
     pub env_runs: HashSet<String>,
     /// teams to sync environments of again once their current run ends
     pub env_resync: HashSet<String>,
+    pub notifications: super::cloud_notifications::NotificationCenter,
 }
 
 impl CloudState {
@@ -295,6 +296,7 @@ pub fn sign_out(app: &mut Rustrest) -> Task<Message> {
         modal.selected_team = None;
     }
     app.status_bar.clear(STATUS_ID);
+    super::cloud_notifications::reset(app);
     // cloud collections stay open as local copies, they resume syncing on the next signin
     match client {
         Some(client) => Task::perform(async move { client.logout().await }, |_| Message::None),
@@ -302,7 +304,7 @@ pub fn sign_out(app: &mut Rustrest) -> Task<Message> {
     }
 }
 
-fn load_teams(app: &mut Rustrest) -> Task<Message> {
+pub(super) fn load_teams(app: &mut Rustrest) -> Task<Message> {
     let Some(client) = app.cloud.client.clone() else {
         return Task::none();
     };
@@ -1400,8 +1402,7 @@ fn collect_names(
     }
 }
 
-/// realtime stream subscription key: reconnects whenever the account or
-/// the set of linked collections or environment teams changes
+/// realtime stream subscription key
 #[derive(Clone)]
 pub struct RealtimeTarget {
     pub client: CloudClient,
@@ -1452,6 +1453,10 @@ pub fn realtime_stream(
                                 team_id,
                                 environment_id,
                             } => Message::CloudRealtimeEnvDeleted(team_id, environment_id),
+                            RealtimeEvent::Connected => Message::CloudNotificationsRefresh,
+                            RealtimeEvent::Notification(notification) => {
+                                Message::CloudNotificationReceived(notification)
+                            }
                             RealtimeEvent::Denied(_) => continue,
                         };
                         let _ = output.send(message).await;
