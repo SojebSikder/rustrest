@@ -289,23 +289,44 @@ fn render_plugins_section(app: &Rustrest) -> Element<'_, Message> {
     section.into()
 }
 
+/// an environment as a pick-list entry. picked by index, since a cloud
+/// environment can share its name with a local one
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct EnvChoice {
+    idx: usize,
+    label: String,
+}
+
+impl std::fmt::Display for EnvChoice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.label)
+    }
+}
+
 pub fn render_env_selector(app: &Rustrest) -> Element<'_, Message> {
-    let env_options: Vec<String> = app
+    let env_options: Vec<EnvChoice> = app
         .env
         .environments
         .iter()
-        .map(|e| e.name.clone())
+        .enumerate()
+        .map(|(idx, e)| EnvChoice {
+            idx,
+            label: if e.cloud.is_some() {
+                format!("{} (cloud)", e.name)
+            } else {
+                e.name.clone()
+            },
+        })
         .collect();
     let current_env_selection = app
         .env
         .active_env_index
-        .and_then(|idx| app.env.environments.get(idx))
-        .map(|e| e.name.clone());
+        .and_then(|idx| env_options.get(idx).cloned());
 
     // build environment selector row with controls
     let mut env_row = row![
         pick_list(env_options, current_env_selection, |selected| {
-            Message::EnvSelected(Some(selected))
+            Message::EnvSelected(Some(selected.idx))
         })
         .placeholder("No Environment")
         .width(Length::Fixed(150.0))

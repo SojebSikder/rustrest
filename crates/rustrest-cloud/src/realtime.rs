@@ -1,5 +1,6 @@
 //! realtime change hints over the cloud websocket. events carry no item
-//! data: on `CollectionChanged`, run a sync for that collection. a dropped
+//! data: on `CollectionChanged`, run a sync for that collection, on
+//! `EnvironmentChanged`, sync that team's environments. a dropped
 //! connection only delays updates, so callers can simply reconnect.
 
 use futures_util::{SinkExt, StreamExt};
@@ -23,6 +24,18 @@ pub enum RealtimeEvent {
     CollectionDeleted {
         collection_id: String,
     },
+    /// an environment of a subscribed team was created or changed; `rev`
+    /// is its new rev
+    EnvironmentChanged {
+        team_id: String,
+        environment_id: String,
+        rev: i64,
+    },
+    /// an environment (or, without an id, every environment) of the team was deleted
+    EnvironmentDeleted {
+        team_id: String,
+        environment_id: Option<String>,
+    },
     /// server refused these subscriptions (no access / not found)
     Denied(Vec<String>),
 }
@@ -39,13 +52,26 @@ struct ServerMessage {
     seq: i64,
     #[serde(default)]
     denied: Vec<String>,
+    #[serde(default)]
+    team_id: String,
+    #[serde(default)]
+    environment_id: String,
+    #[serde(default)]
+    rev: i64,
 }
 
-/// connects, subscribes to `collection_ids` and forwards events until the
-/// socket closes. the returned receiver ends when the connection does.
+/// the server sends unset ids as the nil uuid
+fn present(id: String) -> Option<String> {
+    (!id.is_empty() && id != "00000000-0000-0000-0000-000000000000").then_some(id)
+}
+
+/// connects, subscribes to `collection_ids` and to the environments of
+/// `team_ids`, and forwards events until the socket closes. the returned
+/// receiver ends when the connection does.
 pub async fn connect(
     client: &CloudClient,
     collection_ids: Vec<String>,
+    team_ids: Vec<String>,
 ) -> Result<mpsc::Receiver<RealtimeEvent>, CloudError> {
     let token = client.fresh_access_token().await?;
     let mut request = client
@@ -68,7 +94,11 @@ pub async fn connect(
             .map_err(|e| CloudError::Network(e.to_string()))?;
     let (mut write, mut read) = socket.split();
 
-    let subscribe = serde_json::json!({ "type": "subscribe", "collection_ids": collection_ids });
+    let subscribe = serde_json::json!({
+        "type": "subscribe",
+        "collection_ids": collection_ids,
+        "team_ids": team_ids,
+    });
     write
         .send(Message::Text(subscribe.to_string()))
         .await
@@ -97,6 +127,15 @@ pub async fn connect(
                 },
                 "collection.deleted" => RealtimeEvent::CollectionDeleted {
                     collection_id: msg.collection_id,
+                },
+                "environment.changed" => RealtimeEvent::EnvironmentChanged {
+                    team_id: msg.team_id,
+                    environment_id: msg.environment_id,
+                    rev: msg.rev,
+                },
+                "environment.deleted" => RealtimeEvent::EnvironmentDeleted {
+                    team_id: msg.team_id,
+                    environment_id: present(msg.environment_id),
                 },
                 "subscribed" if !msg.denied.is_empty() => RealtimeEvent::Denied(msg.denied),
                 _ => continue,

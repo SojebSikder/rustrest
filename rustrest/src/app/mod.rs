@@ -1,4 +1,5 @@
 pub mod cloud;
+pub mod cloud_env;
 mod collection_settings;
 mod collections;
 mod docs;
@@ -934,6 +935,26 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         Message::CloudResolve(col_id, uid, resolution) => {
             cloud::resolve(app, col_id, uid, resolution)
         }
+        Message::CloudEnvironmentsLoaded(team_id, result) => {
+            cloud_env::environments_loaded(app, team_id, result)
+        }
+        Message::OpenCloudEnvUpload(idx) => cloud_env::open_upload(app, idx),
+        Message::CloudUploadEnvironment => cloud_env::upload(app),
+        Message::CloudOpenEnvironment(env_id) => cloud_env::open(app, env_id),
+        Message::CloudDeleteEnvironment(env_id) => cloud_env::delete(app, env_id),
+        Message::CloudCancelDeleteEnvironment => {
+            cloud::edit_modal(app, |m| m.confirm_delete_environment = None)
+        }
+        Message::CloudEnvironmentDeleted(env_id, result) => cloud_env::deleted(app, env_id, result),
+        Message::CloudUnlinkEnvironment(idx) => cloud_env::unlink(app, idx),
+        Message::CloudEnvSync(team_id) => cloud_env::sync_team(app, team_id),
+        Message::CloudEnvSynced(team_id, result) => cloud_env::synced(app, team_id, result),
+        Message::CloudRealtimeEnvChanged(team_id, env_id, rev) => {
+            cloud_env::realtime_changed(app, team_id, env_id, rev)
+        }
+        Message::CloudRealtimeEnvDeleted(team_id, env_id) => {
+            cloud_env::realtime_deleted(app, team_id, env_id)
+        }
         Message::ImportCollectionPressed => collections::import_pressed(),
         // process file contents once loaded from disk
         Message::CollectionLoaded(path, content) => collections::loaded(app, path, content),
@@ -1523,7 +1544,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             workbench::tab_rename_input_hover(app, is_hovered)
         }
 
-        Message::EnvSelected(selected_name) => environment::selected(app, selected_name),
+        Message::EnvSelected(idx) => environment::selected(app, idx),
         Message::CreateEnvironmentPressed => environment::create_pressed(app),
         Message::DeleteEnvironmentPressed(idx) => environment::delete_pressed(app, idx),
 
@@ -1699,6 +1720,11 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             var_idx,
             action,
         } => environment::variable_value_editor_action(app, env_idx, var_idx, action),
+        Message::EnvVariableSyncToggled {
+            env_idx,
+            var_idx,
+            sync,
+        } => environment::variable_sync_toggled(app, env_idx, var_idx, sync),
         Message::EnvVariableToggled {
             env_idx,
             var_idx,

@@ -5,7 +5,7 @@ use crate::message::Message;
 use crate::ui::toast::toast::ToastStatus;
 use iced::Task;
 use rustrest_cloud::sync::{PushOutcome, PushPlan, SyncState};
-use rustrest_cloud::wire::{ChangeSet, CloudCollection, Role, Team, TeamMember};
+use rustrest_cloud::wire::{ChangeSet, CloudCollection, CloudEnvironment, Role, Team, TeamMember};
 use rustrest_cloud::{CloudClient, CloudError, Resolution, Session, SyncReport};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -63,6 +63,12 @@ pub struct CloudModal {
     pub confirm_delete_team: bool,
     /// set when opened from a collection's "Upload to Cloud..." entry
     pub upload_collection: Option<usize>,
+    /// environments of the selected team
+    pub environments: Vec<CloudEnvironment>,
+    /// index of the environment being uploaded, set when opened from the environment editor
+    pub upload_environment: Option<usize>,
+    /// cloud environment id whose deletion is waiting for a second click
+    pub confirm_delete_environment: Option<String>,
 }
 
 /// one in-flight sync of one collection
@@ -86,6 +92,10 @@ pub struct CloudState {
     resync: HashSet<usize>,
     /// collections with cloud changes waiting for their unsaved edits to be saved
     pub waiting: HashSet<usize>,
+    /// teams whose environments are syncing right now
+    pub env_runs: HashSet<String>,
+    /// teams to sync environments of again once their current run ends
+    pub env_resync: HashSet<String>,
 }
 
 impl CloudState {
@@ -121,7 +131,7 @@ impl CloudState {
     }
 
     /// persists the current tokens
-    fn save_account(&self) {
+    pub(super) fn save_account(&self) {
         let (Some(client), Some(email), Some(path)) = (&self.client, &self.email, account_path())
         else {
             return;
@@ -201,7 +211,7 @@ pub fn edit_modal(app: &mut Rustrest, edit: impl FnOnce(&mut CloudModal)) -> Tas
     Task::none()
 }
 
-fn modal_busy(app: &mut Rustrest, busy: bool, error: Option<String>) {
+pub(super) fn modal_busy(app: &mut Rustrest, busy: bool, error: Option<String>) {
     if let Some(modal) = app.cloud.modal.as_mut() {
         modal.busy = busy;
         modal.error = error;
@@ -273,6 +283,7 @@ pub fn sign_out(app: &mut Rustrest) -> Task<Message> {
     if let Some(modal) = app.cloud.modal.as_mut() {
         modal.teams.clear();
         modal.collections.clear();
+        modal.environments.clear();
         modal.selected_team = None;
     }
     app.status_bar.clear(STATUS_ID);
@@ -327,6 +338,8 @@ pub fn select_team(app: &mut Rustrest, team_id: String) -> Task<Message> {
     };
     modal.selected_team = Some(team_id.clone());
     modal.collections.clear();
+    modal.environments.clear();
+    modal.confirm_delete_environment = None;
     modal.members.clear();
     modal.confirm_remove_member = None;
     modal.move_target = None;
@@ -343,10 +356,11 @@ pub fn select_team(app: &mut Rustrest, team_id: String) -> Task<Message> {
             |result| Message::CloudCollectionsLoaded(result.map_err(|e| e.to_string())),
         )
     };
+    let environments = super::cloud_env::load_environments(client.clone(), team_id.clone());
     if personal {
-        return collections;
+        return Task::batch([collections, environments]);
     }
-    Task::batch([collections, load_members(client, team_id)])
+    Task::batch([collections, environments, load_members(client, team_id)])
 }
 
 fn load_members(client: CloudClient, team_id: String) -> Task<Message> {
@@ -902,11 +916,18 @@ fn save_state(app: &Rustrest, col_id: usize) {
 
 // ---- sync ----
 
-/// syncs every linked collection (after sign-in, and periodically as a fallback for missed realtime events)
+/// syncs every linked collection and environment (after sign-in, and
+/// periodically as a fallback for missed realtime events)
 pub fn sync_all(app: &mut Rustrest) -> Task<Message> {
     refresh_links(app);
     let ids: Vec<usize> = app.cloud.linked.keys().copied().collect();
-    Task::batch(ids.into_iter().map(|id| Task::done(Message::CloudSync(id))))
+    let environments = super::cloud_env::sync_all(app);
+
+    Task::batch(
+        ids.into_iter()
+            .map(|id| Task::done(Message::CloudSync(id)))
+            .chain([environments]),
+    )
 }
 
 pub fn sync(app: &mut Rustrest, col_id: usize) -> Task<Message> {
@@ -1112,8 +1133,8 @@ fn finish(app: &mut Rustrest, col_id: usize, error: Option<CloudError>) -> Task<
     Task::batch(tasks)
 }
 
-fn update_status(app: &mut Rustrest) {
-    let syncing = app.cloud.runs.len();
+pub(super) fn update_status(app: &mut Rustrest) {
+    let syncing = app.cloud.runs.len() + app.cloud.env_runs.len();
     let conflicts: usize = app
         .cloud
         .linked
@@ -1368,11 +1389,13 @@ fn collect_names(
 }
 
 /// realtime stream subscription key: reconnects whenever the account or
-/// the set of linked collections changes
+/// the set of linked collections or environment teams changes
 #[derive(Clone)]
 pub struct RealtimeTarget {
     pub client: CloudClient,
     pub collection_ids: Vec<String>,
+    /// teams whose environment events to receive
+    pub team_ids: Vec<String>,
 }
 
 impl std::hash::Hash for RealtimeTarget {
@@ -1380,6 +1403,7 @@ impl std::hash::Hash for RealtimeTarget {
         "rustrest-cloud-realtime".hash(state);
         self.client.base_url().hash(state);
         self.collection_ids.hash(state);
+        self.team_ids.hash(state);
     }
 }
 
@@ -1390,8 +1414,12 @@ pub fn realtime_stream(
     let target = target.clone();
     iced::stream::channel(32, async move |mut output| {
         loop {
-            match rustrest_cloud::realtime::connect(&target.client, target.collection_ids.clone())
-                .await
+            match rustrest_cloud::realtime::connect(
+                &target.client,
+                target.collection_ids.clone(),
+                target.team_ids.clone(),
+            )
+            .await
             {
                 Ok(mut events) => {
                     while let Some(event) = events.recv().await {
@@ -1403,6 +1431,15 @@ pub fn realtime_stream(
                             RealtimeEvent::CollectionDeleted { collection_id } => {
                                 Message::CloudRealtimeDeleted(collection_id)
                             }
+                            RealtimeEvent::EnvironmentChanged {
+                                team_id,
+                                environment_id,
+                                rev,
+                            } => Message::CloudRealtimeEnvChanged(team_id, environment_id, rev),
+                            RealtimeEvent::EnvironmentDeleted {
+                                team_id,
+                                environment_id,
+                            } => Message::CloudRealtimeEnvDeleted(team_id, environment_id),
                             RealtimeEvent::Denied(_) => continue,
                         };
                         let _ = output.send(message).await;
