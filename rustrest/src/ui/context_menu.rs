@@ -238,12 +238,7 @@ pub fn render_context_menu_overlay<'a>(app: &Rustrest) -> Option<Element<'a, Mes
     let options: Vec<(&'a str, Message)> = match context_menu {
         ContextMenu::Collection(id) => {
             let col_id = *id;
-            let is_git_backed = app
-                .collections
-                .iter()
-                .find(|c| c.id == col_id)
-                .map(|c| c.storage_dir.is_some())
-                .unwrap_or(false);
+            let is_git_backed = app.is_git_backed(col_id);
             let is_remote = app
                 .collections
                 .iter()

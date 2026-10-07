@@ -37,10 +37,23 @@ enum GitTarget {
     },
 }
 
+impl Rustrest {
+    pub fn is_git_backed(&self, col_id: usize) -> bool {
+        !self.cloud.linked.contains_key(&col_id)
+            && self
+                .collections
+                .iter()
+                .any(|c| c.id == col_id && (c.storage_dir.is_some() || c.remote_dir.is_some()))
+    }
+}
+
 /// resolves the git target for `col_id`. `Err` means the collection is
 /// remote-backed but not currently connected; `Ok(None)` means it isn't
 /// git-backed at all.
 fn git_target(app: &Rustrest, col_id: usize) -> Result<Option<GitTarget>, String> {
+    if !app.is_git_backed(col_id) {
+        return Ok(None);
+    }
     let Some(collection) = app.collections.iter().find(|c| c.id == col_id) else {
         return Ok(None);
     };

@@ -171,7 +171,7 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
                     header_row = header_row.push(unsaved_dot());
                 }
 
-                if col.storage_dir.is_some() {
+                if col.remote_dir.is_none() && app.is_git_backed(col_id) {
                     let has_changes = app
                         .git
                         .git_status_cache
@@ -189,6 +189,15 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
                         header_row = header_row
                             .push(text("●").size(9).color(crate::theme::colors().modified));
                     }
+                }
+
+                if app.cloud.linked.contains_key(&col_id) {
+                    header_row = header_row.push(
+                        text("cloud")
+                            .size(10)
+                            .font(Font::MONOSPACE)
+                            .color(crate::theme::colors().text_muted),
+                    );
                 }
 
                 if let Some(profile_id) = remote_profile_id {
