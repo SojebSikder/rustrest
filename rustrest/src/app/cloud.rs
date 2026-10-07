@@ -21,6 +21,8 @@ struct SavedAccount {
     server_url: String,
     email: String,
     session: Session,
+    #[serde(default)]
+    last_team: Option<String>,
 }
 
 fn account_path() -> Option<PathBuf> {
@@ -85,6 +87,8 @@ pub struct CloudState {
     pub client: Option<CloudClient>,
     pub email: Option<String>,
     pub modal: Option<CloudModal>,
+    /// team picked last in the modal, preselected when it opens again
+    pub last_team: Option<String>,
     /// app collection id -> (cache dir, sync state)
     pub linked: HashMap<usize, (PathBuf, SyncState)>,
     runs: HashMap<usize, SyncRun>,
@@ -107,6 +111,7 @@ impl CloudState {
             Some(account) => Self {
                 client: Some(CloudClient::new(&account.server_url, Some(account.session))),
                 email: Some(account.email),
+                last_team: account.last_team,
                 ..Self::default()
             },
             None => Self::default(),
@@ -146,6 +151,7 @@ impl CloudState {
             server_url: client.base_url().to_string(),
             email: email.clone(),
             session,
+            last_team: self.last_team.clone(),
         };
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
@@ -190,6 +196,7 @@ pub fn open_modal(app: &mut Rustrest, upload_collection: Option<usize>) -> Task<
     app.cloud.modal = Some(CloudModal {
         server_url,
         email: app.cloud.email.clone().unwrap_or_default(),
+        selected_team: app.cloud.last_team.clone(),
         upload_collection,
         ..CloudModal::default()
     });
@@ -277,6 +284,7 @@ pub fn signed_in(
 pub fn sign_out(app: &mut Rustrest) -> Task<Message> {
     let client = app.cloud.client.take();
     app.cloud.email = None;
+    app.cloud.last_team = None;
     if let Some(path) = account_path() {
         let _ = std::fs::remove_file(path);
     }
@@ -333,6 +341,10 @@ pub fn select_team(app: &mut Rustrest, team_id: String) -> Task<Message> {
     let Some(client) = app.cloud.client.clone() else {
         return Task::none();
     };
+    if app.cloud.last_team.as_ref() != Some(&team_id) {
+        app.cloud.last_team = Some(team_id.clone());
+        app.cloud.save_account();
+    }
     let Some(modal) = app.cloud.modal.as_mut() else {
         return Task::none();
     };
