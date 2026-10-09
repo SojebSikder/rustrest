@@ -197,7 +197,57 @@ fn win_btn_close(
     .into()
 }
 
-/// Renders a outline around the undecorated window.
+/// Corner radius of the (non-maximized) window
+/// matches the radius Windows 11 uses for `DWMWCP_ROUND`.
+pub const WINDOW_CORNER_RADIUS: f32 = 8.0;
+
+/// Asks the OS to round the corners of the undecorated window.
+/// Only Windows 11 supports this natively, elsewhere it's a no-op and only the
+/// outline from [`render_window_border`] is rounded.
+pub fn apply_rounded_corners(window: &dyn iced::window::Window) {
+    #[cfg(windows)]
+    {
+        use raw_window_handle::RawWindowHandle;
+        use windows_sys::Win32::Graphics::Dwm::{
+            DWMWA_BORDER_COLOR, DWMWA_COLOR_NONE, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
+            DwmSetWindowAttribute,
+        };
+
+        let Ok(handle) = window.window_handle() else {
+            return;
+        };
+        let RawWindowHandle::Win32(handle) = handle.as_raw() else {
+            return;
+        };
+        let hwnd = handle.hwnd.get() as windows_sys::Win32::Foundation::HWND;
+
+        let corner_preference = DWMWCP_ROUND;
+        let border_color = DWMWA_COLOR_NONE;
+
+        // SAFETY: `hwnd` is the live window handle iced gave us, and each attribute
+        // value points to a correctly sized local.
+        // Failures (e.g. on Windows 10, which lacks these attributes) are harmless and ignored.
+        unsafe {
+            DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_WINDOW_CORNER_PREFERENCE as u32,
+                &corner_preference as *const _ as *const _,
+                std::mem::size_of_val(&corner_preference) as u32,
+            );
+            DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_BORDER_COLOR as u32,
+                &border_color as *const _ as *const _,
+                std::mem::size_of_val(&border_color) as u32,
+            );
+        }
+    }
+
+    #[cfg(not(windows))]
+    let _ = window;
+}
+
+/// Renders a rounded outline around the undecorated window.
 pub fn render_window_border<'a>() -> Element<'a, Message> {
     let colors = crate::theme::colors();
     let border_color = colors.border;
@@ -209,7 +259,7 @@ pub fn render_window_border<'a>() -> Element<'a, Message> {
             border: Border {
                 color: border_color,
                 width: 1.0,
-                radius: 0.0.into(),
+                radius: WINDOW_CORNER_RADIUS.into(),
             },
             ..Default::default()
         })

@@ -728,7 +728,11 @@ pub fn init() -> (Rustrest, Task<Message>) {
     let update_check_task = Task::done(Message::CheckForUpdateSilently);
 
     let startup_task = Task::batch([
-        open_main_window.map(|_id| Message::None),
+        // round the window corners once it exists
+        open_main_window.then(|id| {
+            iced::window::run(id, crate::ui::titlebar::apply_rounded_corners)
+                .map(|_| Message::None)
+        }),
         iced::system::theme().map(Message::SystemThemeChanged),
         update_check_task,
         workspace_load_task,

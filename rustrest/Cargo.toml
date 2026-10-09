@@ -37,6 +37,10 @@ htmd = "0.5"
 dirs = "7.0.0"
 mimalloc = "0.1.52"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+raw-window-handle = "0.6.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Graphics_Dwm"] }
 
 [build-dependencies]
 winres = "0.1"
