@@ -33,7 +33,9 @@ use crate::ui::resize_handle::{DividerOrientation, resize_handle};
 use crate::ui::response_timing_modal::view_response_timing_modal;
 use crate::ui::save_request_model::save_request_model::view_save_request_modal;
 use crate::ui::settings::view_settings_modal;
-use crate::ui::titlebar::{TITLEBAR_HEIGHT, render_titlebar, render_window_resize_handles};
+use crate::ui::titlebar::{
+    TITLEBAR_HEIGHT, render_titlebar, render_window_border, render_window_resize_handles,
+};
 use crate::ui::tooltip::with_tooltip;
 use app::Rustrest;
 use iced::futures::{SinkExt, StreamExt, stream::BoxStream};
@@ -901,7 +903,15 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
         main_interface_stack = main_interface_stack.push(selector_overlay);
     }
 
-    stack![main_interface_stack, toast_layer].into()
+    let mut root = stack![main_interface_stack, toast_layer];
+
+    // window border outline for the undecorated window, hidden
+    // when maximized since the edges sit flush against the screen
+    if !app.is_window_maximized {
+        root = root.push(render_window_border());
+    }
+
+    root.into()
 }
 
 fn render_right_panel_rail(

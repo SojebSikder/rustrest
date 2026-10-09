@@ -197,6 +197,25 @@ fn win_btn_close(
     .into()
 }
 
+/// Renders a outline around the undecorated window.
+pub fn render_window_border<'a>() -> Element<'a, Message> {
+    let colors = crate::theme::colors();
+    let border_color = colors.border;
+
+    container(Space::new())
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .style(move |_theme: &iced::Theme| container::Style {
+            border: Border {
+                color: border_color,
+                width: 1.0,
+                radius: 0.0.into(),
+            },
+            ..Default::default()
+        })
+        .into()
+}
+
 /// Renders invisible edge and corner handles along the perimeter of the window
 /// to allow drag-resizing an undecorated (`decorations: false`) window.
 pub fn render_window_resize_handles<'a>() -> Element<'a, Message> {
