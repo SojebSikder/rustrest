@@ -6683,6 +6683,7 @@ dependencies = [
  "iced",
  "mimalloc",
  "notify-debouncer-mini",
+ "raw-window-handle",
  "reqwest 0.12.28",
  "rfd",
  "rustrest-cloud",
@@ -6705,6 +6706,7 @@ dependencies = [
  "two-face",
  "url",
  "urlencoding",
+ "windows-sys 0.61.2",
  "winres",
 ]
 
