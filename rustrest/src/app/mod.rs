@@ -608,6 +608,7 @@ pub fn init() -> (Rustrest, Task<Message>) {
             right_panel_width: 380.0,
             right_panel_open: None,
             right_panel_tree: None,
+            markdown_cache: Default::default(),
         },
         settings: settings::SettingsState {
             settings_open: false,
@@ -730,8 +731,7 @@ pub fn init() -> (Rustrest, Task<Message>) {
     let startup_task = Task::batch([
         // round the window corners once it exists
         open_main_window.then(|id| {
-            iced::window::run(id, crate::ui::titlebar::apply_rounded_corners)
-                .map(|_| Message::None)
+            iced::window::run(id, crate::ui::titlebar::apply_rounded_corners).map(|_| Message::None)
         }),
         iced::system::theme().map(Message::SystemThemeChanged),
         update_check_task,
@@ -2030,6 +2030,8 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             plugins::right_panel_event(app, plugin_id, panel_id, event)
         }
         Message::ApplyPluginCollectionOp(op) => plugins::apply_collection_op(app, op),
+        Message::ApplyPluginCollectionOps(ops) => plugins::apply_collection_ops(app, ops),
+        Message::PluginLinkClicked(uri) => docs::link_clicked(uri),
 
         Message::DismissToast(id) => overlays::dismiss_toast(app, id),
         // exit the application
@@ -2048,9 +2050,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
 
         // custom titlebar window controls
         Message::TitleBarDragStarted => iced::window::drag(app.main_window_id),
-        Message::TitleBarMinimizePressed => {
-            iced::window::minimize(app.main_window_id, true)
-        }
+        Message::TitleBarMinimizePressed => iced::window::minimize(app.main_window_id, true),
         Message::TitleBarMaximizePressed => {
             let target = !app.is_window_maximized;
             app.is_window_maximized = target;

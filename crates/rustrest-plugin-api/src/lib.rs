@@ -69,7 +69,7 @@ pub use process::Process;
 pub use process::{CommandOutput, PickFilesResult, PickedFile, ProcessStream};
 #[cfg(target_arch = "wasm32")]
 pub use process::{pick_files, storage_read, storage_write};
-pub use ui::{UiEvent, UiNode};
+pub use ui::{ButtonVariant, TextTone, UiEvent, UiLength, UiNode, UiStyle};
 
 /// Generates the `rustrest_alloc` / `rustrest_dealloc` / `rustrest_call`
 /// wasm exports the host uses to drive a [`Plugin`] implementation. Call

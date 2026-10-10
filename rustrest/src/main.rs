@@ -705,6 +705,7 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
             plugin_id,
             panel_id,
             app.plugins.right_panel_tree.as_ref(),
+            ui::plugin_panel::RenderEnv::new(&app.plugins.markdown_cache, &app.theme.active.iced),
         ))
         .width(Length::Fixed(app.plugins.right_panel_width))
         .height(Length::Fill)

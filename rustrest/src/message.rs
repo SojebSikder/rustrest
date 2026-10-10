@@ -756,6 +756,10 @@ pub enum Message {
     /// (immediately for non-destructive ops, or after the user accepts the
     /// confirm dialog shown for destructive ones).
     ApplyPluginCollectionOp(rustrest_plugin_host::CollectionOperation),
+    /// a confirmed batch of plugin-proposed collection operations, applied in order
+    ApplyPluginCollectionOps(Vec<rustrest_plugin_host::CollectionOperation>),
+    /// a link clicked in a plugin panel's `UiNode::Markdown`
+    PluginLinkClicked(String),
     /// plugin_id - shows a confirmation dialog before uninstalling.
     UninstallPluginPressed(String),
     /// plugin_id - the uninstall confirmation was accepted.

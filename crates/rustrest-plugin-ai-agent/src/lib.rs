@@ -4,12 +4,18 @@
 
 use rustrest_plugin_api::{
     CollectionOperation, HttpRequestSpec, HttpResponseData, PickFilesResult, PickedFile, Plugin,
-    RequestPatch, RightPanelAction, RightPanelContext, UiEvent, UiNode,
+    RequestPatch, RightPanelAction, RightPanelContext, TextTone, UiEvent, UiNode, UiStyle,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 const CONFIG_FILE: &str = "config.json";
+/// most recent chat messages (user + assistant) sent back to the model as
+/// conversation history. bounds the prompt size on long sessions.
+const MAX_HISTORY_MESSAGES: usize = 20;
+/// reply token budget. large enough for a full test script plus its
+/// explanation, so the trailing action block isn't cut off mid-JSON.
+const MAX_TOKENS: u32 = 8192;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct AgentConfig {
@@ -17,6 +23,13 @@ struct AgentConfig {
     api_key: String,
     model: String,
     base_url: String,
+    /// render assistant replies as markdown (true) or plain text (false).
+    #[serde(default = "default_true")]
+    render_markdown: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for AgentConfig {
@@ -27,6 +40,7 @@ impl Default for AgentConfig {
             api_key: String::new(),
             model,
             base_url,
+            render_markdown: true,
         }
     }
 }
@@ -41,7 +55,7 @@ fn provider_defaults(provider: &str) -> (String, String) {
         "ollama" => (String::new(), "llama3".to_string()),
         _ => (
             "https://api.anthropic.com".to_string(),
-            "claude-sonnet-5".to_string(),
+            "claude-sonnet-5-5".to_string(),
         ),
     }
 }
@@ -71,10 +85,10 @@ struct AiAgentPlugin {
     /// return value the host acts on) - flushed on the next
     /// `render_right_panel` call.
     pending_patch: Option<RequestPatch>,
-    /// mirror of `pending_patch` for a collection-tree operation (create/
-    /// rename/delete/duplicate/move) the model proposed instead of a request
-    /// patch - at most one of the two is ever set for a given reply.
-    pending_collection_op: Option<CollectionOperation>,
+    /// mirror of `pending_patch` for collection-tree operations (create/
+    /// rename/update/delete/duplicate/move) the model proposed instead of a
+    /// request patch - at most one of the two is ever set for a given reply.
+    pending_collection_ops: Vec<CollectionOperation>,
     /// true once the in-flight reply's first text delta has arrived via
     /// `on_http_response_chunk` - i.e. an "Assistant" message has already
     /// been pushed and is being appended to live, so `on_http_response`
@@ -148,7 +162,8 @@ impl AiAgentPlugin {
                 value: self.draft_api_key.clone(),
                 placeholder: "API key".to_string(),
                 on_submit: Some("save-settings".to_string()),
-            },
+            }
+            .styled(UiStyle::new().secure()),
             UiNode::TextInput {
                 id: "model".to_string(),
                 value: self.draft_model.clone(),
@@ -231,19 +246,28 @@ impl AiAgentPlugin {
     }
 
     fn render_chat(&self, ctx: &RightPanelContext) -> UiNode {
+        // compact toolbar buttons, so the header stays one line in a narrow panel
         let header = UiNode::Row(vec![
             UiNode::Muted(format!("Provider: {}", self.config.provider)),
             UiNode::HorizontalSpacer,
-            UiNode::Button {
-                id: "new-session".to_string(),
-                label: "New Session".to_string(),
-                primary: false,
-            },
-            UiNode::Button {
-                id: "toggle-settings".to_string(),
-                label: "\u{2699}".to_string(), // gear icon
-                primary: false,
-            },
+            UiNode::Row(vec![
+                UiNode::Button {
+                    id: "toggle-markdown".to_string(),
+                    label: "Markdown".to_string(),
+                    primary: self.config.render_markdown,
+                },
+                UiNode::Button {
+                    id: "new-session".to_string(),
+                    label: "New Session".to_string(),
+                    primary: false,
+                },
+                UiNode::Button {
+                    id: "toggle-settings".to_string(),
+                    label: "\u{2699}".to_string(), // gear icon
+                    primary: false,
+                },
+            ])
+            .styled(UiStyle::new().text_size(12.0).spacing(4.0)),
         ]);
 
         let mut conversation = Vec::new();
@@ -272,9 +296,17 @@ impl AiAgentPlugin {
                 self.messages
                     .iter()
                     .map(|m| {
+                        let body = if m.role == "Assistant" && self.config.render_markdown {
+                            UiNode::Markdown(m.text.clone())
+                        } else if m.role == "Error" {
+                            UiNode::Label(m.text.clone())
+                                .styled(UiStyle::new().tone(TextTone::Danger))
+                        } else {
+                            UiNode::Label(m.text.clone())
+                        };
                         UiNode::Column(vec![
-                            UiNode::Muted(m.role.clone()),
-                            UiNode::Label(m.text.clone()),
+                            UiNode::Muted(m.role.clone()).styled(UiStyle::new().bold()),
+                            body,
                         ])
                     })
                     .collect(),
@@ -307,6 +339,18 @@ impl AiAgentPlugin {
         ])
     }
 
+    /// queues whatever the model's finished reply asks for - collection
+    /// operations take precedence over a request patch, since the prompt
+    /// tells it never to send both.
+    fn take_actions_from_reply(&mut self, text: &str) {
+        let ops = extract_collection_ops(text);
+        if !ops.is_empty() {
+            self.pending_collection_ops = ops;
+        } else if let Some(patch) = extract_patch(text) {
+            self.pending_patch = Some(patch);
+        }
+    }
+
     fn start_request(&mut self, instruction: String, ctx: &RightPanelContext) {
         if self.busy || instruction.trim().is_empty() {
             return;
@@ -325,7 +369,8 @@ impl AiAgentPlugin {
             &self.selected_envs,
             &self.attached_files,
         );
-        let spec = match build_request_spec(&self.config, &system_prompt, &instruction) {
+        let history = conversation_history(&self.messages, &instruction);
+        let spec = match build_request_spec(&self.config, &system_prompt, &history) {
             Ok(spec) => spec,
             Err(e) => {
                 self.messages.push(ChatMessage {
@@ -361,8 +406,12 @@ impl Plugin for AiAgentPlugin {
     fn render_right_panel(&mut self, _panel_id: &str, ctx: RightPanelContext) -> RightPanelAction {
         self.load_config_once();
         let tree = self.render_tree(&ctx);
-        if let Some(op) = self.pending_collection_op.take() {
-            return RightPanelAction::UpdateUiAndProposeCollectionOp(tree, op);
+        let mut ops = std::mem::take(&mut self.pending_collection_ops);
+        match ops.len() {
+            0 => {}
+            // the single-op variant keeps working against older hosts
+            1 => return RightPanelAction::UpdateUiAndProposeCollectionOp(tree, ops.remove(0)),
+            _ => return RightPanelAction::UpdateUiAndProposeCollectionOps(tree, ops),
         }
         match self.pending_patch.take() {
             Some(patch) => RightPanelAction::UpdateUiAndApplyPatch(tree, patch),
@@ -408,9 +457,14 @@ impl Plugin for AiAgentPlugin {
                                 api_key: self.draft_api_key.clone(),
                                 model: self.draft_model.clone(),
                                 base_url: self.draft_base_url.clone(),
+                                render_markdown: self.config.render_markdown,
                             };
                             self.save_config();
                             self.show_settings = false;
+                        }
+                        "toggle-markdown" => {
+                            self.config.render_markdown = !self.config.render_markdown;
+                            self.save_config();
                         }
                         "send" => {
                             let instruction = self.draft_input.clone();
@@ -535,22 +589,14 @@ impl Plugin for AiAgentPlugin {
                 // whether a reply warrants a patch or a collection-tree
                 // operation - so every reply is checked, regardless of
                 // what was asked. At most one of the two ever applies.
-                if let Some(op) = extract_collection_op(&text) {
-                    self.pending_collection_op = Some(op);
-                } else if let Some(patch) = extract_patch(&text) {
-                    self.pending_patch = Some(patch);
-                }
+                self.take_actions_from_reply(&text);
             }
             // nothing streamed - either the provider ignored `stream: true`
             // and replied in one shot, or (more likely) the request failed
             // outright and the body is a plain JSON error object.
             Ok(data) => match parse_provider_reply(&self.config.provider, &data.body) {
                 Ok(text) => {
-                    if let Some(op) = extract_collection_op(&text) {
-                        self.pending_collection_op = Some(op);
-                    } else if let Some(patch) = extract_patch(&text) {
-                        self.pending_patch = Some(patch);
-                    }
+                    self.take_actions_from_reply(&text);
                     self.messages.push(ChatMessage {
                         role: "Assistant".to_string(),
                         text,
@@ -604,11 +650,13 @@ fn build_system_prompt(
             "\n\nSelected collections (reference these by id, not by guessing; anything not \
              listed here wasn't selected as context and its ids/paths must not be guessed at):",
         );
+
         for col in selected {
             prompt.push_str(&format!("\n- collection #{} \"{}\"", col.id, col.name));
             for folder in &col.folders {
                 prompt.push_str(&format!("\n    folder: {}", folder.join("/")));
             }
+
             for req in &col.requests {
                 let location = if req.folder_path.is_empty() {
                     "collection root".to_string()
@@ -616,8 +664,8 @@ fn build_system_prompt(
                     req.folder_path.join("/")
                 };
                 prompt.push_str(&format!(
-                    "\n    request #{} \"{}\" ({}) in {}",
-                    req.id, req.name, req.method, location
+                    "\n    request #{} \"{}\" ({} {}) in {}",
+                    req.id, req.name, req.method, req.url, location
                 ));
             }
         }
@@ -630,8 +678,10 @@ fn build_system_prompt(
         .collect();
     if !selected_env_list.is_empty() {
         prompt.push_str("\n\nSelected environments (variable values included as-is):");
+
         for env in selected_env_list {
             prompt.push_str(&format!("\n- environment \"{}\"", env.name));
+
             for (key, value) in &env.variables {
                 prompt.push_str(&format!("\n    {key} = {value}"));
             }
@@ -646,18 +696,23 @@ fn build_system_prompt(
     }
 
     prompt.push_str(
-        "\n\nAnswer in plain, concise language. If, and only if, the user's message asks you to \
-         change the active request or add/replace its post-response test script, follow your \
-         explanation with exactly one fenced ```json code block containing ONLY the fields that \
-         should change, matching this shape: {\"method\":string|null,\"url\":string|null,\
-         \"headers\":[[string,string]]|null,\"body\":string|null,\"post_response_script\":string|null}. \
-         Omit fields you don't want to change (or set them to null). The test script, if any, is \
-         JavaScript using the pm.* scripting API this app exposes (pm.test(name, fn), \
-         pm.expect(...), pm.response.status/json()).\n\n\
-         If, and only if, the user's message asks you to create, rename, delete, duplicate, or \
-         move a collection, folder, or request, follow your explanation with exactly one fenced \
-         ```collection-action code block (instead of the ```json one above - never both) \
-         containing ONLY one JSON object shaped as one of:\n\
+        "\n\nAnswer concisely; markdown formatting is fine.\n\n\
+         EDITING THE ACTIVE REQUEST: if, and only if, the user's message asks you to change the \
+         active request or add/replace its pre-request or post-response script, follow your \
+         explanation with exactly one fenced ```request-patch code block containing ONLY the \
+         fields that should change, matching this shape: {\"method\":string|null,\
+         \"url\":string|null,\"headers\":[[string,string]]|null,\"body\":string|null,\
+         \"pre_request_script\":string|null,\"post_response_script\":string|null}. Omit fields \
+         you don't want to change (or set them to null); `headers` replaces the whole header \
+         list. Scripts are JavaScript using the pm.* scripting API this app exposes \
+         (pm.test(name, fn), pm.expect(...), pm.response.status/json(), \
+         pm.variables.get/set(...)). Use a ```request-patch fence only for this - format any \
+         other example JSON with a plain ```json fence.\n\n\
+         CHANGING COLLECTIONS: if, and only if, the user's message asks you to create, rename, \
+         update, delete, duplicate, or move a collection, folder, or request, follow your \
+         explanation with exactly one fenced ```collection-action code block (instead of the \
+         ```request-patch one - never both) containing either one JSON object or a JSON array of \
+         them, applied in order. Each object is shaped as one of:\n\
          {\"op\":\"create_collection\",\"name\":string}\n\
          {\"op\":\"rename_collection\",\"collection_id\":number,\"new_name\":string}\n\
          {\"op\":\"delete_collection\",\"collection_id\":number}\n\
@@ -665,25 +720,79 @@ fn build_system_prompt(
          {\"op\":\"rename_folder\",\"collection_id\":number,\"path\":[string],\"new_name\":string}\n\
          {\"op\":\"delete_folder\",\"collection_id\":number,\"path\":[string]}\n\
          {\"op\":\"create_request\",\"collection_id\":number,\"parent_path\":[string],\"name\":string,\"method\":string,\"url\":string}\n\
+         {\"op\":\"update_request\",\"collection_id\":number,\"request_id\":number,\"method\":string|null,\"url\":string|null,\"headers\":[[string,string]]|null,\"body\":string|null,\"pre_request_script\":string|null,\"post_response_script\":string|null}\n\
          {\"op\":\"rename_request\",\"collection_id\":number,\"request_id\":number,\"new_name\":string}\n\
          {\"op\":\"delete_request\",\"collection_id\":number,\"parent_path\":[string],\"request_id\":number}\n\
          {\"op\":\"duplicate_request\",\"collection_id\":number,\"parent_path\":[string],\"request_id\":number}\n\
          {\"op\":\"move_request\",\"collection_id\":number,\"from_path\":[string],\"request_id\":number,\"to_path\":[string]}\n\
          `parent_path`/`path`/`from_path`/`to_path` are folder-name arrays (e.g. [] for the \
-         collection root, [\"Auth\"] for a top-level folder named Auth). Use the ids/paths listed \
-         above under \"Existing collections\" - never invent one. Deleting or moving something \
-         will ask the user to confirm before it's applied; say so in your explanation. Otherwise, \
-         don't include this block at all.",
+         collection root, [\"Auth\"] for a top-level folder named Auth). Within one batch, a \
+         folder created earlier can be used as a later parent_path, but a request's id is only \
+         known once it exists - so update_request can only target requests listed below/above, \
+         not ones created in the same batch. Use only the collection and request ids/paths \
+         listed above under \"Selected collections\" - never invent one; if the collection the \
+         user means isn't listed, ask them to tick it under Context. Deleting, moving, or \
+         updating something will ask the user to confirm before it's applied; say so in your \
+         explanation. Otherwise, don't include this block at all.",
     );
 
     prompt
 }
 
+/// one turn of the conversation as sent to the provider.
+#[derive(Debug, Clone, PartialEq)]
+struct Turn {
+    /// "user" or "assistant"
+    role: &'static str,
+    text: String,
+}
+
+/// the chat so far
+fn conversation_history(messages: &[ChatMessage], instruction: &str) -> Vec<Turn> {
+    let recent: Vec<(&'static str, &str)> = messages
+        .iter()
+        .filter_map(|m| match m.role.as_str() {
+            "You" => Some(("user", m.text.as_str())),
+            "Assistant" => Some(("assistant", m.text.as_str())),
+            _ => None,
+        })
+        .collect();
+    let skip = recent.len().saturating_sub(MAX_HISTORY_MESSAGES);
+
+    let mut turns: Vec<Turn> = Vec::new();
+    for (role, text) in recent
+        .into_iter()
+        .skip(skip)
+        .chain(std::iter::once(("user", instruction)))
+    {
+        if text.trim().is_empty() {
+            continue;
+        }
+        match turns.last_mut() {
+            Some(last) if last.role == role => {
+                last.text.push_str("\n\n");
+                last.text.push_str(text);
+            }
+            None if role != "user" => {}
+            _ => turns.push(Turn {
+                role,
+                text: text.to_string(),
+            }),
+        }
+    }
+    turns
+}
+
 fn build_request_spec(
     config: &AgentConfig,
     system_prompt: &str,
-    instruction: &str,
+    history: &[Turn],
 ) -> Result<HttpRequestSpec, String> {
+    let history_json: Vec<serde_json::Value> = history
+        .iter()
+        .map(|t| serde_json::json!({"role": t.role, "content": t.text}))
+        .collect();
+
     let base_url = if config.base_url.is_empty() {
         return Err("no base URL configured - open Settings first.".to_string());
     } else {
@@ -700,23 +809,23 @@ fn build_request_spec(
             } else {
                 "/api/chat"
             };
+            let mut messages =
+                vec![serde_json::json!({"role": "system", "content": system_prompt})];
+            messages.extend(history_json);
             let body = serde_json::json!({
                 "model": config.model,
                 "stream": true,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": instruction},
-                ],
+                "messages": messages,
             });
             (format!("{base_url}{endpoint}"), body)
         }
         _ => {
             let body = serde_json::json!({
                 "model": config.model,
-                "max_tokens": 1024,
+                "max_tokens": MAX_TOKENS,
                 "stream": true,
                 "system": system_prompt,
-                "messages": [{"role": "user", "content": instruction}],
+                "messages": history_json,
             });
             (format!("{base_url}/v1/messages"), body)
         }
@@ -815,22 +924,59 @@ fn extract_stream_delta(provider: &str, line: &str) -> Option<String> {
     }
 }
 
-/// pulls a fenced ```json ... ``` block out of `text` and decodes it as a
-/// `RequestPatch`.
-fn extract_patch(text: &str) -> Option<RequestPatch> {
-    let start = text.find("```json")? + "```json".len();
-    let rest = &text[start..];
-    let end = rest.find("```")?;
-    serde_json::from_str(rest[..end].trim()).ok()
+/// contents of every fenced code block in `text` whose info string is
+/// exactly `lang` (so e.g. ```json doesn't also match ```jsonc).
+fn fenced_blocks<'a>(text: &'a str, lang: &str) -> Vec<&'a str> {
+    let fence = format!("```{lang}");
+    let mut blocks = Vec::new();
+    let mut rest = text;
+    while let Some(start) = rest.find(&fence) {
+        let after = &rest[start + fence.len()..];
+        let Some(line_end) = after.find('\n') else {
+            break;
+        };
+        // the info string must end right after `lang`
+        if !after[..line_end].trim().is_empty() {
+            rest = after;
+            continue;
+        }
+        let body = &after[line_end + 1..];
+        let Some(end) = body.find("```") else {
+            break;
+        };
+        blocks.push(body[..end].trim());
+        rest = &body[end + 3..];
+    }
+    blocks
 }
 
-/// pulls a fenced ```collection-action ... ``` block out of `text` and
-/// decodes it as a `CollectionOperation`.
-fn extract_collection_op(text: &str) -> Option<CollectionOperation> {
-    let start = text.find("```collection-action")? + "```collection-action".len();
-    let rest = &text[start..];
-    let end = rest.find("```")?;
-    serde_json::from_str(rest[..end].trim()).ok()
+/// the last ```request-patch block in `text` that decodes to a patch
+/// actually changing something (every field is optional, so any JSON object
+/// would otherwise "decode").
+fn extract_patch(text: &str) -> Option<RequestPatch> {
+    fenced_blocks(text, "request-patch")
+        .into_iter()
+        .rev()
+        .filter_map(|block| serde_json::from_str::<RequestPatch>(block).ok())
+        .find(|patch| !patch.is_empty())
+}
+
+/// the operations in the last ```collection-action block in `text` that
+/// decodes, either as a single operation object or an array of them.
+fn extract_collection_ops(text: &str) -> Vec<CollectionOperation> {
+    fenced_blocks(text, "collection-action")
+        .into_iter()
+        .rev()
+        .find_map(|block| {
+            serde_json::from_str::<Vec<CollectionOperation>>(block)
+                .ok()
+                .or_else(|| {
+                    serde_json::from_str::<CollectionOperation>(block)
+                        .ok()
+                        .map(|op| vec![op])
+                })
+        })
+        .unwrap_or_default()
 }
 
 rustrest_plugin_api::export_plugin!(AiAgentPlugin);

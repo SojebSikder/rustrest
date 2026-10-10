@@ -1,6 +1,6 @@
 //! Renders the generic right-hand panel
 
-use super::plugin_panel::render_root;
+use super::plugin_panel::{RenderEnv, render_root};
 use crate::message::Message;
 use iced::Element;
 use iced::widget::text;
@@ -10,9 +10,10 @@ pub fn render_right_panel<'a>(
     plugin_id: &str,
     panel_id: &str,
     tree: Option<&'a UiNode>,
+    env: RenderEnv<'a>,
 ) -> Element<'a, Message> {
     match tree {
-        Some(node) => render_root(plugin_id, panel_id, node, Message::RightPanelEvent),
+        Some(node) => render_root(plugin_id, panel_id, node, env, Message::RightPanelEvent),
         None => text("(right panel unavailable)").into(),
     }
 }

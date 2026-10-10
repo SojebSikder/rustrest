@@ -10,7 +10,7 @@ use crate::message::Message;
 use crate::plugin_gallery::GalleryEntry;
 use crate::ui::confirm_dialog::ConfirmDialogState;
 use crate::ui::plugin_manager::{PluginManagerAction, PluginManagerView};
-use crate::ui::plugin_panel::{autoscroll_id, contains_autoscroll};
+use crate::ui::plugin_panel::{MarkdownCache, autoscroll_id, contains_autoscroll};
 use crate::ui::toast::toast::ToastStatus;
 use iced::Task;
 use rustrest_plugin_host::{
@@ -47,11 +47,23 @@ pub struct PluginsState {
     pub right_panel_open: Option<(String, String)>,
     /// last-rendered declarative UI tree for the open right panel.
     pub right_panel_tree: Option<UiNode>,
+    /// parsed `UiNode::Markdown` content of every tree above - refresh with
+    /// `refresh_markdown` after replacing any of them.
+    pub markdown_cache: MarkdownCache,
 }
 
-/// forwards any pending `host_log()` lines from plugins into the app's
-/// existing console panel, so plugin activity shows up alongside request
-/// logs without a separate UI surface.
+impl PluginsState {
+    /// re-syncs `markdown_cache` with the currently stored panel trees.
+    pub fn refresh_markdown(&mut self) {
+        self.markdown_cache.refresh(
+            self.plugin_panel_state
+                .values()
+                .chain(self.right_panel_tree.as_ref()),
+        );
+    }
+}
+
+/// forwards any pending `host_log()` lines from plugins into the app's console panel
 pub fn drain_plugin_logs(app: &mut Rustrest) {
     app.layout
         .console_logs
@@ -60,9 +72,7 @@ pub fn drain_plugin_logs(app: &mut Rustrest) {
 
 /// snapshots the active tab (if it's an HTTP request tab) plus every
 /// currently loaded collection/environment into the ambient context handed
-/// to a `RightPanel` plugin on every render/event. `collections`/
-/// `environments` are always populated regardless of what tab is active -
-/// only `active_request`/`active_response` depend on it.
+/// to a `RightPanel` plugin on every render/event.
 pub fn build_right_panel_context(app: &Rustrest) -> RightPanelContext {
     let http_tab = app
         .tabs
@@ -152,6 +162,12 @@ fn summarize_collection(
                         name: req.name.clone(),
                         folder_path: path.to_vec(),
                         method: req.request.method.clone(),
+                        url: req
+                            .request
+                            .url
+                            .as_ref()
+                            .map(|u| u.to_string())
+                            .unwrap_or_default(),
                     });
                 }
             }
@@ -203,6 +219,10 @@ pub fn handle_right_panel_action(app: &mut Rustrest, action: RightPanelAction) -
             let scroll_task = set_right_panel_tree(app, tree);
             Task::batch([scroll_task, propose_collection_op(app, op)])
         }
+        RightPanelAction::UpdateUiAndProposeCollectionOps(tree, ops) => {
+            let scroll_task = set_right_panel_tree(app, tree);
+            Task::batch([scroll_task, propose_collection_ops(app, ops)])
+        }
     }
 }
 
@@ -222,6 +242,7 @@ fn set_right_panel_tree(app: &mut Rustrest, tree: UiNode) -> Task<Message> {
         Task::none()
     };
     app.plugins.right_panel_tree = Some(tree);
+    app.plugins.refresh_markdown();
     scroll_task
 }
 
@@ -241,6 +262,53 @@ fn propose_collection_op(app: &mut Rustrest, op: CollectionOperation) -> Task<Me
     } else {
         apply_collection_op(app, op)
     }
+}
+
+/// batch version of `propose_collection_op`
+fn propose_collection_ops(app: &mut Rustrest, mut ops: Vec<CollectionOperation>) -> Task<Message> {
+    if ops.len() == 1 {
+        return propose_collection_op(app, ops.remove(0));
+    }
+    if ops.iter().any(CollectionOperation::is_destructive) {
+        let message = ops
+            .iter()
+            .map(|op| format!("\u{2022} {}", op.describe()))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        app.overlays.confirm_dialog = Some(ConfirmDialogState {
+            title: format!("AI Agent Actions ({})", ops.len()),
+            message,
+            confirm_label: "Apply All".to_string(),
+            on_confirm: Box::new(Message::ApplyPluginCollectionOps(ops)),
+        });
+
+        Task::none()
+    } else {
+        apply_collection_ops(app, ops)
+    }
+}
+
+/// applies `ops` in order, stopping at the first failure
+pub fn apply_collection_ops(app: &mut Rustrest, ops: Vec<CollectionOperation>) -> Task<Message> {
+    let total = ops.len();
+    for (index, op) in ops.into_iter().enumerate() {
+        if let Err(e) = super::plugin_collection_ops::apply(app, op) {
+            let message = if index == 0 {
+                format!("AI agent action failed: {e}")
+            } else {
+                format!(
+                    "AI agent action {} of {total} failed (earlier ones were applied): {e}",
+                    index + 1
+                )
+            };
+            return Task::done(Message::ShowToast(message, ToastStatus::Error));
+        }
+    }
+    Task::done(Message::ShowToast(
+        format!("Applied {total} AI agent actions"),
+        ToastStatus::Success,
+    ))
 }
 
 pub fn apply_collection_op(app: &mut Rustrest, op: CollectionOperation) -> Task<Message> {
@@ -265,8 +333,11 @@ fn apply_request_patch_to_active_tab(
     if !matches!(tab_state.content, WorkspaceContent::HttpRequest) {
         return;
     }
-    let tab = &mut tab_state.tab;
+    apply_request_patch_to_tab(&mut tab_state.tab, patch);
+}
 
+/// applies `patch` onto an open request tab
+pub(super) fn apply_request_patch_to_tab(tab: &mut Tab, patch: rustrest_plugin_host::RequestPatch) {
     if let Some(method) = patch.method {
         tab.method = parse_http_method(&method);
     }
@@ -584,6 +655,7 @@ pub fn open_panel(app: &mut Rustrest, plugin_id: String, panel_id: String) -> Ta
             app.plugins
                 .plugin_panel_state
                 .insert((plugin_id.clone(), panel_id.clone()), tree);
+            app.plugins.refresh_markdown();
 
             let mut tab = Tab::new(app.next_tab_id);
             tab.name = title;
@@ -621,6 +693,7 @@ pub fn panel_event(
             app.plugins
                 .plugin_panel_state
                 .insert((plugin_id, panel_id), tree);
+            app.plugins.refresh_markdown();
             Task::none()
         }
         Ok(None) => Task::none(),
@@ -714,6 +787,7 @@ pub fn process_tick(app: &mut Rustrest) -> Task<Message> {
                     .insert((plugin_id, panel_id), tree);
             }
         }
+        app.plugins.refresh_markdown();
         let mut right_panel_task = Task::none();
         if let Some((plugin_id, panel_id)) = app.plugins.right_panel_open.clone()
             && touched.contains(&plugin_id)
@@ -750,6 +824,7 @@ pub fn toggle_right_panel(
     if app.plugins.right_panel_open.as_ref() == Some(&(plugin_id.clone(), panel_id.clone())) {
         app.plugins.right_panel_open = None;
         app.plugins.right_panel_tree = None;
+        app.plugins.refresh_markdown();
         return Task::none();
     }
     let ctx = build_right_panel_context(app);

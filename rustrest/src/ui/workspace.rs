@@ -269,7 +269,15 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
                 .plugins
                 .plugin_panel_state
                 .get(&(plugin_id.clone(), panel_id.clone()));
-            super::plugin_panel::render_plugin_panel(plugin_id, panel_id, tree)
+            super::plugin_panel::render_plugin_panel(
+                plugin_id,
+                panel_id,
+                tree,
+                super::plugin_panel::RenderEnv::new(
+                    &app.plugins.markdown_cache,
+                    &app.theme.active.iced,
+                ),
+            )
         }
 
         WorkspaceContent::PluginManager => super::plugin_manager::render_plugin_manager_tab(app),
