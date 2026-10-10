@@ -40,6 +40,9 @@ pub struct RequestSummary {
     pub name: String,
     pub folder_path: Vec<String>,
     pub method: String,
+    /// the request's saved URL
+    #[serde(default)]
+    pub url: String,
 }
 
 /// a read-only snapshot of one loaded collection's tree, handed to a
@@ -98,6 +101,28 @@ pub struct RequestPatch {
     pub post_response_script: Option<String>,
 }
 
+impl RequestPatch {
+    /// names of the fields this patch would change, e.g. `["url", "body"]`.
+    pub fn changed_fields(&self) -> Vec<&'static str> {
+        [
+            ("method", self.method.is_some()),
+            ("url", self.url.is_some()),
+            ("headers", self.headers.is_some()),
+            ("body", self.body.is_some()),
+            ("pre-request script", self.pre_request_script.is_some()),
+            ("post-response script", self.post_response_script.is_some()),
+        ]
+        .into_iter()
+        .filter_map(|(name, set)| set.then_some(name))
+        .collect()
+    }
+
+    /// true if the patch wouldn't change anything.
+    pub fn is_empty(&self) -> bool {
+        self.changed_fields().is_empty()
+    }
+}
+
 /// returned by `Plugin::on_right_panel_event` to tell the host what changed:
 /// the panel's own UI, the active request tab, or both.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -116,6 +141,9 @@ pub enum RightPanelAction {
     /// collection, folder, or request). Destructive operations are confirmed
     /// with the user before the host applies them.
     UpdateUiAndProposeCollectionOp(crate::ui::UiNode, CollectionOperation),
+    /// like `UpdateUiAndProposeCollectionOp`, but for several operations
+    /// applied in order as one batch (e.g. create a folder, then requests in it).
+    UpdateUiAndProposeCollectionOps(crate::ui::UiNode, Vec<CollectionOperation>),
 }
 
 /// a create/rename/delete/duplicate/move performed on the collection tree
@@ -177,6 +205,14 @@ pub enum CollectionOperation {
         request_id: usize,
         to_path: Vec<String>,
     },
+    /// edits a saved request's contents in place. Only the fields set in
+    /// `patch` change, `headers`, if set, replaces the whole header list.
+    UpdateRequest {
+        collection_id: usize,
+        request_id: usize,
+        #[serde(flatten)]
+        patch: RequestPatch,
+    },
 }
 
 impl CollectionOperation {
@@ -189,6 +225,7 @@ impl CollectionOperation {
                 | Self::DeleteFolder { .. }
                 | Self::DeleteRequest { .. }
                 | Self::MoveRequest { .. }
+                | Self::UpdateRequest { .. }
         )
     }
 
@@ -251,6 +288,16 @@ impl CollectionOperation {
                     format!("Move request #{request_id} to the collection root")
                 } else {
                     format!("Move request #{request_id} to {}", to_path.join("/"))
+                }
+            }
+            Self::UpdateRequest {
+                request_id, patch, ..
+            } => {
+                let fields = patch.changed_fields();
+                if fields.is_empty() {
+                    format!("Update request #{request_id}")
+                } else {
+                    format!("Update request #{request_id} ({})", fields.join(", "))
                 }
             }
         }

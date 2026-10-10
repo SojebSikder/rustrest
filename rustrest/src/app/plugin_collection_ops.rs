@@ -5,8 +5,8 @@
 
 use super::Rustrest;
 use crate::collection::collection::{
-    CollectionInfo, CollectionItem, PostmanCollection, PostmanRequestDetails, PostmanRequestNode,
-    PostmanUrl,
+    CollectionInfo, CollectionItem, PostmanBody, PostmanCollection, PostmanHeader,
+    PostmanRequestDetails, PostmanRequestNode, PostmanUrl, set_event_script,
 };
 use crate::message::SidebarDragItem;
 use crate::utils::{
@@ -259,6 +259,67 @@ pub fn apply(app: &mut Rustrest, op: CollectionOperation) -> Result<String, Stri
                     to_path.join("/")
                 }
             ))
+        }
+
+        CollectionOperation::UpdateRequest {
+            collection_id,
+            request_id,
+            patch,
+        } => {
+            if patch.is_empty() {
+                return Err(format!("nothing to update on request #{request_id}"));
+            }
+            let fields = patch.changed_fields().join(", ");
+
+            let col = find_collection_mut(app, collection_id)?;
+            let Some(req) = find_request_mut(&mut col.item, request_id) else {
+                return Err(format!("no request with id {request_id}"));
+            };
+            let details = &mut req.request;
+            if let Some(method) = &patch.method {
+                details.method = method.trim().to_uppercase();
+            }
+            if let Some(url) = &patch.url {
+                details.url = Some(PostmanUrl::String(url.clone()));
+            }
+            if let Some(headers) = &patch.headers {
+                details.header = Some(
+                    headers
+                        .iter()
+                        .map(|(key, value)| PostmanHeader {
+                            key: key.clone(),
+                            value: value.clone(),
+                            disabled: None,
+                        })
+                        .collect(),
+                );
+            }
+            if let Some(body) = &patch.body {
+                details.body = (!body.is_empty()).then(|| PostmanBody {
+                    mode: Some("raw".to_string()),
+                    raw: Some(body.clone()),
+                    formdata: None,
+                    urlencoded: None,
+                    graphql: None,
+                    file: None,
+                });
+            }
+            if let Some(script) = &patch.pre_request_script {
+                set_event_script(&mut req.event, "prerequest", script);
+            }
+            if let Some(script) = &patch.post_response_script {
+                set_event_script(&mut req.event, "test", script);
+            }
+            req.unsaved = true;
+
+            // keep an already-open tab of this request in sync, otherwise
+            // saving that tab would overwrite the update with stale content
+            for tab_state in app.tabs.iter_mut() {
+                if tab_state.tab.request_id == Some(request_id) {
+                    super::plugins::apply_request_patch_to_tab(&mut tab_state.tab, patch.clone());
+                }
+            }
+            Ok(format!("Updated request #{request_id} ({fields})"))
         }
     }
 }

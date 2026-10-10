@@ -2,7 +2,7 @@
 
 Rustrest plugins are small [WebAssembly](https://webassembly.org/) modules, sandboxed with [`wasmtime`](https://wasmtime.dev/). A plugin is a directory with a `plugin.toml` manifest plus a compiled `plugin.wasm`.
 
-A plugin can also ship themes in a `themes/` folder, and a *theme extension* is a plugin with only that - no wasm at all (Zed theme extensions, with their `extension.toml`, install as-is). See [Themes](themes.md).
+A plugin can also ship themes in a `themes/` folder, and a _theme extension_ is a plugin with only that - no wasm at all (Zed theme extensions, with their `extension.toml`, install as-is). See [Themes](themes.md).
 
 This guide covers the fundamentals of Rustrest plugin development.
 
@@ -259,25 +259,25 @@ Every table under `[capabilities]` is optional - only declare what you use. The 
 
 ## The `Plugin` trait
 
-| Method                                                           | Capability needed                          | Purpose                                                                                     |
-| ---------------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------- |
-| `on_pre_request(ctx) -> ctx`                                     | `request_hooks`                            | Mutate method/url/headers/body/variables before a request is sent.                          |
-| `on_post_response(ctx) -> ctx`                                   | `request_hooks`                            | Inspect/mutate status/headers/body/variables/test results after a response.                 |
-| `on_command(id) -> Result<Option<String>, String>`               | `commands`/`menu_items`/`status_bar_items` | Handle a command-palette, menu, or status bar action; the returned string shows as a toast. |
-| `render_panel(panel_id) -> UiNode`                               | `sidebar_panel`                            | Render (or re-render) your panel's declarative widget tree.                                 |
-| `on_panel_event(panel_id, event) -> Option<UiNode>`              | `sidebar_panel`                            | Handle a widget interaction; return `Some(tree)` to update the panel.                       |
-| `import(format_id, bytes) -> Result<Value, String>`              | `import_formats`                           | Decode into Rustrest's own collection JSON (Postman v2.1-shaped).                           |
-| `export(format_id, collection) -> Result<Vec<u8>, String>`       | `export_formats`                           | Encode Rustrest's collection JSON into your format.                                         |
-| `on_process_output(handle, stream, chunk)`                       | `external_process`                         | New stdout/stderr from a process you spawned via `Process::spawn`.                          |
-| `on_process_exit(handle, code)`                                  | `external_process`                         | A spawned process exited.                                                                   |
-| `render_right_panel(panel_id, ctx) -> RightPanelAction`          | `right_panel`                              | Render (or re-render) the right panel; `ctx` is the active request/response.                |
-| `on_right_panel_event(panel_id, ctx, event) -> RightPanelAction` | `right_panel`                              | Handle a widget interaction in the right panel.                                             |
-| `on_http_response(handle, result)`                               | `external_process`                         | An outbound request started via `network::http_request` completed.                          |
-| `on_http_response_chunk(handle, chunk)`                          | `external_process`                         | One line of a response body, as it's read off the socket (before the final result).         |
-| `on_files_picked(handle, result)`                                | `external_process`                         | A `process::pick_files` dialog resolved (or was cancelled).                                 |
-| `on_download_finished(handle, result)`                           | `external_process`                         | A `process::download_archive` finished; `result` lists the extracted files.                 |
-| `language_server_command(server_id) -> Result<Option<LanguageServerCommand>, String>` | `language_servers` | How to launch the server; `Ok(None)` while it's still installing (the host asks again). |
-| `language_server_initialization_options(server_id) -> Option<Value>` | `language_servers` | `initializationOptions`, also used to answer `workspace/configuration`. |
+| Method                                                                                | Capability needed                          | Purpose                                                                                     |
+| ------------------------------------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| `on_pre_request(ctx) -> ctx`                                                          | `request_hooks`                            | Mutate method/url/headers/body/variables before a request is sent.                          |
+| `on_post_response(ctx) -> ctx`                                                        | `request_hooks`                            | Inspect/mutate status/headers/body/variables/test results after a response.                 |
+| `on_command(id) -> Result<Option<String>, String>`                                    | `commands`/`menu_items`/`status_bar_items` | Handle a command-palette, menu, or status bar action; the returned string shows as a toast. |
+| `render_panel(panel_id) -> UiNode`                                                    | `sidebar_panel`                            | Render (or re-render) your panel's declarative widget tree.                                 |
+| `on_panel_event(panel_id, event) -> Option<UiNode>`                                   | `sidebar_panel`                            | Handle a widget interaction; return `Some(tree)` to update the panel.                       |
+| `import(format_id, bytes) -> Result<Value, String>`                                   | `import_formats`                           | Decode into Rustrest's own collection JSON (Postman v2.1-shaped).                           |
+| `export(format_id, collection) -> Result<Vec<u8>, String>`                            | `export_formats`                           | Encode Rustrest's collection JSON into your format.                                         |
+| `on_process_output(handle, stream, chunk)`                                            | `external_process`                         | New stdout/stderr from a process you spawned via `Process::spawn`.                          |
+| `on_process_exit(handle, code)`                                                       | `external_process`                         | A spawned process exited.                                                                   |
+| `render_right_panel(panel_id, ctx) -> RightPanelAction`                               | `right_panel`                              | Render (or re-render) the right panel; `ctx` is the active request/response.                |
+| `on_right_panel_event(panel_id, ctx, event) -> RightPanelAction`                      | `right_panel`                              | Handle a widget interaction in the right panel.                                             |
+| `on_http_response(handle, result)`                                                    | `external_process`                         | An outbound request started via `network::http_request` completed.                          |
+| `on_http_response_chunk(handle, chunk)`                                               | `external_process`                         | One line of a response body, as it's read off the socket (before the final result).         |
+| `on_files_picked(handle, result)`                                                     | `external_process`                         | A `process::pick_files` dialog resolved (or was cancelled).                                 |
+| `on_download_finished(handle, result)`                                                | `external_process`                         | A `process::download_archive` finished; `result` lists the extracted files.                 |
+| `language_server_command(server_id) -> Result<Option<LanguageServerCommand>, String>` | `language_servers`                         | How to launch the server; `Ok(None)` while it's still installing (the host asks again).     |
+| `language_server_initialization_options(server_id) -> Option<Value>`                  | `language_servers`                         | `initializationOptions`, also used to answer `workspace/configuration`.                     |
 
 `RequestContext`/`ResponseContext` mirror the shape of Rustrest's built-in `pm.*` pre-request/test scripting context, so behavior is consistent between the two mechanisms.
 
@@ -291,6 +291,7 @@ use rustrest_plugin_api::{UiEvent, UiNode};
 enum UiNode {
     Label(String),
     Muted(String),                 // dim/secondary line - hints, timestamps, role labels
+    Markdown(String),              // rendered markdown - headings, lists, code blocks, links
     Button { id: String, label: String, primary: bool }, // primary = the one emphasized action
     TextInput { id: String, value: String, placeholder: String, on_submit: Option<String> },
     Checkbox { id: String, label: String, checked: bool },
@@ -302,6 +303,7 @@ enum UiNode {
     FixedSpace { width: f32, height: f32 },
     Scrollable(Box<UiNode>),       // an independent scroll region
     AutoScroll(Box<UiNode>),       // like Scrollable, but snapped to the bottom on every render
+    Styled { style: UiStyle, child: Box<UiNode> }, // `child` with presentation overrides - see below
 }
 
 enum UiEvent {
@@ -313,7 +315,37 @@ enum UiEvent {
 
 `on_panel_event` gets called with the `id` of whichever widget the user interacted with; return the updated tree from `Some(...)` (or `None` to leave the currently-rendered tree as-is).
 
-The host only auto-scrolls a panel's whole tree when it contains no explicit `Scrollable`/`AutoScroll` anywhere; once you use one, you're opting into controlling scrolling yourself - typically to keep a header/footer (a settings button, a send box) pinned while just the middle section scrolls. `TextInput.on_submit`, if set, fires `UiEvent::Clicked` with that id when the user presses Enter in the field - e.g. wiring a chat input to its Send button's id so Enter submits without reaching for the mouse. Every `Label`/`Muted` line is automatically right-click "Copy"-able - the host handles this itself, nothing to do on your end.
+The host only auto-scrolls a panel's whole tree when it contains no explicit `Scrollable`/`AutoScroll` anywhere; once you use one, you're opting into controlling scrolling yourself - typically to keep a header/footer (a settings button, a send box) pinned while just the middle section scrolls. `TextInput.on_submit`, if set, fires `UiEvent::Clicked` with that id when the user presses Enter in the field - e.g. wiring a chat input to its Send button's id so Enter submits without reaching for the mouse. Every `Label`/`Muted`/`Markdown` node is automatically right-click "Copy"-able (a `Markdown` node copies its markdown source) - the host handles this itself, nothing to do on your end.
+
+### Styling elements
+
+Wrap any node with `.styled(...)` to change how it looks - button color, text size, widths, and so on. Every `UiStyle` field is optional; anything left unset keeps the host's default:
+
+```rust
+use rustrest_plugin_api::{ButtonVariant, TextTone, UiLength, UiNode, UiStyle};
+
+UiNode::Button { id: "delete".into(), label: "Delete".into(), primary: false }
+    .styled(UiStyle::new().variant(ButtonVariant::Danger).text_size(12.0));
+
+UiNode::TextInput { id: "token".into(), value, placeholder: "Token".into(), on_submit: None }
+    .styled(UiStyle::new().secure().width(UiLength::Fixed(240.0)));
+
+UiNode::Label("Failed".into()).styled(UiStyle::new().tone(TextTone::Danger).bold());
+```
+
+| field              | applies to                                         | notes                                                                               |
+| ------------------ | -------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `text_size`        | text, buttons, inputs, checkboxes, lists, markdown | logical pixels                                                                      |
+| `tone`             | text, lists                                        | `default`, `muted`, `primary`, `success`, `warning`, `danger` (theme colors)        |
+| `bold`             | text, buttons, lists                               |                                                                                     |
+| `width` / `height` | everything                                         | `fill`, `shrink`, or `fixed(px)`                                                    |
+| `padding`          | everything                                         | `[vertical, horizontal]`                                                            |
+| `spacing`          | `Row`, `Column`, `List`                            | gap between children (default 8, `List` 4)                                          |
+| `variant`          | buttons                                            | `primary`, `secondary`, `success`, `warning`, `danger`, `text`; overrides `primary` |
+| `disabled`         | buttons, inputs, checkboxes                        | non-interactive                                                                     |
+| `secure`           | inputs                                             | masks the value (passwords, API keys)                                               |
+
+Styling a `Row`/`Column` cascades its text fields (`text_size`, `tone`, `bold`, `disabled`) to everything inside it, so one wrapper can shrink a whole toolbar; its layout fields (`width`, `height`, `padding`, `spacing`) apply only to the row/column itself. A nested `.styled(...)` overrides its ancestors field by field. On the wire, it's `{"Styled":{"style":{"text_size":12.0,"variant":"danger"},"child":{...}}}`.
 
 ## Right panel (ambient-context) capability
 
@@ -344,6 +376,7 @@ struct RequestSummary {
     name: String,
     folder_path: Vec<String>,
     method: String,
+    url: String,
 }
 
 struct EnvSummary {
@@ -363,6 +396,7 @@ enum RightPanelAction {
     ApplyPatch(RequestPatch),                                // edit the active tab only
     UpdateUiAndApplyPatch(UiNode, RequestPatch),             // both
     UpdateUiAndProposeCollectionOp(UiNode, CollectionOperation), // re-render + propose a tree edit
+    UpdateUiAndProposeCollectionOps(UiNode, Vec<CollectionOperation>), // same, several applied in order
 }
 
 struct RequestPatch {
@@ -413,12 +447,16 @@ enum CollectionOperation {
     DeleteRequest { collection_id: usize, parent_path: Vec<String>, request_id: usize },
     DuplicateRequest { collection_id: usize, parent_path: Vec<String>, request_id: usize },
     MoveRequest { collection_id: usize, from_path: Vec<String>, request_id: usize, to_path: Vec<String> },
+    UpdateRequest { collection_id: usize, request_id: usize, #[serde(flatten)] patch: RequestPatch },
 }
 ```
 
 `parent_path`/`path`/`from_path`/`to_path` are folder-name arrays (`[]` for a collection's root, `["Auth"]` for a top-level folder named "Auth") - use the ids/paths handed to you in `RightPanelContext.collections`, never invented ones. The enum is internally tagged (`#[serde(tag = "op", rename_all = "snake_case")]`) specifically so it's easy to have an LLM produce directly, e.g. `{"op":"create_folder","collection_id":1,"parent_path":[],"name":"Auth"}`.
 
-The host applies `CreateCollection`/`RenameCollection`/`CreateFolder`/`RenameFolder`/`CreateRequest`/`RenameRequest` immediately, but shows the user a confirmation dialog first for `DeleteCollection`/`DeleteFolder`/`DeleteRequest`/`MoveRequest` (anything that removes or relocates something) before applying it - you don't need to build this yourself, just return the action and the host handles the rest, including the toast reporting success/failure. `rustrest-plugin-ai-agent` extracts one of these from a fenced ` ```collection-action ` block in an LLM reply (parallel to how it extracts a `RequestPatch` from a ` ```json ` block) - see its `extract_collection_op`/`build_system_prompt` for a full working example, including how it lists `ctx.collections` in the prompt so the model has real ids to reference.
+`UpdateRequest` edits a saved request's contents in place; its `RequestPatch` fields sit at the top level of the JSON object (e.g. `{"op":"update_request","collection_id":1,"request_id":7,"url":"..."}`), and only the fields that are set change. Any open tab of that request is updated too.
+
+The host applies `CreateCollection`/`RenameCollection`/`CreateFolder`/`RenameFolder`/`CreateRequest`/`RenameRequest`/`DuplicateRequest` immediately, but shows the user a confirmation dialog first for `DeleteCollection`/`DeleteFolder`/`DeleteRequest`/`MoveRequest`/`UpdateRequest` (anything that removes, relocates, or overwrites something) before applying it - you don't need to build this yourself,
+just return the action and the host handles the rest, including the toast reporting success/failure. `UpdateUiAndProposeCollectionOps` applies a batch in order, stopping at the first failure; if any operation in it needs confirmation, the whole batch is listed in a single dialog. `rustrest-plugin-ai-agent` extracts these from a fenced ` ```collection-action ` block (one object or an array) in an LLM reply, parallel to how it extracts a `RequestPatch` from a ` ```request-patch ` block - see its `extract_collection_ops`/`build_system_prompt` for a full working example, including how it lists `ctx.collections` in the prompt so the model has real ids to reference.
 
 ## Streaming HTTP responses
 
