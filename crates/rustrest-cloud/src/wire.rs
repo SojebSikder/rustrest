@@ -279,6 +279,14 @@ impl Notification {
     pub fn team_id(&self) -> Option<&str> {
         self.data.get("team_id").and_then(Value::as_str)
     }
+
+    /// the pending invite this notification asks to accept or decline
+    pub fn invite_id(&self) -> Option<&str> {
+        if self.kind != "team.invite" {
+            return None;
+        }
+        self.data.get("invite_id").and_then(Value::as_str)
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]

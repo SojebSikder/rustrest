@@ -707,6 +707,10 @@ pub enum Message {
     CloudNotificationReceived(Box<rustrest_cloud::wire::Notification>),
     /// a notification row was clicked
     CloudNotificationPressed(String),
+    /// notification id, accept (true) or decline
+    CloudRespondInvite(String, bool),
+    /// notification id, accepted, the team's name
+    CloudInviteResponded(String, bool, Result<String, String>),
     CloudMarkNotificationRead(String),
     CloudMarkAllNotificationsRead,
     CloudDismissNotification(String),

@@ -127,7 +127,7 @@ pub fn bell(app: &Rustrest) -> Option<Element<'_, Message>> {
     )
 }
 
-fn row_view(notification: &Notification) -> Element<'_, Message> {
+fn row_view<'a>(app: &'a Rustrest, notification: &'a Notification) -> Element<'a, Message> {
     let colors = crate::theme::colors();
     let (accent, hover, text_color) = (colors.text_accent, colors.element_hover, colors.text);
     let unread = !notification.is_read();
@@ -173,6 +173,35 @@ fn row_view(notification: &Notification) -> Element<'_, Message> {
         );
     }
 
+    // an invite is never accepted by just clicking the row
+    if notification.invite_id().is_some() {
+        let busy = app
+            .cloud
+            .notifications
+            .responding
+            .contains(&notification.id);
+        let id = &notification.id;
+        body = body.push(
+            row![
+                button(text("Accept").size(12))
+                    .padding([3, 10])
+                    .style(button::primary)
+                    .on_press_maybe((!busy).then(|| Message::CloudRespondInvite(id.clone(), true))),
+                button(text("Decline").size(12))
+                    .padding([3, 10])
+                    .style(button::secondary)
+                    .on_press_maybe(
+                        (!busy).then(|| Message::CloudRespondInvite(id.clone(), false))
+                    ),
+            ]
+            .spacing(6)
+            .padding(Padding {
+                top: 4.0,
+                ..Padding::ZERO
+            }),
+        );
+    }
+
     let open = button(body)
         .width(Length::Fill)
         .padding([8, 10])
@@ -199,7 +228,10 @@ fn row_view(notification: &Notification) -> Element<'_, Message> {
         .style(button::text)
         .on_press(Message::CloudDismissNotification(notification.id.clone()));
 
-    row![open, dismiss]
+    // an invite only goes away by answering it
+    let dismiss = notification.invite_id().is_none().then_some(dismiss);
+    row![open]
+        .push(dismiss)
         .spacing(2)
         .align_y(Alignment::Start)
         .into()
@@ -257,7 +289,7 @@ pub fn view_panel(app: &Rustrest) -> Element<'_, Message> {
             (None, false) => placeholder("You're all caught up".to_string(), false),
         }
     } else {
-        let list = Column::with_children(center.items.iter().map(row_view)).spacing(2);
+        let list = Column::with_children(center.items.iter().map(|n| row_view(app, n))).spacing(2);
         scrollable(container(list).padding(Padding {
             right: 10.0,
             ..Padding::ZERO

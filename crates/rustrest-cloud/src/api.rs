@@ -265,20 +265,49 @@ impl CloudClient {
         self.get(&format!("/api/teams/{team_id}/members")).await
     }
 
+    /// invites the user to the team, or changes their role if they're already a
+    /// member. true when an invite was sent: they join only once they accept it
     pub async fn add_member(
         &self,
         team_id: &str,
         email: &str,
         role: Role,
-    ) -> Result<(), CloudError> {
+    ) -> Result<bool, CloudError> {
         let body = serde_json::json!({ "email": email, "role": role });
-        self.call::<Value, _>(
-            Method::POST,
-            &format!("/api/teams/{team_id}/members"),
-            Some(&body),
-        )
-        .await
-        .map(|_| ())
+        let data: Value = self
+            .call(
+                Method::POST,
+                &format!("/api/teams/{team_id}/members"),
+                Some(&body),
+            )
+            .await?;
+
+        Ok(data
+            .get("invited")
+            .and_then(Value::as_bool)
+            .unwrap_or(false))
+    }
+
+    /// accepts or declines a pending invite
+    pub async fn respond_invite(
+        &self,
+        invite_id: &str,
+        accept: bool,
+    ) -> Result<String, CloudError> {
+        let action = if accept { "accept" } else { "decline" };
+        let data: Value = self
+            .call::<Value, ()>(
+                Method::POST,
+                &format!("/api/invites/{invite_id}/{action}"),
+                None,
+            )
+            .await?;
+
+        Ok(data
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string())
     }
 
     pub async fn update_member_role(
