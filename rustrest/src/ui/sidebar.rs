@@ -192,12 +192,7 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
                 }
 
                 if app.cloud.linked.contains_key(&col_id) {
-                    header_row = header_row.push(
-                        text("cloud")
-                            .size(10)
-                            .font(Font::MONOSPACE)
-                            .color(crate::theme::colors().text_muted),
-                    );
+                    header_row = header_row.push(cloud_badge(app, col_id));
                 }
 
                 if let Some(profile_id) = remote_profile_id {
@@ -257,6 +252,45 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
         .padding(10)
         .style(container::bordered_box)
         .into()
+}
+
+/// "cloud" tag on a synced collection, with a dot showing its sync state
+fn cloud_badge(app: &Rustrest, col_id: usize) -> Element<'_, Message> {
+    use crate::app::cloud::CloudStatus;
+    let colors = crate::theme::colors();
+    let conflicts = app.cloud.conflict_count(col_id);
+
+    let (dot, hint) = match app.cloud.status() {
+        CloudStatus::SignedOut | CloudStatus::Expired => (
+            colors.error,
+            "Not signed in to Cloud, changes aren't syncing".to_string(),
+        ),
+        CloudStatus::Offline => (
+            colors.text_muted,
+            "Offline, changes sync once Cloud is reachable".to_string(),
+        ),
+        _ if app.cloud.is_syncing(col_id) => (colors.info, "Syncing...".to_string()),
+        _ if conflicts > 0 => (
+            colors.conflict,
+            format!("{conflicts} change(s) conflict with the cloud"),
+        ),
+        _ if app.cloud.waiting.contains(&col_id) => {
+            (colors.modified, "Save to sync your changes".to_string())
+        }
+        CloudStatus::Connecting => (colors.warning, "Connecting to Cloud...".to_string()),
+        CloudStatus::Online => (colors.success, "Synced with Rustrest Cloud".to_string()),
+    };
+
+    let badge = row![
+        text("cloud")
+            .size(10)
+            .font(Font::MONOSPACE)
+            .color(colors.text_muted),
+        text("●").size(8).color(dot),
+    ]
+    .spacing(3)
+    .align_y(Alignment::Center);
+    crate::ui::tooltip::with_tooltip(badge, hint, iced::widget::tooltip::Position::Bottom)
 }
 
 fn render_plugins_section(app: &Rustrest) -> Element<'_, Message> {

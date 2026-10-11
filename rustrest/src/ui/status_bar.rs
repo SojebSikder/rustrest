@@ -1,8 +1,4 @@
-//! Reusable bottom status bar (Zed-style): a strip of small entries - a
-//! spinner+label while something loads in the background, plain text, or a
-//! clickable label acting as a lightweight prompt/action. Any part of the
-//! app can push an entry via `StatusBarState::set` (keyed by a stable id,
-//! so repeated calls update it in place) and remove it via `clear`.
+//! Reusable bottom status bar
 
 use crate::app::Rustrest;
 use crate::message::Message;
@@ -67,6 +63,58 @@ impl StatusBarState {
     pub fn has_active_spinner(&self) -> bool {
         self.items.iter().any(|i| i.spinner)
     }
+}
+
+/// a colored dot and label telling whether we're connected to Cloud.
+/// opens the cloud modal (sign in, teams, conflicts) when clicked.
+fn cloud_indicator(app: &Rustrest) -> Element<'_, Message> {
+    use crate::app::cloud::CloudStatus;
+    let colors = crate::theme::colors();
+    let email = app.cloud.email.as_deref().unwrap_or_default();
+    let server = app
+        .cloud
+        .client
+        .as_ref()
+        .map(|c| c.base_url())
+        .unwrap_or_default();
+
+    let (dot, label, hint) = match app.cloud.status() {
+        CloudStatus::SignedOut => (
+            colors.text_muted,
+            "Cloud",
+            "Not signed in to Cloud".to_string(),
+        ),
+        CloudStatus::Expired => (
+            colors.error,
+            "Cloud: signed out",
+            "Your session expired, sign in again to keep syncing".to_string(),
+        ),
+        CloudStatus::Connecting => (
+            colors.warning,
+            "Cloud",
+            format!("Connecting to {server} as {email}..."),
+        ),
+        CloudStatus::Online => (
+            colors.success,
+            "Cloud",
+            format!("Connected to {server} as {email}"),
+        ),
+        CloudStatus::Offline => (
+            colors.error,
+            "Cloud: offline",
+            format!("Can't reach {server}, changes sync once it's back"),
+        ),
+    };
+
+    let entry = button(
+        row![text("●").size(9).color(dot), text(label).size(12)]
+            .spacing(5)
+            .align_y(Alignment::Center),
+    )
+    .style(button::text)
+    .padding([3, 8])
+    .on_press(Message::OpenCloudModal);
+    super::tooltip::with_tooltip(entry, hint, iced::widget::tooltip::Position::Top)
 }
 
 /// renders the full bottom status bar: dynamic status entries (loading
@@ -140,7 +188,7 @@ pub fn render_status_bar(app: &Rustrest) -> Element<'_, Message> {
     .padding([3, 8])
     .on_press(Message::NewTerminalTabPressed);
 
-    let right = row![console_toggle, terminal_button]
+    let right = row![cloud_indicator(app), console_toggle, terminal_button]
         .spacing(6)
         .align_y(Alignment::Center);
 

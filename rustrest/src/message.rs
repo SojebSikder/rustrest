@@ -600,6 +600,10 @@ pub enum Message {
     CloudSubmitAuth,
     CloudSignedIn(Result<Box<(rustrest_cloud::CloudClient, String)>, String>),
     CloudSignOut,
+    /// the realtime socket connected (true) or couldn't reach the server (false)
+    CloudConnectionChanged(bool),
+    /// the server rejected the refresh token
+    CloudSessionExpired,
     CloudTeamsLoaded(Result<Vec<rustrest_cloud::wire::Team>, String>),
     CloudTeamSelected(String),
     CloudCollectionsLoaded(Result<Vec<rustrest_cloud::wire::CloudCollection>, String>),

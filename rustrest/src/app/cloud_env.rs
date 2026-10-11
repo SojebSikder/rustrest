@@ -96,14 +96,9 @@ pub fn synced(
 
     let mut toasts = Vec::new();
     let mut changed = false;
+    let mut expired = Task::none();
     match result {
-        Err(CloudError::Unauthorized) => {
-            app.cloud.client = None;
-            toasts.push((
-                "Your Rustrest Cloud session expired. Sign in again to keep syncing.".to_string(),
-                ToastStatus::Error,
-            ));
-        }
+        Err(CloudError::Unauthorized) => expired = super::cloud::session_expired(app),
         Err(err) => toasts.push((
             format!("Couldn't sync environments: {err}"),
             ToastStatus::Error,
@@ -132,6 +127,7 @@ pub fn synced(
         .into_iter()
         .map(|(msg, status)| Task::done(Message::ShowToast(msg, status)))
         .collect();
+    tasks.push(expired);
     if app.cloud.env_resync.remove(&team_id) {
         tasks.push(Task::done(Message::CloudEnvSync(team_id)));
     }
