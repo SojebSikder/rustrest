@@ -77,6 +77,7 @@ cargo run --release
 ## Documentation
 
 - [Plugin Development Guide](docs/plugin-development.md) - installing plugins, and building your own.
+- [Cloud Setup Guide](docs/cloud-setup.md) - setting up Rustrest cloud server.
 
 ## Trademark
 
