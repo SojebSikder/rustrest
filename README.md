@@ -26,16 +26,16 @@ Modern API clients like Postman or Insomnia carry massive resource overhead. Rus
 
 ## Features
 
-- Native, Lightweight, and instant startup time.
-- **Fast**: Send request and get responses in real time.
+- Fast, Native, Lightweight, and instant startup time.
 - **HTTP Methods**: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS and CUSTOM
 - Supports WebSocket, gRPC, GraphQL, Server-side events
 - **Test APIs** using test suites
 - **Local Vault**: Local storage for collections and other resources
 - **Git-native**: Collaborate via Git or any other version control system
+- **Self-hosted Cloud**: Self-hosted cloud for team collaboration
 - **Postman Compatible**: Import Postman collections, environments and scripts
 - **Remote Development over SSH**: Remote development using SSH for accessing collections on remote servers.
-- **AI Agent**: AI agent for AI backed API testing
+- **AI Agent**: AI agent for AI backed API testing, can be installed as plugin, No AI bloat.
 - **Plugins**: Extend functionality with plugins
 - **Themes**: Supports Zed code editor compatible themes in rustrest
 - And many more...
@@ -59,7 +59,7 @@ rustrest
 You can pin a specific version or change the install directory via environment variables:
 
 ```bash
-VERSION=v0.1.8 INSTALL_DIR="$HOME/bin" curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/SojebSikder/rustrest/main/install.sh | sh
+VERSION=v0.1.22 INSTALL_DIR="$HOME/bin" curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/SojebSikder/rustrest/main/install.sh | sh
 ```
 
 ### Windows
