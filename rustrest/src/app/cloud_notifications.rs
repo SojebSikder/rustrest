@@ -18,6 +18,8 @@ pub struct NotificationCenter {
     pub open: bool,
     pub loading: bool,
     pub error: Option<String>,
+    /// invite notifications whose accept/decline is in flight
+    pub responding: std::collections::HashSet<String>,
 }
 
 pub fn toggle(app: &mut Rustrest) -> Task<Message> {
@@ -154,8 +156,9 @@ pub fn dismiss(app: &mut Rustrest, id: String) -> Task<Message> {
 
 pub fn clear(app: &mut Rustrest) -> Task<Message> {
     let center = &mut app.cloud.notifications;
-    center.items.clear();
-    center.unread = 0;
+    // unanswered invites stay, the server keeps them too
+    center.items.retain(|n| n.invite_id().is_some());
+    center.unread = center.items.iter().filter(|n| !n.is_read()).count();
     let Some(client) = app.cloud.client.clone() else {
         return Task::none();
     };
@@ -189,8 +192,14 @@ pub fn pressed(app: &mut Rustrest, id: String) -> Task<Message> {
         .items
         .iter()
         .find(|n| n.id == id)
-        .filter(|n| !matches!(n.kind.as_str(), "team.deleted" | "team.member_removed"))
+        .filter(|n| {
+            !matches!(
+                n.kind.as_str(),
+                "team.deleted" | "team.member_removed" | "team.invite" | "team.invite_declined"
+            )
+        })
         .and_then(|n| n.team_id().map(str::to_string));
+
     let read = mark_read(app, id);
     let Some(team_id) = target else {
         return read;
@@ -201,4 +210,74 @@ pub fn pressed(app: &mut Rustrest, id: String) -> Task<Message> {
     app.cloud.save_account();
 
     Task::batch([read, super::cloud::open_modal(app, None)])
+}
+
+/// accepts or declines the team invite behind a notification
+pub fn respond_invite(app: &mut Rustrest, id: String, accept: bool) -> Task<Message> {
+    let Some(client) = app.cloud.client.clone() else {
+        return Task::none();
+    };
+    let center = &mut app.cloud.notifications;
+    let Some(invite_id) = center
+        .items
+        .iter()
+        .find(|n| n.id == id)
+        .and_then(|n| n.invite_id())
+        .map(str::to_string)
+    else {
+        return Task::none();
+    };
+    if !center.responding.insert(id.clone()) {
+        return Task::none();
+    }
+
+    Task::perform(
+        async move {
+            let result = client
+                .respond_invite(&invite_id, accept)
+                .await
+                .map_err(|e| e.to_string());
+            (id, result)
+        },
+        move |(id, result)| Message::CloudInviteResponded(id, accept, result),
+    )
+}
+
+pub fn invite_responded(
+    app: &mut Rustrest,
+    id: String,
+    accept: bool,
+    result: Result<String, String>,
+) -> Task<Message> {
+    let center = &mut app.cloud.notifications;
+    center.responding.remove(&id);
+    // answered or not, the server dropped the prompt (a failed answer means
+    // the invite was withdrawn or the team is gone)
+    if let Some(pos) = center.items.iter().position(|n| n.id == id) {
+        let removed = center.items.remove(pos);
+        if !removed.is_read() {
+            center.unread = center.unread.saturating_sub(1);
+        }
+    }
+
+    let (toast, status) = match result {
+        Ok(team) if accept => (
+            format!("You joined '{team}'. Open Cloud to see its collections."),
+            ToastStatus::Success,
+        ),
+        Ok(team) => (
+            format!("Declined the invite to '{team}'"),
+            ToastStatus::Info,
+        ),
+        Err(err) => (
+            format!("Couldn't answer the invite: {err}"),
+            ToastStatus::Error,
+        ),
+    };
+    let reload = (accept && app.cloud.modal.is_some()).then(|| super::cloud::load_teams(app));
+    Task::batch(
+        [Task::done(Message::ShowToast(toast, status))]
+            .into_iter()
+            .chain(reload),
+    )
 }

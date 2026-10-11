@@ -976,6 +976,12 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             cloud_notifications::received(app, *notification)
         }
         Message::CloudNotificationPressed(id) => cloud_notifications::pressed(app, id),
+        Message::CloudRespondInvite(id, accept) => {
+            cloud_notifications::respond_invite(app, id, accept)
+        }
+        Message::CloudInviteResponded(id, accept, result) => {
+            cloud_notifications::invite_responded(app, id, accept, result)
+        }
         Message::CloudMarkNotificationRead(id) => cloud_notifications::mark_read(app, id),
         Message::CloudMarkAllNotificationsRead => cloud_notifications::mark_all_read(app),
         Message::CloudDismissNotification(id) => cloud_notifications::dismiss(app, id),

@@ -626,12 +626,17 @@ pub fn invite(app: &mut Rustrest) -> Task<Message> {
     }
     let role = modal.invite_role;
     modal.busy = true;
+
     Task::perform(
         async move {
+            let label = role.to_string().to_lowercase();
             client
                 .add_member(&team_id, &email, role)
                 .await
-                .map(|_| format!("Added {email} as {}", role.to_string().to_lowercase()))
+                .map(|invited| match invited {
+                    true => format!("Invited {email} as {label}, they join once they accept"),
+                    false => format!("{email} is now {label}"),
+                })
         },
         |result| Message::CloudInvited(result.map_err(|e| e.to_string())),
     )
