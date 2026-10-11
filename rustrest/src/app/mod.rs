@@ -887,6 +887,8 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         Message::CloudSubmitAuth => cloud::submit_auth(app),
         Message::CloudSignedIn(result) => cloud::signed_in(app, result),
         Message::CloudSignOut => cloud::sign_out(app),
+        Message::CloudConnectionChanged(online) => cloud::connection_changed(app, online),
+        Message::CloudSessionExpired => cloud::session_expired(app),
         Message::CloudTeamsLoaded(result) => cloud::teams_loaded(app, result),
         Message::CloudTeamSelected(team_id) => cloud::select_team(app, team_id),
         Message::CloudCollectionsLoaded(result) => cloud::collections_loaded(app, result),

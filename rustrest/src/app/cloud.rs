@@ -29,6 +29,46 @@ fn account_path() -> Option<PathBuf> {
     Some(dirs::data_dir()?.join(crate::APP_NAME).join("cloud.json"))
 }
 
+fn read_account(path: &Path) -> Option<SavedAccount> {
+    let text = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str(&text).ok()
+}
+
+fn write_account(path: &Path, account: &SavedAccount) {
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(json) = serde_json::to_string_pretty(account) {
+        let _ = std::fs::write(path, json);
+    }
+}
+
+/// writes rotated tokens to disk the moment they arrive
+fn persist_refreshes(client: &CloudClient) {
+    client.set_on_refresh(std::sync::Arc::new(|session| {
+        let (Some(session), Some(path)) = (session, account_path()) else {
+            return;
+        };
+        if let Some(mut account) = read_account(&path) {
+            account.session = session.clone();
+            write_account(&path, &account);
+        }
+    }));
+}
+
+/// Rustrest Cloud status for the status bar and sidebar
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CloudStatus {
+    SignedOut,
+    /// the server ended the session, signing in again resumes syncing
+    Expired,
+    /// signed in, the realtime socket isn't up yet
+    Connecting,
+    Online,
+    /// signed in but the server can't be reached
+    Offline,
+}
+
 /// where cloud collections are cached locally
 fn cache_root() -> Option<PathBuf> {
     Some(dirs::data_dir()?.join(crate::APP_NAME).join("cloud"))
@@ -101,22 +141,41 @@ pub struct CloudState {
     /// teams to sync environments of again once their current run ends
     pub env_resync: HashSet<String>,
     pub notifications: super::cloud_notifications::NotificationCenter,
+    /// whether the realtime socket is up
+    pub online: Option<bool>,
+    /// the session ended on the server; cleared by signing in again
+    pub expired: bool,
 }
 
 impl CloudState {
     pub fn load() -> Self {
-        let account = account_path()
-            .and_then(|p| std::fs::read_to_string(p).ok())
-            .and_then(|text| serde_json::from_str::<SavedAccount>(&text).ok());
-        match account {
-            Some(account) => Self {
-                client: Some(CloudClient::new(&account.server_url, Some(account.session))),
-                email: Some(account.email),
-                last_team: account.last_team,
-                ..Self::default()
-            },
+        match account_path().and_then(|p| read_account(&p)) {
+            Some(account) => {
+                let client = CloudClient::new(&account.server_url, Some(account.session));
+                persist_refreshes(&client);
+                Self {
+                    client: Some(client),
+                    email: Some(account.email),
+                    last_team: account.last_team,
+                    ..Self::default()
+                }
+            }
             None => Self::default(),
         }
+    }
+
+    pub fn status(&self) -> CloudStatus {
+        match (&self.client, self.online) {
+            (None, _) if self.expired => CloudStatus::Expired,
+            (None, _) => CloudStatus::SignedOut,
+            (Some(_), None) => CloudStatus::Connecting,
+            (Some(_), Some(true)) => CloudStatus::Online,
+            (Some(_), Some(false)) => CloudStatus::Offline,
+        }
+    }
+
+    pub fn is_syncing(&self, col_id: usize) -> bool {
+        self.runs.contains_key(&col_id)
     }
 
     pub fn conflict_count(&self, col_id: usize) -> usize {
@@ -154,12 +213,7 @@ impl CloudState {
             session,
             last_team: self.last_team.clone(),
         };
-        if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        if let Ok(json) = serde_json::to_string_pretty(&account) {
-            let _ = std::fs::write(path, json);
-        }
+        write_account(&path, &account);
     }
 }
 
@@ -266,9 +320,14 @@ pub fn signed_in(
     match result {
         Ok(signed_in) => {
             let (client, email) = *signed_in;
+            persist_refreshes(&client);
+
             app.cloud.client = Some(client);
             app.cloud.email = Some(email);
+            app.cloud.expired = false;
+            app.cloud.online = None;
             app.cloud.save_account();
+
             if let Some(modal) = app.cloud.modal.as_mut() {
                 modal.password.clear();
             }
@@ -286,6 +345,9 @@ pub fn sign_out(app: &mut Rustrest) -> Task<Message> {
     let client = app.cloud.client.take();
     app.cloud.email = None;
     app.cloud.last_team = None;
+    app.cloud.expired = false;
+    app.cloud.online = None;
+
     if let Some(path) = account_path() {
         let _ = std::fs::remove_file(path);
     }
@@ -1107,13 +1169,7 @@ fn finish(app: &mut Rustrest, col_id: usize, error: Option<CloudError>) -> Task<
 
     let mut tasks = Vec::new();
     match error {
-        Some(CloudError::Unauthorized) => {
-            app.cloud.client = None;
-            tasks.push(Task::done(Message::ShowToast(
-                "Your Rustrest Cloud session expired. Sign in again to keep syncing.".to_string(),
-                ToastStatus::Error,
-            )));
-        }
+        Some(CloudError::Unauthorized) => tasks.push(session_expired(app)),
 
         // deleted in the cloud (or access revoked)
         Some(err) if err.is_not_found() => tasks.push(unlink(app, col_id)),
@@ -1145,6 +1201,32 @@ fn finish(app: &mut Rustrest, col_id: usize, error: Option<CloudError>) -> Task<
     }
     update_status(app);
     Task::batch(tasks)
+}
+
+/// only ends the session once the refresh token itself was rejected.
+pub fn session_expired(app: &mut Rustrest) -> Task<Message> {
+    match &app.cloud.client {
+        Some(client) if !client.is_signed_in() => {}
+        _ => return Task::none(),
+    }
+    app.cloud.save_account(); // drops the saved tokens, they're dead
+    app.cloud.client = None;
+    app.cloud.expired = true;
+    app.cloud.online = None;
+    update_status(app);
+
+    Task::done(Message::ShowToast(
+        "Your Rustrest Cloud session expired. Sign in again to keep syncing.".to_string(),
+        ToastStatus::Error,
+    ))
+}
+
+/// the realtime socket came up or couldn't connect
+pub fn connection_changed(app: &mut Rustrest, online: bool) -> Task<Message> {
+    if app.cloud.client.is_some() {
+        app.cloud.online = Some(online);
+    }
+    Task::none()
 }
 
 pub(super) fn update_status(app: &mut Rustrest) {
@@ -1427,6 +1509,7 @@ pub fn realtime_stream(
     let target = target.clone();
     iced::stream::channel(32, async move |mut output| {
         loop {
+            let mut stayed_up = false;
             match rustrest_cloud::realtime::connect(
                 &target.client,
                 target.collection_ids.clone(),
@@ -1435,6 +1518,7 @@ pub fn realtime_stream(
             .await
             {
                 Ok(mut events) => {
+                    let since = std::time::Instant::now();
                     while let Some(event) = events.recv().await {
                         use rustrest_cloud::realtime::RealtimeEvent;
                         let message = match event {
@@ -1453,7 +1537,10 @@ pub fn realtime_stream(
                                 team_id,
                                 environment_id,
                             } => Message::CloudRealtimeEnvDeleted(team_id, environment_id),
-                            RealtimeEvent::Connected => Message::CloudNotificationsRefresh,
+                            RealtimeEvent::Connected => {
+                                let _ = output.send(Message::CloudConnectionChanged(true)).await;
+                                Message::CloudNotificationsRefresh
+                            }
                             RealtimeEvent::Notification(notification) => {
                                 Message::CloudNotificationReceived(notification)
                             }
@@ -1461,13 +1548,21 @@ pub fn realtime_stream(
                         };
                         let _ = output.send(message).await;
                     }
+                    // the server closes the socket when its access token expires
+                    stayed_up = since.elapsed() > std::time::Duration::from_secs(30);
                 }
-                // signed out / expired: the periodic sync reports it
-                Err(CloudError::Unauthorized) => return,
-                Err(_) => {}
+                // the refresh token was rejected, anything else is retried
+                Err(CloudError::Unauthorized) if !target.client.is_signed_in() => {
+                    let _ = output.send(Message::CloudSessionExpired).await;
+                    return;
+                }
+                Err(_) => {
+                    let _ = output.send(Message::CloudConnectionChanged(false)).await;
+                }
             }
-            // dropped or unreachable: missed events are caught by the next sync anyway, so just retry calmly
-            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+            // a long-lived socket that closed reconnects right away with a fresh token.
+            let delay = if stayed_up { 1 } else { 10 };
+            tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
         }
     })
     .boxed()

@@ -1,5 +1,5 @@
 //! typed client for the cloud REST API. access tokens are refreshed transparently on a 401,
-//! read `session()` afterwards to persist the rotated tokens.
+//! one refresh at a time; `on_refresh` gets the rotated tokens to persist right away.
 
 use std::sync::{Arc, Mutex};
 
@@ -57,11 +57,18 @@ impl CloudError {
     }
 }
 
+/// called with the rotated tokens after a refresh, or None once the refresh token was rejected
+pub type RefreshHook = Arc<dyn Fn(Option<&Session>) + Send + Sync>;
+
 #[derive(Clone)]
 pub struct CloudClient {
     base_url: String,
     http: reqwest::Client,
     session: Arc<Mutex<Option<Session>>>,
+    /// the server revokes the whole session when a refresh token is reused, so
+    /// concurrent 401s must not each refresh with the same token
+    refresh_lock: Arc<tokio::sync::Mutex<()>>,
+    on_refresh: Arc<Mutex<Option<RefreshHook>>>,
 }
 
 // never prints the tokens
@@ -83,6 +90,20 @@ impl CloudClient {
                 .build()
                 .unwrap_or_default(),
             session: Arc::new(Mutex::new(session)),
+            refresh_lock: Arc::new(tokio::sync::Mutex::new(())),
+            on_refresh: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    /// shared by every clone of this client
+    pub fn set_on_refresh(&self, hook: RefreshHook) {
+        *self.on_refresh.lock().unwrap() = Some(hook);
+    }
+
+    fn notify_refresh(&self, session: Option<&Session>) {
+        let hook = self.on_refresh.lock().unwrap().clone();
+        if let Some(hook) = hook {
+            hook(session);
         }
     }
 
@@ -167,31 +188,33 @@ impl CloudClient {
         check::<Value>(status, &text).map(|_| ())
     }
 
-    async fn refresh(&self) -> Result<(), CloudError> {
-        let Some(refresh_token) = self
-            .session
-            .lock()
-            .unwrap()
-            .as_ref()
-            .map(|s| s.refresh_token.clone())
-        else {
-            return Err(CloudError::Unauthorized);
+    /// swaps the tokens for new ones, unless another task already did while we waited
+    async fn refresh(&self, stale_access: &str) -> Result<(), CloudError> {
+        let _guard = self.refresh_lock.lock().await;
+        let refresh_token = match self.session.lock().unwrap().as_ref() {
+            None => return Err(CloudError::Unauthorized),
+            Some(s) if s.access_token != stale_access => return Ok(()),
+            Some(s) => s.refresh_token.clone(),
         };
 
         let body = serde_json::json!({ "refresh_token": refresh_token });
         let (status, text) = self
             .send(Method::POST, "/api/auth/refresh", Some(&body), None)
             .await?;
-        if !status.is_success() {
+        // only a rejected token ends the session
+        if status == StatusCode::UNAUTHORIZED {
             *self.session.lock().unwrap() = None;
+            self.notify_refresh(None);
             return Err(CloudError::Unauthorized);
         }
 
         let tokens: TokenPair = required(check(status, &text)?)?;
-        *self.session.lock().unwrap() = Some(Session {
+        let session = Session {
             access_token: tokens.access_token,
             refresh_token: tokens.refresh_token,
-        });
+        };
+        *self.session.lock().unwrap() = Some(session.clone());
+        self.notify_refresh(Some(&session));
         Ok(())
     }
 
@@ -511,7 +534,8 @@ impl CloudClient {
         if status != StatusCode::UNAUTHORIZED {
             return Ok((status, text));
         }
-        self.refresh().await?;
+
+        self.refresh(&token).await?;
         let token = self.access_token().ok_or(CloudError::Unauthorized)?;
         let (status, text) = self.send(method, path, body, Some(&token)).await?;
         if status == StatusCode::UNAUTHORIZED {
