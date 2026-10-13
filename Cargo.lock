@@ -6675,7 +6675,7 @@ dependencies = [
 
 [[package]]
 name = "rustrest"
-version = "0.1.22"
+version = "0.1.23"
 dependencies = [
  "chrono",
  "dirs",
@@ -6787,7 +6787,7 @@ dependencies = [
 
 [[package]]
 name = "rustrest-js-lsp"
-version = "0.1.22"
+version = "0.1.23"
 dependencies = [
  "lsp-server",
  "lsp-types",
@@ -6849,7 +6849,7 @@ dependencies = [
 
 [[package]]
 name = "rustrest-remote-agent"
-version = "0.1.22"
+version = "0.1.23"
 dependencies = [
  "rustrest-remote-protocol",
  "tokio",
