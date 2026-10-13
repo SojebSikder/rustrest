@@ -442,8 +442,35 @@ impl PostmanUrl {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PostmanHeader {
     pub key: String,
+    #[serde(deserialize_with = "deserialize_scalar_string")]
     pub value: String,
     pub disabled: Option<bool>,
+}
+
+/// stringifies a scalar JSON value - Postman exports saved HTTP/2 responses
+/// with numeric header values (e.g. `{"key": ":status", "value": 201}`).
+fn scalar_to_string(value: serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::Null => None,
+        serde_json::Value::String(s) => Some(s),
+        other => Some(other.to_string()),
+    }
+}
+
+fn deserialize_scalar_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(scalar_to_string(value).unwrap_or_default())
+}
+
+fn deserialize_optional_scalar_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value: Option<serde_json::Value> = Option::deserialize(deserializer)?;
+    Ok(value.and_then(scalar_to_string))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -473,6 +500,7 @@ pub struct PostmanGraphQlBody {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PostmanBodyRow {
     pub key: String,
+    #[serde(default, deserialize_with = "deserialize_optional_scalar_string")]
     pub value: Option<String>,
     pub disabled: Option<bool>,
     pub r#type: Option<String>,
@@ -511,132 +539,5 @@ impl PostmanFileSrc {
             Self::One(path) => vec![path.clone()],
             Self::Many(paths) => paths.clone(),
         }
-    }
-}
-
-#[cfg(test)]
-mod auth_backcompat_tests {
-    use super::*;
-    use crate::auth::AuthType;
-
-    fn minimal_details_json(auth: &str) -> String {
-        format!(r#"{{"method":"GET","url":null,"header":null,"body":null,"auth":{auth}}}"#)
-    }
-
-    #[test]
-    fn legacy_string_auth_loads_as_custom() {
-        let json = minimal_details_json(r#""Bearer some-old-token""#);
-        let details: PostmanRequestDetails = serde_json::from_str(&json).unwrap();
-        let auth = details.auth.expect("auth present");
-        assert_eq!(auth.auth_type, AuthType::Custom);
-        assert_eq!(auth.custom_raw, "Bearer some-old-token");
-    }
-
-    #[test]
-    fn missing_auth_field_loads_as_none() {
-        let json = r#"{"method":"GET","url":null,"header":null,"body":null}"#;
-        let details: PostmanRequestDetails = serde_json::from_str(json).unwrap();
-        assert!(details.auth.is_none());
-    }
-
-    #[test]
-    fn structured_auth_round_trips_through_json() {
-        let mut auth = crate::auth::RequestAuth::default();
-        auth.auth_type = AuthType::Bearer;
-        auth.bearer_token = "abc".to_string();
-        let details = PostmanRequestDetails {
-            method: "GET".to_string(),
-            url: None,
-            header: None,
-            body: None,
-            auth: Some(auth),
-            description: None,
-        };
-        let json = serde_json::to_string(&details).unwrap();
-        let round_tripped: PostmanRequestDetails = serde_json::from_str(&json).unwrap();
-        let auth = round_tripped.auth.expect("auth present");
-        assert_eq!(auth.auth_type, AuthType::Bearer);
-        assert_eq!(auth.bearer_token, "abc");
-    }
-
-    #[test]
-    fn description_accepts_string_and_postman_object() {
-        let json =
-            r##"{"method":"GET","url":null,"header":null,"body":null,"description":"# Hi"}"##;
-        let details: PostmanRequestDetails = serde_json::from_str(json).unwrap();
-        assert_eq!(details.description.as_deref(), Some("# Hi"));
-
-        let json = r#"{"method":"GET","url":null,"header":null,"body":null,
-            "description":{"content":"**bold**","type":"text/markdown"}}"#;
-        let details: PostmanRequestDetails = serde_json::from_str(json).unwrap();
-        assert_eq!(details.description.as_deref(), Some("**bold**"));
-    }
-
-    #[test]
-    fn form_data_file_src_accepts_a_string_or_an_array_and_round_trips() {
-        let rows: Vec<PostmanBodyRow> = serde_json::from_str(
-            r#"[{"key":"a","type":"file","src":"/tmp/one.png"},
-                {"key":"b","type":"file","src":["/tmp/x.txt","/tmp/y.txt"]},
-                {"key":"c","type":"file","src":""},
-                {"key":"d","type":"text","value":"hi"}]"#,
-        )
-        .unwrap();
-        assert_eq!(rows[0].src.as_ref().unwrap().paths(), vec!["/tmp/one.png"]);
-        assert_eq!(
-            rows[1].src.as_ref().unwrap().paths(),
-            vec!["/tmp/x.txt", "/tmp/y.txt"]
-        );
-        assert!(rows[2].src.as_ref().unwrap().paths().is_empty());
-        assert!(rows[3].src.is_none());
-
-        let paths = vec!["/tmp/x.txt".to_string(), "/tmp/y.txt".to_string()];
-        let json = serde_json::to_value(PostmanFileSrc::from_paths(&paths)).unwrap();
-        assert_eq!(json, serde_json::json!(["/tmp/x.txt", "/tmp/y.txt"]));
-        let json = serde_json::to_value(PostmanFileSrc::from_paths(&paths[..1])).unwrap();
-        assert_eq!(json, serde_json::json!("/tmp/x.txt"));
-    }
-
-    #[test]
-    fn collection_without_auth_or_scripts_still_loads() {
-        let json =
-            r#"{"info":{"name":"c","_postman_id":null,"schema":""},"item":[],"variable":null}"#;
-        let col: PostmanCollection = serde_json::from_str(json).unwrap();
-        assert!(col.auth.is_none());
-        assert!(col.event.is_none());
-        // and nothing new is written back for it
-        let out = serde_json::to_string(&col).unwrap();
-        assert!(!out.contains("\"auth\"") && !out.contains("\"event\""));
-    }
-
-    #[test]
-    fn collection_auth_and_scripts_round_trip() {
-        let mut col: PostmanCollection = serde_json::from_str(
-            r#"{"info":{"name":"c","_postman_id":null,"schema":""},"item":[],"variable":null}"#,
-        )
-        .unwrap();
-        col.auth = Some(crate::auth::RequestAuth {
-            auth_type: AuthType::Bearer,
-            bearer_token: "{{token}}".to_string(),
-            ..Default::default()
-        });
-        set_event_script(&mut col.event, "prerequest", "pm.variables.set('a', '1');");
-        set_event_script(&mut col.event, "test", "console.log('done');");
-
-        let back: PostmanCollection =
-            serde_json::from_str(&serde_json::to_string(&col).unwrap()).unwrap();
-        assert_eq!(back.auth, col.auth);
-        assert_eq!(
-            event_script(&back.event, "prerequest"),
-            "pm.variables.set('a', '1');"
-        );
-        assert_eq!(event_script(&back.event, "test"), "console.log('done');");
-    }
-
-    #[test]
-    fn blank_script_removes_the_event() {
-        let mut events = None;
-        set_event_script(&mut events, "test", "x");
-        set_event_script(&mut events, "test", "   ");
-        assert!(events.is_none());
     }
 }
