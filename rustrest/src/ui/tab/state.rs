@@ -4,7 +4,7 @@ use super::types::{
     ResponseView, SavedResponse,
 };
 use crate::collection::collection::{PostmanRequestDetails, PostmanRequestNode, PostmanUrl};
-use crate::collection::env::Environment;
+use crate::collection::env::{Environment, replace_vars_in};
 use crate::collection_adapter::{RequestNodeTabExt, sync_body_from_tab};
 use crate::http_client::{HttpMethod, HttpResponse};
 use crate::message::MultilineFieldKind;
@@ -526,14 +526,7 @@ impl Tab {
                 e.replace_vars(val, collection_vars)
             } else if let Some(col_vars) = collection_vars {
                 // standalone environment handler context fallback
-                let mut output = val.to_string();
-                for var in col_vars {
-                    if var.is_active && !var.key.trim().is_empty() {
-                        let placeholder = format!("{{{{{}}}}}", var.key.trim());
-                        output = output.replace(&placeholder, &var.value);
-                    }
-                }
-                output
+                replace_vars_in(val, &[col_vars])
             } else {
                 val.to_string()
             }
@@ -557,6 +550,30 @@ impl Tab {
             .filter(|h| h.is_active)
             .map(|h| (resolve(&h.key), resolve(&h.value)))
             .collect();
+
+        if self.body_type == BodyType::XWwwFormUrlencoded {
+            let mut serializer = url::form_urlencoded::Serializer::new(String::new());
+
+            for row in self
+                .body_urlencoded
+                .iter()
+                .filter(|r| r.is_active && !r.key.is_empty())
+            {
+                serializer.append_pair(&resolve(&row.key), &resolve(&row.value));
+            }
+
+            resolved_body = serializer.finish();
+            let has_content_type = resolved_headers
+                .iter()
+                .any(|(k, _)| k.eq_ignore_ascii_case("content-type"));
+
+            if !has_content_type && !resolved_body.is_empty() {
+                resolved_headers.push((
+                    "Content-Type".to_string(),
+                    "application/x-www-form-urlencoded".to_string(),
+                ));
+            }
+        }
 
         let resolved_cookies = self
             .request_cookies
@@ -658,23 +675,56 @@ pub fn contents_for_form_data(rows: &[FormDataRow]) -> Vec<text_editor::Content>
         .collect()
 }
 
+/// rewrites the query string of `url_str` from `params`. works on the raw
+/// text rather than through `url::Url`, which would percent-encode `{{var}}`
+/// placeholders and rejects `{{base_url}}/...`.
 fn sync_params_to_url(url_str: &str, params: &[KeyValuePair]) -> String {
-    let mut parsed_url = match url::Url::parse(url_str) {
-        Ok(u) => u,
-        Err(_) => return url_str.to_string(),
+    let (without_fragment, fragment) = match url_str.find('#') {
+        Some(i) => url_str.split_at(i),
+        None => (url_str, ""),
     };
+    let base = without_fragment
+        .split_once('?')
+        .map_or(without_fragment, |(base, _)| base);
 
-    parsed_url.set_query(None);
-    let mut query_serializer = parsed_url.query_pairs_mut();
+    let query = params
+        .iter()
+        .filter(|p| p.is_active && !p.key.is_empty())
+        .map(|p| {
+            format!(
+                "{}={}",
+                encode_query_component(&p.key, true),
+                encode_query_component(&p.value, false)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("&");
 
-    for pair in params {
-        if pair.is_active && !pair.key.is_empty() {
-            query_serializer.append_pair(&pair.key, &pair.value);
+    if query.is_empty() {
+        format!("{base}{fragment}")
+    } else {
+        format!("{base}?{query}{fragment}")
+    }
+}
+
+/// escapes only what would change how `sync_params_from_url` splits and
+/// decodes the query, leaving everything else (notably `{{var}}`) readable.
+fn encode_query_component(s: &str, is_key: bool) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '%' => out.push_str("%25"),
+            '&' => out.push_str("%26"),
+            '#' => out.push_str("%23"),
+            '+' => out.push_str("%2B"),
+            ' ' => out.push_str("%20"),
+            '\n' => out.push_str("%0A"),
+            '\r' => out.push_str("%0D"),
+            '=' if is_key => out.push_str("%3D"),
+            _ => out.push(c),
         }
     }
-
-    drop(query_serializer);
-    parsed_url.to_string()
+    out
 }
 
 /// builds the `{"query": ..., "variables": ...}` payload GraphQL-over-HTTP

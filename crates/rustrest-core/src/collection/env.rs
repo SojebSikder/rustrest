@@ -1,6 +1,6 @@
 use crate::KeyValuePair;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Environment {
@@ -59,34 +59,57 @@ impl Environment {
 
     // replaces occurrences of {{key}} with values, checking active environment
     pub fn replace_vars(&self, input: &str, collection_vars: Option<&[KeyValuePair]>) -> String {
-        let mut output = input.to_string();
-
-        // collect all valid variables, prioritising Environment over Collection
-        let mut merged_vars: std::collections::HashMap<String, String> =
-            std::collections::HashMap::new();
-
-        // first add collection variables as the fallback layer
-        if let Some(col_vars) = collection_vars {
-            for var in col_vars {
-                if var.is_active && !var.key.trim().is_empty() {
-                    merged_vars.insert(var.key.trim().to_string(), var.value.clone());
-                }
-            }
-        }
-
-        // overwrite or append with Environment variables (higher precedence)
-        for var in &self.variables {
-            if var.is_active && !var.key.trim().is_empty() {
-                merged_vars.insert(var.key.trim().to_string(), var.value.clone());
-            }
-        }
-
-        // perform string replacements
-        for (key, value) in merged_vars {
-            let placeholder = format!("{{{{{}}}}}", key);
-            output = output.replace(&placeholder, &value);
-        }
-
-        output
+        // prefer environment variables over collection variables
+        let layers: [&[KeyValuePair]; 2] = [collection_vars.unwrap_or(&[]), &self.variables];
+        replace_vars_in(input, &layers)
     }
+}
+
+/// how deep a variable whose value references other variables is expanded
+const MAX_VAR_DEPTH: usize = 10;
+
+/// replaces `{{key}}` (whitespace inside the braces allowed) using `layers`,
+/// later layers taking precedence. unknown variables are left as is, and
+/// values that reference other variables are expanded too.
+pub fn replace_vars_in(input: &str, layers: &[&[KeyValuePair]]) -> String {
+    let mut merged: HashMap<&str, &str> = HashMap::new();
+    for layer in layers {
+        for var in layer.iter() {
+            let key = var.key.trim();
+            if var.is_active && !key.is_empty() {
+                merged.insert(key, &var.value);
+            }
+        }
+    }
+
+    let mut output = input.to_string();
+    for _ in 0..MAX_VAR_DEPTH {
+        let next = replace_once(&output, &merged);
+        if next == output {
+            break;
+        }
+        output = next;
+    }
+    output
+}
+
+fn replace_once(input: &str, vars: &HashMap<&str, &str>) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut rest = input;
+
+    while let Some(start) = rest.find("{{") {
+        let after = &rest[start + 2..];
+        let Some(end) = after.find("}}") else {
+            break;
+        };
+
+        out.push_str(&rest[..start]);
+        match vars.get(after[..end].trim()) {
+            Some(value) => out.push_str(value),
+            None => out.push_str(&rest[start..start + 2 + end + 2]),
+        }
+        rest = &after[end + 2..];
+    }
+    out.push_str(rest);
+    out
 }
