@@ -361,9 +361,10 @@ pub fn send_pressed(app: &mut Rustrest) -> Task<Message> {
         let collection = tab
             .collection_id
             .and_then(|c_id| app.collections.iter().find(|c| c.id == c_id));
+        // prefer environment variables over collection variables
         if let Some(col) = collection {
             for kv in col.get_native_variables() {
-                script_vars.insert(kv.key, kv.value);
+                script_vars.entry(kv.key).or_insert(kv.value);
             }
         }
 
@@ -383,6 +384,7 @@ pub fn send_pressed(app: &mut Rustrest) -> Task<Message> {
             .collect();
 
         let script_vars_snapshot = script_vars.clone();
+        let script_headers_snapshot = script_headers.clone();
 
         // collection script first, then the request's own,
         // sharing variables/headers/globals between them
@@ -438,17 +440,36 @@ pub fn send_pressed(app: &mut Rustrest) -> Task<Message> {
             .cloned()
             .unwrap_or_else(|| Environment::new("__script"));
 
-        // globals are the lowest-precedence variable source; environment/script
-        // variables (applied next) override them for the same key
+        let collection = tab
+            .collection_id
+            .and_then(|c_id| app.collections.iter().find(|c| c.id == c_id));
+        let collection_vars = collection.map(|c| c.get_native_variables());
+        let collection_auth = collection.and_then(|c| c.auth.as_ref());
+
+        // globals are the lowest-precedence variable source. collection,
+        // environment and script variables override them for the same key
+        let is_defined = |vars: &[KeyValuePair], k: &str| {
+            vars.iter()
+                .any(|kv| kv.is_active && kv.key.trim() == k.trim())
+        };
         for (k, v) in &script_globals {
-            if !effective_env.variables.iter().any(|kv| &kv.key == k) {
+            let shadowed = is_defined(&effective_env.variables, k)
+                || collection_vars
+                    .as_deref()
+                    .is_some_and(|vars| is_defined(vars, k));
+            if !shadowed {
                 let mut kv = KeyValuePair::new(k, v);
                 kv.is_active = true;
                 effective_env.variables.push(kv);
             }
         }
 
+        // only what the script actually set. re-applying every entry would let
+        // collection fallbacks (also in `script_vars`) shadow the environment
         for (k, v) in &script_vars {
+            if script_vars_snapshot.get(k) == Some(v) {
+                continue;
+            }
             if let Some(existing) = effective_env.variables.iter_mut().find(|kv| &kv.key == k) {
                 existing.value = v.clone();
                 existing.is_active = true;
@@ -466,12 +487,7 @@ pub fn send_pressed(app: &mut Rustrest) -> Task<Message> {
         tab.sse_active = false;
         tab.sse_log.clear();
 
-        let collection = tab
-            .collection_id
-            .and_then(|c_id| app.collections.iter().find(|c| c.id == c_id));
-        let collection_vars = collection.map(|c| c.get_native_variables());
-        let collection_auth = collection.and_then(|c| c.auth.as_ref());
-
+        let resolver_env = effective_env.clone();
         let (final_url, compiled_body, compiled_form_data, mut filtered_headers, filtered_cookies) =
             match tab.compile_request_fields(
                 &Some(effective_env),
@@ -488,8 +504,16 @@ pub fn send_pressed(app: &mut Rustrest) -> Task<Message> {
                 }
             };
 
-        // apply any header overrides the script made via pm.setHeader(...)
+        // apply any header overrides the script made via pm.setHeader(...).
+        // untouched headers were already resolved above. re-applying their
+        // raw values would send `{{var}}` literally
         for (k, v) in script_headers {
+            if script_headers_snapshot.get(&k) == Some(&v) {
+                continue;
+            }
+            let k = resolver_env.replace_vars(&k, collection_vars.as_deref());
+            let v = resolver_env.replace_vars(&v, collection_vars.as_deref());
+
             if let Some(existing) = filtered_headers.iter_mut().find(|(hk, _)| hk == &k) {
                 existing.1 = v;
             } else {
