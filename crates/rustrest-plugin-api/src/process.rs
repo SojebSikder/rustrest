@@ -82,6 +82,14 @@ pub fn storage_write(filename: &str, bytes: &[u8]) -> Result<(), String> {
     hostcall::call("storage_write", (filename, bytes))
 }
 
+/// deletes a file from this plugin's private storage directory. `filename`
+/// must be a bare filename (no path separators). Deleting a file that
+/// doesn't exist is not an error.
+#[cfg(target_arch = "wasm32")]
+pub fn storage_delete(filename: &str) -> Result<(), String> {
+    hostcall::call("storage_delete", filename)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommandOutput {
     pub status: i32,

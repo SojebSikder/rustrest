@@ -405,7 +405,9 @@ pub fn add_variable_pressed(app: &mut Rustrest, collection_id: usize) -> Task<Me
         });
         col.unsaved = true;
     }
-    Task::none()
+    iced::widget::operation::snap_to_end(crate::ui::collection_viewer::collection_vars_id(
+        collection_id,
+    ))
 }
 
 pub fn delete_variable_pressed(

@@ -307,6 +307,17 @@ pub fn active_tab_message(app: &mut Rustrest, tab_msg: TabMessage) -> Task<Messa
     }
     let active_idx = app.active_tab_index;
     let mut syncs_saved_responses = false;
+    let scroll_rows_to_end = matches!(
+        tab_msg,
+        TabMessage::AddParamRow
+            | TabMessage::AddHeaderRow
+            | TabMessage::AddCookieRow
+            | TabMessage::AddFormDataRow
+            | TabMessage::AddUrlencodedRow
+    )
+    .then(|| app.tabs.get(active_idx).map(|tab_state| tab_state.tab.id))
+    .flatten();
+
     if let Some(tab_state) = app.tabs.get_mut(active_idx) {
         if let TabMessage::ResponseViewChanged(view) = tab_msg {
             tab_state.tab.response_view = view;
@@ -332,7 +343,12 @@ pub fn active_tab_message(app: &mut Rustrest, tab_msg: TabMessage) -> Task<Messa
     if syncs_saved_responses {
         app.sync_active_tab_saved_responses_to_collection(active_idx);
     }
-    Task::none()
+    match scroll_rows_to_end {
+        Some(tab_id) => iced::widget::operation::snap_to_end(
+            crate::ui::tab::protocol_common::kv_rows_id(tab_id),
+        ),
+        None => Task::none(),
+    }
 }
 
 pub fn send_pressed(app: &mut Rustrest) -> Task<Message> {

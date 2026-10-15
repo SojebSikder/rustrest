@@ -256,6 +256,14 @@ fn execute(
                 Err(e) => encode_err(&e),
             }
         }
+        "storage_delete" => {
+            require_external_process!();
+            let filename: String = decode!();
+            match storage_delete(storage_dir, &filename) {
+                Ok(()) => encode_ok(&()),
+                Err(e) => encode_err(&e),
+            }
+        }
         "download_archive" => {
             require_external_process!();
             let (url, checksum_url, dest_dir): (String, Option<String>, String) = decode!();
@@ -340,6 +348,15 @@ fn storage_read(storage_dir: &Path, filename: &str) -> Result<Option<Vec<u8>>, S
 fn storage_write(storage_dir: &Path, filename: &str, bytes: &[u8]) -> Result<(), String> {
     let path = safe_storage_path(storage_dir, filename)?;
     std::fs::write(&path, bytes).map_err(|e| e.to_string())
+}
+
+fn storage_delete(storage_dir: &Path, filename: &str) -> Result<(), String> {
+    let path = safe_storage_path(storage_dir, filename)?;
+    match std::fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 fn make_executable(path: &str) -> Result<(), String> {

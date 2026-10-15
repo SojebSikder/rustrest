@@ -262,9 +262,18 @@ pub fn render_env_editor(app: &Rustrest) -> Option<Element<'_, Message>> {
         ));
     }
     let content = content
-        .push(scrollable(var_rows).height(Length::Fixed(260.0)))
+        .push(
+            scrollable(var_rows)
+                .id(env_vars_id())
+                .height(Length::Fixed(260.0)),
+        )
         .push(footer);
 
     // wrap in a card that swallows clicks so they don't close the modal
     Some(card(content, 640.0))
+}
+
+/// the environment editor's variable list - only one editor is open at a time.
+pub fn env_vars_id() -> iced::widget::Id {
+    iced::widget::Id::new("env-vars")
 }

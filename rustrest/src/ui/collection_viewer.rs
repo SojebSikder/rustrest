@@ -294,7 +294,9 @@ pub fn render_collection_root<'a>(
             }
 
             column![
-                scrollable(vars_column).height(Length::FillPortion(4)),
+                scrollable(vars_column)
+                    .id(collection_vars_id(collection_id))
+                    .height(Length::FillPortion(4)),
                 button(text("+ Add Variable"))
                     .on_press(Message::AddCollectionVariablePressed(collection_id))
             ]
@@ -374,4 +376,9 @@ pub fn render_folder_root<'a>(
     .width(Length::Fill)
     .height(Length::Fill)
     .into()
+}
+
+/// a collection's variables list in the collection viewer.
+pub fn collection_vars_id(collection_id: usize) -> iced::widget::Id {
+    iced::widget::Id::from(format!("collection-vars-{collection_id}"))
 }

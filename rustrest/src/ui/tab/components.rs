@@ -1,3 +1,4 @@
+use super::protocol_common::kv_rows_id;
 use super::types::{FormDataRow, FormDataType, KeyValuePair};
 use crate::message::{KvValueField, MultilineFieldKind};
 use crate::ui::context_menu::with_context_menu;
@@ -93,7 +94,9 @@ where
     }
 
     column![
-        scrollable(content).height(Length::Fixed(150.0)),
+        scrollable(content)
+            .id(kv_rows_id(tab_id))
+            .height(Length::Fixed(150.0)),
         button(
             row![text("+").size(13), text(add_button_label).size(12)]
                 .spacing(6)
@@ -309,7 +312,9 @@ where
                 .padding([2, 8])
                 .style(button::text),
         ],
-        scrollable(content).height(Length::Fixed(150.0)),
+        scrollable(content)
+            .id(kv_rows_id(tab_id))
+            .height(Length::Fixed(150.0)),
         button(
             row![text("+").size(13), text("Add Form Field").size(12)]
                 .spacing(6)

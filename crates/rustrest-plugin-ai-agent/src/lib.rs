@@ -3,13 +3,20 @@
 //! request/response tab.
 
 use rustrest_plugin_api::{
-    CollectionOperation, HttpRequestSpec, HttpResponseData, PickFilesResult, PickedFile, Plugin,
+    ButtonVariant, CollectionOperation, HttpRequestSpec, HttpResponseData, PickFilesResult, PickedFile, Plugin,
     RequestPatch, RightPanelAction, RightPanelContext, TextTone, UiEvent, UiNode, UiStyle,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 const CONFIG_FILE: &str = "config.json";
+/// list of saved chat sessions, most recently updated first. Each session's
+/// transcript lives in its own `session-<id>.json` (see [`session_file`]).
+const SESSIONS_INDEX_FILE: &str = "sessions.json";
+/// saved sessions kept in history - the oldest are deleted beyond this.
+const MAX_SAVED_SESSIONS: usize = 50;
+/// longest session title shown in history, in chars.
+const MAX_TITLE_CHARS: usize = 60;
 /// most recent chat messages (user + assistant) sent back to the model as
 /// conversation history. bounds the prompt size on long sessions.
 const MAX_HISTORY_MESSAGES: usize = 20;
@@ -60,10 +67,53 @@ fn provider_defaults(provider: &str) -> (String, String) {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct ChatMessage {
     role: String,
     text: String,
+}
+
+/// one entry in the session history list.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SessionMeta {
+    id: u64,
+    title: String,
+    message_count: usize,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct SessionIndex {
+    next_id: u64,
+    /// most recently updated first
+    sessions: Vec<SessionMeta>,
+}
+
+/// a saved chat transcript, resumable from the history list.
+#[derive(Debug, Serialize, Deserialize)]
+struct SavedSession {
+    id: u64,
+    title: String,
+    messages: Vec<ChatMessage>,
+}
+
+fn session_file(id: u64) -> String {
+    format!("session-{id}.json")
+}
+
+/// the first line of the session's first user message, shortened.
+fn session_title(messages: &[ChatMessage]) -> String {
+    let first = messages
+        .iter()
+        .find(|m| m.role == "You")
+        .and_then(|m| m.text.lines().find(|line| !line.trim().is_empty()))
+        .unwrap_or("Untitled session")
+        .trim();
+    if first.chars().count() > MAX_TITLE_CHARS {
+        let short: String = first.chars().take(MAX_TITLE_CHARS - 1).collect();
+        format!("{}\u{2026}", short.trim_end())
+    } else {
+        first.to_string()
+    }
 }
 
 #[derive(Default)]
@@ -106,6 +156,13 @@ struct AiAgentPlugin {
     attached_files: Vec<PickedFile>,
     /// handle of an in-flight `pick_files` dialog, if one is open.
     pending_file_pick: Option<u32>,
+    /// the saved session the current chat is written to - assigned when the
+    /// first message is sent, so empty chats never show up in history.
+    session_id: Option<u64>,
+    sessions: SessionIndex,
+    show_sessions: bool,
+    /// incognito chats are never written to storage or listed in history.
+    incognito: bool,
 }
 
 impl AiAgentPlugin {
@@ -119,7 +176,103 @@ impl AiAgentPlugin {
         {
             self.config = cfg;
         }
+        if let Ok(Some(bytes)) = rustrest_plugin_api::storage_read(SESSIONS_INDEX_FILE)
+            && let Ok(index) = serde_json::from_slice::<SessionIndex>(&bytes)
+        {
+            self.sessions = index;
+        }
         self.seed_drafts_from_config();
+    }
+
+    fn save_session_index(&self) {
+        if let Ok(bytes) = serde_json::to_vec(&self.sessions) {
+            let _ = rustrest_plugin_api::storage_write(SESSIONS_INDEX_FILE, &bytes);
+        }
+    }
+
+    /// writes the current chat to its session file and moves it to the top
+    /// of history. A no-op in incognito mode and until something's been sent.
+    fn save_session(&mut self) {
+        if self.incognito || !self.messages.iter().any(|m| m.role == "You") {
+            return;
+        }
+        let id = *self.session_id.get_or_insert_with(|| {
+            let id = self.sessions.next_id;
+            self.sessions.next_id += 1;
+            id
+        });
+        let title = session_title(&self.messages);
+
+        let session = SavedSession {
+            id,
+            title: title.clone(),
+            messages: self.messages.clone(),
+        };
+        let Ok(bytes) = serde_json::to_vec(&session) else {
+            return;
+        };
+
+        if rustrest_plugin_api::storage_write(&session_file(id), &bytes).is_err() {
+            return;
+        }
+
+        self.sessions.sessions.retain(|s| s.id != id);
+        self.sessions.sessions.insert(
+            0,
+            SessionMeta {
+                id,
+                title,
+                message_count: self.messages.len(),
+            },
+        );
+        let keep = self.sessions.sessions.len().min(MAX_SAVED_SESSIONS);
+        for dropped in self.sessions.sessions.split_off(keep) {
+            let _ = rustrest_plugin_api::storage_delete(&session_file(dropped.id));
+        }
+        self.save_session_index();
+    }
+
+    /// clears the chat and its context for a fresh session.
+    fn reset_session(&mut self) {
+        self.messages.clear();
+        self.draft_input.clear();
+        self.pending = None;
+        self.busy = false;
+        self.streaming = false;
+        self.selected_collections.clear();
+        self.selected_envs.clear();
+        self.attached_files.clear();
+        self.pending_file_pick = None;
+        self.session_id = None;
+        self.show_sessions = false;
+    }
+
+    fn resume_session(&mut self, id: u64) {
+        let session = rustrest_plugin_api::storage_read(&session_file(id))
+            .ok()
+            .flatten()
+            .and_then(|bytes| serde_json::from_slice::<SavedSession>(&bytes).ok());
+        let Some(session) = session else {
+            // the file is gone or unreadable - drop the dangling entry
+            self.sessions.sessions.retain(|s| s.id != id);
+            self.save_session_index();
+            return;
+        };
+
+        self.reset_session();
+        self.incognito = false;
+        self.messages = session.messages;
+        self.session_id = Some(session.id);
+    }
+
+    fn delete_session(&mut self, id: u64) {
+        let _ = rustrest_plugin_api::storage_delete(&session_file(id));
+        self.sessions.sessions.retain(|s| s.id != id);
+        self.save_session_index();
+        // the chat stays on screen, but sending again starts a new entry
+        if self.session_id == Some(id) {
+            self.session_id = None;
+        }
     }
 
     fn seed_drafts_from_config(&mut self) {
@@ -138,6 +291,8 @@ impl AiAgentPlugin {
     fn render_tree(&self, ctx: &RightPanelContext) -> UiNode {
         if self.show_settings || self.config.api_key.is_empty() {
             self.render_settings()
+        } else if self.show_sessions {
+            self.render_sessions()
         } else {
             self.render_chat(ctx)
         }
@@ -193,6 +348,70 @@ impl AiAgentPlugin {
                     primary: false,
                 },
             ]),
+        ])
+    }
+
+    fn render_sessions(&self) -> UiNode {
+        let header = UiNode::Row(vec![
+            UiNode::Label("Chat history".to_string()).styled(UiStyle::new().bold()),
+            UiNode::HorizontalSpacer,
+            UiNode::Button {
+                id: "close-sessions".to_string(),
+                label: "Back".to_string(),
+                primary: false,
+            },
+        ]);
+
+        if self.sessions.sessions.is_empty() {
+            return UiNode::Column(vec![
+                header,
+                UiNode::Muted("No saved sessions yet - chats are saved as you go.".to_string()),
+            ]);
+        }
+
+        let rows = self
+            .sessions
+            .sessions
+            .iter()
+            .map(|session| {
+                let is_current = self.session_id == Some(session.id);
+                let plural = if session.message_count == 1 { "" } else { "s" };
+                let mut details = format!("{} message{plural}", session.message_count);
+                if is_current {
+                    details.push_str(" \u{00b7} current");
+                }
+
+                UiNode::Row(vec![
+                    UiNode::Column(vec![
+                        UiNode::Label(session.title.clone()),
+                        UiNode::Muted(details),
+                    ]),
+                    UiNode::HorizontalSpacer,
+                    UiNode::Row(vec![
+                        UiNode::Button {
+                            id: format!("resume-session-{}", session.id),
+                            label: "Resume".to_string(),
+                            primary: !is_current,
+                        },
+                        UiNode::Button {
+                            id: format!("delete-session-{}", session.id),
+                            label: "Delete".to_string(),
+                            primary: false,
+                        }
+                        .styled(UiStyle::new().variant(ButtonVariant::Danger)),
+                    ])
+                    .styled(UiStyle::new().text_size(12.0).spacing(4.0)),
+                ])
+            })
+            .collect();
+
+        UiNode::Column(vec![
+            header,
+            UiNode::Muted(format!(
+                "Saved on this machine; the last {MAX_SAVED_SESSIONS} sessions are kept. \
+                 Incognito chats are never saved."
+            )),
+            UiNode::Scrollable(Box::new(UiNode::Column(rows))),
         ])
     }
 
@@ -257,6 +476,16 @@ impl AiAgentPlugin {
                     primary: self.config.render_markdown,
                 },
                 UiNode::Button {
+                    id: "show-sessions".to_string(),
+                    label: "History".to_string(),
+                    primary: false,
+                },
+                UiNode::Button {
+                    id: "toggle-incognito".to_string(),
+                    label: "Incognito".to_string(),
+                    primary: self.incognito,
+                },
+                UiNode::Button {
                     id: "new-session".to_string(),
                     label: "New Session".to_string(),
                     primary: false,
@@ -271,6 +500,12 @@ impl AiAgentPlugin {
         ]);
 
         let mut conversation = Vec::new();
+
+        if self.incognito {
+            conversation.push(UiNode::Muted(
+                "Incognito - this chat won't be saved to history.".to_string(),
+            ));
+        }
 
         match (&ctx.active_request, &ctx.active_response) {
             (None, _) => conversation.push(UiNode::Muted(
@@ -391,6 +626,7 @@ impl AiAgentPlugin {
                     text: instruction,
                 });
                 self.draft_input.clear();
+                self.save_session();
             }
             Err(e) => {
                 self.messages.push(ChatMessage {
@@ -434,6 +670,16 @@ impl Plugin for AiAgentPlugin {
                     let (base_url, model) = provider_defaults(provider);
                     self.draft_base_url = base_url;
                     self.draft_model = model;
+                } else if let Some(session_id) = id
+                    .strip_prefix("resume-session-")
+                    .and_then(|s| s.parse::<u64>().ok())
+                {
+                    self.resume_session(session_id);
+                } else if let Some(session_id) = id
+                    .strip_prefix("delete-session-")
+                    .and_then(|s| s.parse::<u64>().ok())
+                {
+                    self.delete_session(session_id);
                 } else if let Some(idx) = id
                     .strip_prefix("remove-file-")
                     .and_then(|s| s.parse::<usize>().ok())
@@ -470,19 +716,14 @@ impl Plugin for AiAgentPlugin {
                             let instruction = self.draft_input.clone();
                             self.start_request(instruction, &ctx);
                         }
-                        "new-session" => {
-                            // any in-flight reply is left running on the host
-                            // thread but discarded on arrival, since it's no
-                            // longer this plugin's `pending` handle.
-                            self.messages.clear();
-                            self.draft_input.clear();
-                            self.pending = None;
-                            self.busy = false;
-                            self.streaming = false;
-                            self.selected_collections.clear();
-                            self.selected_envs.clear();
-                            self.attached_files.clear();
-                            self.pending_file_pick = None;
+                        "new-session" => self.reset_session(),
+                        "show-sessions" => self.show_sessions = true,
+                        "close-sessions" => self.show_sessions = false,
+                        // switching either way starts a fresh chat: a normal
+                        // one is already saved, and an incognito one is discarded on purpose.
+                        "toggle-incognito" => {
+                            self.reset_session();
+                            self.incognito = !self.incognito;
                         }
                         "pick-files" => match rustrest_plugin_api::pick_files() {
                             Ok(handle) => self.pending_file_pick = Some(handle),
@@ -611,6 +852,7 @@ impl Plugin for AiAgentPlugin {
                 }),
             },
         }
+        self.save_session();
     }
 }
 
@@ -880,12 +1122,7 @@ fn parse_provider_reply(provider: &str, body: &[u8]) -> Result<String, String> {
         .ok_or_else(|| format!("unrecognized response shape: {value}"))
 }
 
-/// pulls the incremental text delta (if any) out of one line of a streamed
-/// reply. Anthropic and OpenAI stream Server-Sent Events (`data: {...}`
-/// lines, each one full JSON event); Ollama streams newline-delimited plain
-/// JSON objects with no `data:` prefix. Lines that aren't a text delta (SSE
-/// `event:`/blank framing lines, other event types, `data: [DONE]`, ...)
-/// return `None`.
+/// pulls the incremental text delta (if any) out of one line of a streamed reply.
 fn extract_stream_delta(provider: &str, line: &str) -> Option<String> {
     let line = line.trim();
     if line.is_empty() {

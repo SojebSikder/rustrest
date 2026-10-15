@@ -103,7 +103,7 @@ pub fn add_variable_pressed(app: &mut Rustrest, env_idx: usize) -> Task<Message>
                 .push(text_editor::Content::new());
         }
     }
-    Task::none()
+    iced::widget::operation::snap_to_end(crate::ui::env_editor::env_vars_id())
 }
 
 pub fn delete_variable_pressed(

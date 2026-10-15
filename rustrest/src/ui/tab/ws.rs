@@ -82,6 +82,7 @@ pub fn view(
             move |i, kv| wrap(WsTabMessage::HeaderChanged(i, kv)),
             wrap(WsTabMessage::AddHeader),
             move |i| wrap(WsTabMessage::RemoveHeader(i)),
+            tab_id,
         ),
     ]
     .spacing(6);

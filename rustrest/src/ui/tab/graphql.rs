@@ -193,6 +193,7 @@ pub fn view<'a>(
             move |i, kv| wrap(GraphQlTabMessage::HeaderChanged(i, kv)),
             wrap(GraphQlTabMessage::AddHeader),
             move |i| wrap(GraphQlTabMessage::RemoveHeader(i)),
+            tab_id,
         ),
     ]
     .spacing(6);

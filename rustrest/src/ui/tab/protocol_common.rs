@@ -56,6 +56,7 @@ pub fn simple_kv_editor<'a, Message>(
     on_change: impl Fn(usize, KeyValuePair) -> Message + Copy + 'a,
     on_add: Message,
     on_remove: impl Fn(usize) -> Message + Copy + 'a,
+    tab_id: usize,
 ) -> Element<'a, Message>
 where
     Message: Clone + 'a,
@@ -114,7 +115,9 @@ where
     }
 
     column![
-        scrollable(content).height(Length::Fixed(120.0)),
+        scrollable(content)
+            .id(kv_rows_id(tab_id))
+            .height(Length::Fixed(120.0)),
         button(
             row![text("+").size(13), text("Add Row").size(12)]
                 .spacing(6)
@@ -205,6 +208,12 @@ pub fn graphql_subscription_log_id(tab_id: usize) -> iced::widget::Id {
 
 pub fn sse_log_id(tab_id: usize) -> iced::widget::Id {
     iced::widget::Id::from(format!("sse-log-{tab_id}"))
+}
+
+/// the row list of a tab's key/value (or form-data) editor. A tab only ever
+/// shows one such editor at a time, so one id per tab is enough.
+pub fn kv_rows_id(tab_id: usize) -> iced::widget::Id {
+    iced::widget::Id::from(format!("kv-rows-{tab_id}"))
 }
 
 /// A scrollable, color-coded log of in/out messages - used by the WS

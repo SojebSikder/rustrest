@@ -173,6 +173,7 @@ pub fn view<'a>(
             move |i, kv| wrap(GrpcTabMessage::MetadataChanged(i, kv)),
             wrap(GrpcTabMessage::AddMetadata),
             move |i| wrap(GrpcTabMessage::RemoveMetadata(i)),
+            tab_id,
         ),
     ]
     .spacing(6);
