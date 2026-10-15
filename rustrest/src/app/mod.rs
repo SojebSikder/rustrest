@@ -1,6 +1,7 @@
 pub mod cloud;
 pub mod cloud_env;
 mod cloud_notifications;
+mod codegen;
 mod collection_settings;
 mod collections;
 mod docs;
@@ -1788,6 +1789,8 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         Message::SaveRequestNameChanged(name) => workbench::save_request_name_changed(app, name),
         Message::CloseSaveRequestModal => workbench::close_save_request_modal(app),
         Message::CloseResponseTimingModal => overlays::close_response_timing_modal(app),
+        Message::ShowCodegenModal => codegen::open(app),
+        Message::Codegen(msg) => codegen::update(app, msg),
         Message::ShowAboutModal => overlays::show_about_modal(app),
         Message::CloseAboutModal => overlays::close_about_modal(app),
         Message::AboutModalAction(action) => overlays::about_modal_action(app, action),

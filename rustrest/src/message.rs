@@ -407,6 +407,10 @@ pub enum Message {
     // response timing modal
     CloseResponseTimingModal,
 
+    // "Generate Code" modal for the active request
+    ShowCodegenModal,
+    Codegen(crate::ui::codegen_modal::CodegenMessage),
+
     // Help > About modal
     ShowAboutModal,
     CloseAboutModal,

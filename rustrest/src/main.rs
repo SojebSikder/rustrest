@@ -18,6 +18,7 @@ mod utils;
 mod workspace;
 
 use crate::ui::about_modal::view_about_modal;
+use crate::ui::codegen_modal::{CodegenMessage, view_codegen_modal};
 use crate::ui::command_palette::view as view_command_palette;
 use crate::ui::commit_modal::view_commit_modal;
 use crate::ui::confirm_dialog::view_confirm_dialog;
@@ -93,6 +94,7 @@ enum ActiveOverlay {
     CommandPalette,
     ThemeSelector,
     ResponseTiming,
+    Codegen,
     About,
     Notifications,
 }
@@ -158,6 +160,8 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         Some(ActiveOverlay::About)
     } else if app.overlays.response_timing_modal.is_some() {
         Some(ActiveOverlay::ResponseTiming)
+    } else if app.overlays.codegen_modal.is_some() {
+        Some(ActiveOverlay::Codegen)
     } else if app.workbench.save_request_model.is_some() {
         Some(ActiveOverlay::SaveRequest)
     } else if app.env.editing_env_index.is_some() {
@@ -177,6 +181,9 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
             Some(ActiveOverlay::Commit) => outside_click_sub!(Message::CommitCancelled),
             Some(ActiveOverlay::ResponseTiming) => {
                 outside_click_sub!(Message::CloseResponseTimingModal)
+            }
+            Some(ActiveOverlay::Codegen) => {
+                outside_click_sub!(Message::Codegen(CodegenMessage::Close))
             }
             Some(ActiveOverlay::About) => outside_click_sub!(Message::CloseAboutModal),
             Some(ActiveOverlay::ConfirmDialog) => {
@@ -224,6 +231,9 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         Some(ActiveOverlay::Commit) => escape_close_sub!(Message::CommitCancelled),
         Some(ActiveOverlay::ResponseTiming) => {
             escape_close_sub!(Message::CloseResponseTimingModal)
+        }
+        Some(ActiveOverlay::Codegen) => {
+            escape_close_sub!(Message::Codegen(CodegenMessage::Close))
         }
         Some(ActiveOverlay::About) => escape_close_sub!(Message::CloseAboutModal),
         Some(ActiveOverlay::ConfirmDialog) => {
@@ -784,6 +794,19 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
             .align_x(Alignment::Center)
             .align_y(Alignment::Center);
         main_interface_stack = main_interface_stack.push(timing_overlay);
+    }
+
+    // "Generate Code" modal overlay
+    if let Some(codegen_modal) = app.overlays.codegen_modal.as_ref() {
+        let codegen_overlay = container(view_codegen_modal(
+            codegen_modal,
+            &app.overlays.codegen_prefs,
+        ))
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_x(Alignment::Center)
+        .align_y(Alignment::Center);
+        main_interface_stack = main_interface_stack.push(codegen_overlay);
     }
 
     // about modal overlay

@@ -205,6 +205,9 @@ pub fn active_tab_message(app: &mut Rustrest, tab_msg: TabMessage) -> Task<Messa
     if let TabMessage::CopyToClipboard(text) = tab_msg {
         return super::overlays::copy_to_clipboard(app, text);
     }
+    if let TabMessage::GenerateCode = tab_msg {
+        return super::codegen::open(app);
+    }
     if let TabMessage::DocsLinkClicked(uri) = tab_msg {
         return super::docs::link_clicked(uri);
     }

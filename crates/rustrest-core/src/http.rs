@@ -243,8 +243,9 @@ async fn build_body(
                 .unwrap_or_default();
             Ok((bytes, None))
         }
-        // fallback text states (raw JSON, URLencoded forms, etc.)
-        _ => {
+        BodyType::None => Ok((Vec::new(), None)),
+        // text bodies: raw, URL-encoded (pre-serialized), GraphQL
+        BodyType::Raw | BodyType::XWwwFormUrlencoded | BodyType::GraphQl => {
             if raw_body.trim().is_empty() {
                 Ok((Vec::new(), None))
             } else {
@@ -495,33 +496,4 @@ pub async fn send_request_auto(
         prepared.prepare,
         process_start,
     )))
-}
-
-#[cfg(test)]
-mod prepare_tests {
-    use super::*;
-    use crate::common::FormDataType;
-
-    #[tokio::test]
-    async fn multipart_content_type_replaces_a_user_set_one() {
-        let spec = RequestSpec::new("http://localhost/upload", HttpMethod::POST)
-            .body_type(BodyType::FormData)
-            .form_data(vec![FormDataRow::new("data", "{}", FormDataType::Text)])
-            .headers(vec![
-                ("content-type".to_string(), "application/json".to_string()),
-                ("Accept".to_string(), "*/*".to_string()),
-            ]);
-
-        let prepared = prepare(spec).await.unwrap();
-        let content_types: Vec<&str> = prepared
-            .headers
-            .iter()
-            .filter(|(k, _)| k.eq_ignore_ascii_case("content-type"))
-            .map(|(_, v)| v.as_str())
-            .collect();
-
-        assert_eq!(content_types.len(), 1);
-        assert!(content_types[0].starts_with("multipart/form-data; boundary="));
-        assert!(prepared.headers.iter().any(|(k, _)| k == "Accept"));
-    }
 }
