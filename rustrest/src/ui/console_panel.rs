@@ -1,19 +1,19 @@
 use crate::message::Message;
+use crate::ui::tokens::{
+    RADIUS_SM, SPACE_MD, TEXT_BASE, TEXT_BODY, TEXT_SMALL, icon_button, semibold,
+};
 use iced::widget::{Space, button, column, container, row, scrollable, text};
 use iced::{Alignment, Element, Font, Length};
 
 pub fn render_console_clear_bar<'a>() -> Element<'a, Message> {
     row![
         text("Console Output")
-            .size(12)
-            .font(Font {
-                weight: iced::font::Weight::Bold,
-                ..Font::DEFAULT
-            })
+            .size(TEXT_BODY)
+            .font(semibold())
             .color(crate::theme::colors().text_muted),
         Space::new().width(Length::Fill),
-        button(text("Clear").size(11))
-            .style(button::text)
+        button(text("Clear").size(TEXT_SMALL))
+            .style(icon_button)
             .padding([2, 6])
             .on_press(Message::ClearConsoleLogs),
     ]
@@ -35,7 +35,7 @@ where
     if logs.is_empty() {
         return container(
             text("No console output. Use console.log(...) in your pre-request or post-response scripts to see output here.")
-                .size(13)
+                .size(TEXT_BASE)
                 .color(crate::theme::colors().text_muted),
         )
         .padding(12)
@@ -51,7 +51,7 @@ where
             row![
                 container(
                     text(level)
-                        .size(11)
+                        .size(TEXT_SMALL)
                         .font(Font::MONOSPACE)
                         .color(iced::Color::WHITE)
                 )
@@ -59,17 +59,17 @@ where
                 .style(move |_| container::Style {
                     background: Some(iced::Background::Color(level_color)),
                     border: iced::Border {
-                        radius: 4.0.into(),
+                        radius: RADIUS_SM.into(),
                         ..Default::default()
                     },
                     ..Default::default()
                 }),
                 text(message)
                     .font(Font::MONOSPACE)
-                    .size(13)
+                    .size(TEXT_BASE)
                     .color(text_color_for(level)),
             ]
-            .spacing(10)
+            .spacing(SPACE_MD)
             .align_y(Alignment::Center),
         )
         .padding([6, 8])

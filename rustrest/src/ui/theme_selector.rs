@@ -3,6 +3,7 @@
 use crate::app::Rustrest;
 use crate::message::Message;
 use crate::ui::modal::card;
+use crate::ui::tokens::RADIUS_MD;
 use iced::widget::{Id, Space, button, column, container, row, scrollable, text, text_input};
 use iced::{Alignment, Element, Font, Length};
 use rustrest_command_palette::{Command, PaletteState, filter};
@@ -98,7 +99,7 @@ pub fn view<'a>(app: &'a Rustrest, state: &'a PaletteState) -> Element<'a, Messa
                             background: Some(theme.extended_palette().primary.weak.color.into()),
                             text_color: theme.extended_palette().primary.weak.text,
                             border: iced::Border {
-                                radius: 6.0.into(),
+                                radius: RADIUS_MD.into(),
                                 ..Default::default()
                             },
                             ..button::text(theme, status)
@@ -106,7 +107,7 @@ pub fn view<'a>(app: &'a Rustrest, state: &'a PaletteState) -> Element<'a, Messa
                     } else {
                         button::Style {
                             border: iced::Border {
-                                radius: 6.0.into(),
+                                radius: RADIUS_MD.into(),
                                 ..Default::default()
                             },
                             ..button::text(theme, status)

@@ -3,11 +3,15 @@ use crate::app::{Rustrest, WorkspaceContent};
 use crate::http_client::HttpMethod;
 use crate::message::{Message, MultilineFieldKind, ResizeKind};
 use crate::ui::context_menu::{FieldTarget, with_context_menu};
+use crate::ui::tokens::{
+    RADIUS_MD, SPACE_SM, SPACE_XL, TEXT_BASE, TEXT_TITLE, icon_button, primary_button,
+    secondary_button, semibold, success_button, tint,
+};
 use crate::ui::unsaved::{tab_is_unsaved, unsaved_dot};
 use iced::widget::{
     Id, Space, button, column, container, mouse_area, row, scrollable, text, text_input,
 };
-use iced::{Alignment, Element, Length};
+use iced::{Alignment, Color, Element, Length};
 
 /// id of the horizontally-scrolling tab strip, used to snap it to the newest tab whenever one is added
 pub fn tab_bar_scroll_id() -> Id {
@@ -19,23 +23,29 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
 
     if app.tabs.is_empty() {
         let empty_state = column![
-            iced::widget::text(format!("Welcome to {}", APP_NAME)).size(25),
-            iced::widget::text("Create a new request or collection to get started.").size(13),
+            iced::widget::text(format!("Welcome to {}", APP_NAME))
+                .size(TEXT_TITLE)
+                .font(semibold()),
+            iced::widget::text("Create a new request or collection to get started.")
+                .size(TEXT_BASE)
+                .color(crate::theme::colors().text_muted),
             row![
-                button("New Request")
+                button(text("New Request").size(TEXT_BASE))
                     .on_press(Message::ShowNewTabMenu)
-                    .style(button::success)
+                    .style(success_button)
                     .padding([8, 16]),
-                button("New Collection")
+                button(text("New Collection").size(TEXT_BASE))
                     .on_press(Message::CreateNewCollectionPressed)
+                    .style(primary_button)
                     .padding([8, 16]),
-                button("New Terminal")
+                button(text("New Terminal").size(TEXT_BASE))
                     .on_press(Message::NewTerminalTabPressed)
+                    .style(secondary_button)
                     .padding([8, 16]),
             ]
-            .spacing(10),
+            .spacing(SPACE_SM),
         ]
-        .spacing(12)
+        .spacing(SPACE_SM)
         .align_x(Alignment::Center);
 
         return column![
@@ -43,15 +53,16 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
             container(empty_state)
                 .width(Length::Fill)
                 .height(Length::Fill)
+                .padding(SPACE_XL)
                 .align_x(Alignment::Center)
-                .align_y(Alignment::Start),
+                .align_y(Alignment::Center),
         ]
-        .spacing(15)
+        .spacing(SPACE_SM)
         .height(Length::Fill)
         .into();
     }
 
-    let mut tab_bar = row![].spacing(5).align_y(Alignment::Center);
+    let mut tab_bar = row![].spacing(SPACE_SM).align_y(Alignment::Center);
 
     for (idx, tab_state) in app.tabs.iter().enumerate() {
         let is_active = idx == app.active_tab_index;
@@ -83,7 +94,8 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
                 text_input("", &tab.name)
                     .on_input(move |txt| Message::TabNameChanged(idx, txt))
                     .on_submit(Message::TabNameSave(idx))
-                    .size(13)
+                    .size(TEXT_BASE)
+                    .style(crate::ui::tokens::input_style)
                     .width(Length::Fixed(100.0)),
                 Message::ShowTextFieldContextMenu(FieldTarget::TabName(idx), tab.name.clone()),
             ))
@@ -91,7 +103,8 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
             .on_exit(Message::TabRenameInputHover(false))
             .into()
         } else {
-            mouse_area(text(&tab.name).size(13))
+            let name = text(&tab.name).size(TEXT_BASE);
+            mouse_area(name)
                 .on_press(Message::TabNameDoubleClick(idx))
                 .interaction(iced::mouse::Interaction::Pointer)
                 .into()
@@ -106,10 +119,10 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
         }
 
         tab_row = tab_row.push(
-            button("×")
+            button(text("×").size(12))
                 .on_press(Message::CloseTabPressed(idx))
-                .padding(2)
-                .style(button::text),
+                .padding([2, 6])
+                .style(icon_button),
         );
 
         // a plain container so the outer mouse_area's on_press
@@ -117,37 +130,38 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
         // clicks on release, which is too late to catch the drag motion
         let tab_surface = container(tab_row)
             .padding([6, 12])
-            .style(move |theme: &iced::Theme| {
+            .style(move |_theme: &iced::Theme| {
                 let colors = crate::theme::colors();
-                match (is_active, colors.tab_active_background) {
-                    // themes: the active tab takes the editor's surface with an accent underline, instead of a fill
-                    (true, Some(active_bg)) => container::Style {
-                        background: Some(active_bg.into()),
+                if is_active {
+                    // a theme may supply its own active-tab fill; otherwise the
+                    // active tab sits on the raised surface with an accent border.
+                    container::Style {
+                        background: Some(
+                            colors
+                                .tab_active_background
+                                .unwrap_or(colors.surface_background)
+                                .into(),
+                        ),
                         text_color: Some(colors.text),
                         border: iced::Border {
-                            color: colors.text_accent,
+                            color: tint(colors.text_accent, 0.55),
                             width: 1.0,
-                            radius: 6.0.into(),
+                            radius: RADIUS_MD.into(),
                         },
                         ..Default::default()
-                    },
-                    (true, None) => container::Style {
-                        background: Some(theme.palette().primary.into()),
-                        text_color: Some(theme.palette().background),
+                    }
+                } else {
+                    container::Style {
+                        text_color: Some(colors.text_muted),
+                        // a transparent 1px border keeps inactive tabs the same
+                        // height as the bordered active one, so nothing shifts
                         border: iced::Border {
-                            radius: 6.0.into(),
-                            ..Default::default()
+                            color: Color::TRANSPARENT,
+                            width: 1.0,
+                            radius: RADIUS_MD.into(),
                         },
                         ..Default::default()
-                    },
-                    (false, _) => container::Style {
-                        background: Some(colors.tab_inactive_background.into()),
-                        border: iced::Border {
-                            radius: 6.0.into(),
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    },
+                    }
                 }
             });
 
@@ -162,7 +176,7 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
     let add_tab_btn = button(text("+").size(14))
         .on_press(Message::ShowNewTabMenu)
         .padding([4, 10])
-        .style(button::secondary);
+        .style(secondary_button);
 
     tab_bar = tab_bar.push(add_tab_btn);
 
@@ -255,13 +269,13 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
         } => {
             let tab_id = active_tab_state.tab.id;
             let header = row![
-                text(path.clone()).size(12).width(Length::Fill),
-                button(text(if *dirty { "Save*" } else { "Save" }).size(12))
+                text(path.clone()).size(TEXT_BASE).width(Length::Fill),
+                button(text(if *dirty { "Save*" } else { "Save" }).size(TEXT_BASE))
                     .on_press(Message::RemoteFileSavePressed(tab_id))
-                    .padding([4, 10])
-                    .style(button::primary),
+                    .padding([6, 14])
+                    .style(primary_button),
             ]
-            .spacing(10)
+            .spacing(SPACE_SM)
             .align_y(Alignment::Center);
 
             let editor = iced::widget::text_editor(contents)
@@ -333,5 +347,5 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
         ),
     };
 
-    column![tab_bar_row, tab_view].spacing(15).into()
+    column![tab_bar_row, tab_view].spacing(SPACE_XL).into()
 }

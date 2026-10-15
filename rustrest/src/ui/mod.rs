@@ -37,6 +37,7 @@ pub mod terminal_view;
 pub mod theme_selector;
 pub mod titlebar;
 pub mod toast;
+pub mod tokens;
 pub mod tooltip;
 pub mod unsaved;
 pub mod var_assist;

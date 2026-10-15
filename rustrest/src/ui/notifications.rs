@@ -3,6 +3,10 @@
 use crate::app::Rustrest;
 use crate::message::Message;
 use crate::ui::modal::{card, danger_text_color, muted_text_color};
+use crate::ui::tokens::{
+    RADIUS_MD, RADIUS_SM, SPACE_LG, SPACE_MD, SPACE_SM, SPACE_XS, TEXT_BASE, TEXT_BODY, TEXT_SMALL,
+    TEXT_SUBTITLE, icon_button, primary_button, secondary_button, semibold, tint,
+};
 use iced::widget::text::Wrapping;
 use iced::widget::{Column, Space, button, column, container, row, scrollable, stack, svg, text};
 use iced::{Alignment, Border, Color, Element, Font, Length, Padding, Theme};
@@ -15,13 +19,6 @@ const LIST_MAX_HEIGHT: f32 = 420.0;
 static BELL_ICON: std::sync::LazyLock<svg::Handle> = std::sync::LazyLock::new(|| {
     svg::Handle::from_memory(include_bytes!("../../../assets/icons/bell.svg").as_slice())
 });
-
-fn semibold() -> Font {
-    Font {
-        weight: iced::font::Weight::Semibold,
-        ..Font::DEFAULT
-    }
-}
 
 /// "just now", "5m ago", "3h ago", "2d ago", then the date
 fn ago(created_at: &str) -> String {
@@ -107,10 +104,7 @@ pub fn bell(app: &Rustrest) -> Option<Element<'_, Message>> {
             .width(Length::Fixed(40.0))
             .height(Length::Fill)
             .style(move |_: &Theme, status| {
-                let hover = Color {
-                    a: 0.12,
-                    ..text_color
-                };
+                let hover = tint(text_color, 0.12);
                 let background = match status {
                     _ if open => Some(selected.into()),
                     button::Status::Hovered | button::Status::Pressed => Some(hover.into()),
@@ -132,13 +126,13 @@ fn row_view<'a>(app: &'a Rustrest, notification: &'a Notification) -> Element<'a
     let (accent, hover, text_color) = (colors.text_accent, colors.element_hover, colors.text);
     let unread = !notification.is_read();
 
-    let mut title_row = row![].spacing(6).align_y(Alignment::Center);
+    let mut title_row = row![].spacing(SPACE_SM).align_y(Alignment::Center);
     if unread {
         title_row = title_row.push(container(Space::new().width(7).height(7)).style(
             move |_: &Theme| container::Style {
                 background: Some(accent.into()),
                 border: Border {
-                    radius: 4.0.into(),
+                    radius: RADIUS_SM.into(),
                     ..Default::default()
                 },
                 ..Default::default()
@@ -148,14 +142,14 @@ fn row_view<'a>(app: &'a Rustrest, notification: &'a Notification) -> Element<'a
     title_row = title_row
         .push(
             text(notification.title.as_str())
-                .size(13)
+                .size(TEXT_BASE)
                 .font(if unread { semibold() } else { Font::DEFAULT })
                 .wrapping(Wrapping::WordOrGlyph)
                 .width(Length::Fill),
         )
         .push(
             text(ago(&notification.created_at))
-                .size(11)
+                .size(TEXT_SMALL)
                 .style(|theme: &Theme| text::Style {
                     color: Some(muted_text_color(theme)),
                 }),
@@ -165,7 +159,7 @@ fn row_view<'a>(app: &'a Rustrest, notification: &'a Notification) -> Element<'a
     if !notification.body.is_empty() {
         body = body.push(
             text(notification.body.as_str())
-                .size(12)
+                .size(TEXT_BODY)
                 .wrapping(Wrapping::WordOrGlyph)
                 .style(|theme: &Theme| text::Style {
                     color: Some(muted_text_color(theme)),
@@ -183,20 +177,20 @@ fn row_view<'a>(app: &'a Rustrest, notification: &'a Notification) -> Element<'a
         let id = &notification.id;
         body = body.push(
             row![
-                button(text("Accept").size(12))
+                button(text("Accept").size(TEXT_BODY))
                     .padding([3, 10])
-                    .style(button::primary)
+                    .style(primary_button)
                     .on_press_maybe((!busy).then(|| Message::CloudRespondInvite(id.clone(), true))),
-                button(text("Decline").size(12))
+                button(text("Decline").size(TEXT_BODY))
                     .padding([3, 10])
-                    .style(button::secondary)
+                    .style(secondary_button)
                     .on_press_maybe(
                         (!busy).then(|| Message::CloudRespondInvite(id.clone(), false))
                     ),
             ]
-            .spacing(6)
+            .spacing(SPACE_SM)
             .padding(Padding {
-                top: 4.0,
+                top: SPACE_XS,
                 ..Padding::ZERO
             }),
         );
@@ -208,14 +202,14 @@ fn row_view<'a>(app: &'a Rustrest, notification: &'a Notification) -> Element<'a
         .style(move |_: &Theme, status| {
             let background = match status {
                 button::Status::Hovered | button::Status::Pressed => Some(hover),
-                _ if unread => Some(Color { a: 0.06, ..accent }),
+                _ if unread => Some(tint(accent, 0.06)),
                 _ => None,
             };
             button::Style {
                 background: background.map(Into::into),
                 text_color,
                 border: Border {
-                    radius: 6.0.into(),
+                    radius: RADIUS_MD.into(),
                     ..Default::default()
                 },
                 ..Default::default()
@@ -223,9 +217,9 @@ fn row_view<'a>(app: &'a Rustrest, notification: &'a Notification) -> Element<'a
         })
         .on_press(Message::CloudNotificationPressed(notification.id.clone()));
 
-    let dismiss = button(text("✕").size(11))
+    let dismiss = button(text("✕").size(TEXT_SMALL))
         .padding([4, 6])
-        .style(button::text)
+        .style(icon_button)
         .on_press(Message::CloudDismissNotification(notification.id.clone()));
 
     // an invite only goes away by answering it
@@ -242,14 +236,14 @@ pub fn view_panel(app: &Rustrest) -> Element<'_, Message> {
     let center = &app.cloud.notifications;
 
     let mut header = row![
-        text("Notifications").size(15).font(semibold()),
+        text("Notifications").size(TEXT_SUBTITLE).font(semibold()),
         Space::new().width(Length::Fill),
     ]
-    .spacing(4)
+    .spacing(SPACE_XS)
     .align_y(Alignment::Center);
     if center.unread > 0 {
         header = header.push(
-            button(text("Mark all read").size(12))
+            button(text("Mark all read").size(TEXT_BODY))
                 .padding([4, 8])
                 .style(button::text)
                 .on_press(Message::CloudMarkAllNotificationsRead),
@@ -257,7 +251,7 @@ pub fn view_panel(app: &Rustrest) -> Element<'_, Message> {
     }
     if !center.items.is_empty() {
         header = header.push(
-            button(text("Clear").size(12))
+            button(text("Clear").size(TEXT_BODY))
                 .padding([4, 8])
                 .style(button::text)
                 .on_press(Message::CloudClearNotifications),
@@ -267,7 +261,7 @@ pub fn view_panel(app: &Rustrest) -> Element<'_, Message> {
     let placeholder = |label: String, danger: bool| -> Element<'_, Message> {
         container(
             text(label)
-                .size(12)
+                .size(TEXT_BODY)
                 .style(move |theme: &Theme| text::Style {
                     color: Some(if danger {
                         danger_text_color(theme)
@@ -299,8 +293,8 @@ pub fn view_panel(app: &Rustrest) -> Element<'_, Message> {
     };
 
     let body = column![header, container(content).max_height(LIST_MAX_HEIGHT),]
-        .spacing(8)
-        .padding(12);
+        .spacing(SPACE_MD)
+        .padding(SPACE_LG);
 
     container(card(body, PANEL_WIDTH))
         .width(Length::Fill)
