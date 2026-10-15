@@ -1,3 +1,4 @@
+use crate::ui::tokens::{RADIUS_SM, tint};
 use iced::widget::{container, text};
 use iced::{Alignment, Element, Font, Length, Padding};
 
@@ -60,11 +61,11 @@ pub fn method_badge<'a, Message: 'a>(
         .padding(padding)
         .align_x(Alignment::Center)
         .style(move |_theme: &iced::Theme| container::Style {
-            background: Some(iced::Color::from_rgba(color.r, color.g, color.b, 0.14).into()),
+            background: Some(tint(color, 0.14).into()),
             border: iced::Border {
-                radius: 4.0.into(),
+                radius: RADIUS_SM.into(),
                 width: 1.0,
-                color: iced::Color::from_rgba(color.r, color.g, color.b, 0.32),
+                color: tint(color, 0.32),
             },
             ..Default::default()
         });

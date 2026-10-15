@@ -574,6 +574,7 @@ pub fn init() -> (Rustrest, Task<Message>) {
             selected_sidebar_items: std::collections::HashSet::new(),
             sidebar_selection_anchor: None,
             current_modifiers: iced::keyboard::Modifiers::default(),
+            hovered_sidebar_item: None,
         },
         terminal: terminal::TerminalState {
             terminal_manager: TerminalManager::new(),
@@ -1713,6 +1714,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         Message::SidebarDropped(target) => sidebar::dropped(app, target),
         Message::SidebarItemToggleSelect(key) => sidebar::item_toggle_select(app, key),
         Message::SidebarItemRangeSelect(key) => sidebar::item_range_select(app, key),
+        Message::SidebarItemHovered(key) => sidebar::item_hovered(app, key),
         Message::ClearSidebarSelection => sidebar::clear_selection(app),
         Message::BatchDeleteSelectedPressed => sidebar::batch_delete_selected_pressed(app),
         Message::BatchDeleteConfirmed => sidebar::batch_delete_confirmed(app),

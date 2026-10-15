@@ -2,6 +2,7 @@
 
 use crate::ui::context_menu::with_context_menu;
 use crate::ui::modal::muted_text_color;
+use crate::ui::tokens::RADIUS_SM;
 use iced::keyboard::{self, key::Named};
 use iced::widget::text_editor::{Action, Binding, Edit, KeyPress, Status};
 use iced::widget::{
@@ -603,7 +604,7 @@ where
                 border: Border {
                     color: palette.background.strong.color,
                     width: 1.0,
-                    radius: 4.0.into(),
+                    radius: RADIUS_SM.into(),
                 },
                 shadow: Shadow {
                     color: Color::from_rgba(0.0, 0.0, 0.0, 0.25),

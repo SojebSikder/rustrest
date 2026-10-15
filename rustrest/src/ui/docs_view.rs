@@ -7,6 +7,7 @@
 
 use crate::collection::collection::PostmanCollection;
 use crate::ui::context_menu::{FieldTarget, with_context_menu};
+use crate::ui::modal::muted_text_color;
 use iced::widget::{
     button, checkbox, column, container, markdown, row, scrollable, space, text, text_editor,
 };
@@ -105,7 +106,9 @@ pub fn rendered_markdown<'a, Message: Clone + 'a>(
     let body: Element<'a, Message> = if items.is_empty() {
         text("No documentation yet. Switch to Edit to write some in Markdown.")
             .size(13)
-            .style(text::secondary)
+            .style(|theme: &Theme| text::Style {
+                color: Some(muted_text_color(theme)),
+            })
             .into()
     } else {
         markdown::view(items, theme).map(on_link)

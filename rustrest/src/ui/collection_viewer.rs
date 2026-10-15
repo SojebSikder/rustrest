@@ -8,6 +8,7 @@ use crate::ui::modal::muted_text_color;
 use crate::ui::script_editor::script_editor;
 use crate::ui::tab::types::ScriptTab;
 use crate::ui::tab::{AuthFormContext, render_auth_form};
+use crate::ui::tokens::subtab_style;
 use iced::widget::{button, checkbox, column, container, radio, row, scrollable, text, text_input};
 use iced::{Alignment, Element, Length, Theme};
 
@@ -34,39 +35,7 @@ fn collection_tab_btn<'a>(
         ..iced::Font::DEFAULT
     }))
     .padding([5, 12])
-    .style(move |theme: &iced::Theme, status| {
-        let colors = crate::theme::colors();
-        if is_active {
-            button::Style {
-                background: Some(
-                    iced::Color::from_rgba(
-                        colors.text_accent.r,
-                        colors.text_accent.g,
-                        colors.text_accent.b,
-                        0.12,
-                    )
-                    .into(),
-                ),
-                text_color: colors.text_accent,
-                border: iced::Border {
-                    radius: 4.0.into(),
-                    width: 1.0,
-                    color: iced::Color::from_rgba(
-                        colors.text_accent.r,
-                        colors.text_accent.g,
-                        colors.text_accent.b,
-                        0.35,
-                    ),
-                },
-                ..button::text(theme, status)
-            }
-        } else {
-            button::Style {
-                text_color: colors.text_muted,
-                ..button::text(theme, status)
-            }
-        }
-    })
+    .style(subtab_style(is_active))
     .on_press(Message::CollectionSubTabSelected(target))
 }
 

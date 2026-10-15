@@ -7,6 +7,7 @@ use crate::message::{KvValueField, MultilineFieldKind};
 use crate::ui::context_menu::{TabFieldTarget, with_context_menu};
 use crate::ui::multiline_input::multiline_input;
 use crate::ui::script_editor::script_editor;
+use crate::ui::tokens::subtab_style;
 use crate::ui::var_assist::var_input;
 use iced::widget::{button, column, container, pick_list, radio, row, text, text_input};
 use iced::{Alignment, Element, Font, Length};
@@ -149,50 +150,7 @@ where
             ..Font::DEFAULT
         }))
         .padding([5, 12])
-        .style(move |theme: &iced::Theme, status| {
-            let colors = crate::theme::colors();
-            if is_sub_active {
-                button::Style {
-                    background: Some(
-                        iced::Color::from_rgba(
-                            colors.text_accent.r,
-                            colors.text_accent.g,
-                            colors.text_accent.b,
-                            0.12,
-                        )
-                        .into(),
-                    ),
-                    text_color: colors.text_accent,
-                    border: iced::Border {
-                        radius: 6.0.into(),
-                        width: 1.0,
-                        color: iced::Color::from_rgba(
-                            colors.text_accent.r,
-                            colors.text_accent.g,
-                            colors.text_accent.b,
-                            0.35,
-                        ),
-                    },
-                    ..Default::default()
-                }
-            } else {
-                match status {
-                    button::Status::Hovered => button::Style {
-                        background: Some(iced::Background::Color(colors.element_hover)),
-                        text_color: colors.text,
-                        border: iced::Border {
-                            radius: 6.0.into(),
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    },
-                    _ => button::Style {
-                        text_color: colors.text_muted,
-                        ..button::text(theme, status)
-                    },
-                }
-            }
-        });
+        .style(subtab_style(is_sub_active));
 
         let sub_btn = if is_sub_active {
             sub_btn

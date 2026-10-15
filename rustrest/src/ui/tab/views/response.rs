@@ -2,6 +2,7 @@ use super::super::Tab;
 use super::super::messages::TabMessage;
 use super::super::types::{ResponseSubTab, ResponseView, SavedResponse};
 use crate::ui::context_menu::{TabFieldTarget, with_context_menu};
+use crate::ui::tokens::{RADIUS_MD, RADIUS_SM, chip, secondary_button, subtab_style};
 use iced::widget::text::Wrapping;
 use iced::widget::{
     Space, button, column, container, pick_list, responsive, row, scrollable, text, text_editor,
@@ -121,50 +122,7 @@ where
             ..Font::DEFAULT
         }))
         .padding([5, 12])
-        .style(move |theme: &iced::Theme, status| {
-            let colors = crate::theme::colors();
-            if is_resp_active {
-                button::Style {
-                    background: Some(
-                        iced::Color::from_rgba(
-                            colors.text_accent.r,
-                            colors.text_accent.g,
-                            colors.text_accent.b,
-                            0.12,
-                        )
-                        .into(),
-                    ),
-                    text_color: colors.text_accent,
-                    border: iced::Border {
-                        radius: 6.0.into(),
-                        width: 1.0,
-                        color: iced::Color::from_rgba(
-                            colors.text_accent.r,
-                            colors.text_accent.g,
-                            colors.text_accent.b,
-                            0.35,
-                        ),
-                    },
-                    ..Default::default()
-                }
-            } else {
-                match status {
-                    button::Status::Hovered => button::Style {
-                        background: Some(iced::Background::Color(colors.element_hover)),
-                        text_color: colors.text,
-                        border: iced::Border {
-                            radius: 6.0.into(),
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    },
-                    _ => button::Style {
-                        text_color: colors.text_muted,
-                        ..button::text(theme, status)
-                    },
-                }
-            }
-        });
+        .style(subtab_style(is_resp_active));
 
         let resp_btn = if is_resp_active {
             resp_btn
@@ -431,28 +389,12 @@ where
                 .align_y(Alignment::Center),
             )
             .padding(iced::Padding::from([4, 10]))
-            .style(move |_theme: &iced::Theme| container::Style {
-                background: Some(
-                    iced::Color::from_rgba(st_color.r, st_color.g, st_color.b, 0.12).into(),
-                ),
-                border: iced::Border {
-                    radius: 6.0.into(),
-                    width: 1.0,
-                    color: iced::Color::from_rgba(st_color.r, st_color.g, st_color.b, 0.3),
-                },
-                ..Default::default()
-            });
+            .style(move |_theme: &iced::Theme| chip(st_color, 0.12, 0.3));
 
             let time_str = crate::ui::badge::format_duration(resp.elapsed.as_millis());
             let time_btn = button(text(time_str).size(12).color(crate::theme::colors().text))
                 .padding([4, 10])
-                .style(|theme, status| button::Style {
-                    border: iced::Border {
-                        radius: 6.0.into(),
-                        ..button::secondary(theme, status).border
-                    },
-                    ..button::secondary(theme, status)
-                })
+                .style(secondary_button)
                 .on_press(wrap_msg(TabMessage::ShowResponseTimingModal(None)));
 
             let size_str = crate::ui::badge::format_bytes(resp.response_size);
@@ -461,7 +403,7 @@ where
                 .style(|_theme: &iced::Theme| container::Style {
                     background: Some(crate::theme::colors().surface_background.into()),
                     border: iced::Border {
-                        radius: 6.0.into(),
+                        radius: RADIUS_MD.into(),
                         width: 1.0,
                         color: crate::theme::colors().border_variant,
                     },
@@ -474,13 +416,7 @@ where
                 size_badge,
                 button(text("Save Response").size(12))
                     .padding([4, 10])
-                    .style(|theme, status| button::Style {
-                        border: iced::Border {
-                            radius: 6.0.into(),
-                            ..button::secondary(theme, status).border
-                        },
-                        ..button::secondary(theme, status)
-                    })
+                    .style(secondary_button)
                     .on_press(wrap_msg(TabMessage::SaveResponse)),
             ]
             .spacing(8)
@@ -585,7 +521,7 @@ where
                                         .style(move |_| container::Style {
                                             background: Some(iced::Background::Color(status_color)),
                                             border: iced::Border {
-                                                radius: 4.0.into(),
+                                                radius: RADIUS_SM.into(),
                                                 ..Default::default()
                                             },
                                             ..Default::default()
@@ -633,28 +569,7 @@ where
         )
         .padding(12)
         .width(Length::Fill)
-        .style(|_theme: &iced::Theme| container::Style {
-            background: Some(
-                iced::Color::from_rgba(
-                    crate::theme::colors().error.r,
-                    crate::theme::colors().error.g,
-                    crate::theme::colors().error.b,
-                    0.08,
-                )
-                .into(),
-            ),
-            border: iced::Border {
-                radius: 6.0.into(),
-                width: 1.0,
-                color: iced::Color::from_rgba(
-                    crate::theme::colors().error.r,
-                    crate::theme::colors().error.g,
-                    crate::theme::colors().error.b,
-                    0.3,
-                ),
-            },
-            ..Default::default()
-        })
+        .style(|_theme: &iced::Theme| chip(crate::theme::colors().error, 0.08, 0.3))
         .into(),
     }
 }
@@ -692,26 +607,12 @@ where
         .align_y(Alignment::Center),
     )
     .padding(iced::Padding::from([4, 10]))
-    .style(move |_theme: &iced::Theme| container::Style {
-        background: Some(iced::Color::from_rgba(st_color.r, st_color.g, st_color.b, 0.12).into()),
-        border: iced::Border {
-            radius: 6.0.into(),
-            width: 1.0,
-            color: iced::Color::from_rgba(st_color.r, st_color.g, st_color.b, 0.3),
-        },
-        ..Default::default()
-    });
+    .style(move |_theme: &iced::Theme| chip(st_color, 0.12, 0.3));
 
     let time_str = crate::ui::badge::format_duration(saved.elapsed_ms);
     let time_btn = button(text(time_str).size(12).color(crate::theme::colors().text))
         .padding([4, 10])
-        .style(|theme, status| button::Style {
-            border: iced::Border {
-                radius: 6.0.into(),
-                ..button::secondary(theme, status).border
-            },
-            ..button::secondary(theme, status)
-        })
+        .style(secondary_button)
         .on_press(wrap_msg(TabMessage::ShowResponseTimingModal(Some(index))));
 
     let metadata_row = row![
@@ -722,13 +623,7 @@ where
             .size(12),
         button(text("Back to Live").size(12))
             .padding([4, 10])
-            .style(|theme, status| button::Style {
-                border: iced::Border {
-                    radius: 6.0.into(),
-                    ..button::secondary(theme, status).border
-                },
-                ..button::secondary(theme, status)
-            })
+            .style(secondary_button)
             .on_press(wrap_msg(TabMessage::ViewSavedResponse(None))),
     ]
     .spacing(8)

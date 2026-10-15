@@ -32,6 +32,8 @@ pub struct SidebarState {
     /// live keyboard modifier state, updated by a `ModifiersChanged` subscription;
     /// the sidebar view reads this to decide what a row click means.
     pub current_modifiers: iced::keyboard::Modifiers,
+    /// the row currently under the cursor, so the view can highlight it on hover
+    pub hovered_sidebar_item: Option<SidebarItemKey>,
 }
 
 pub fn show_saved_response_context_menu(
@@ -360,6 +362,11 @@ pub fn item_range_select(app: &mut Rustrest, key: SidebarItemKey) -> Task<Messag
             app.sidebar.selected_sidebar_items.insert(key);
         }
     }
+    Task::none()
+}
+
+pub fn item_hovered(app: &mut Rustrest, key: Option<SidebarItemKey>) -> Task<Message> {
+    app.sidebar.hovered_sidebar_item = key;
     Task::none()
 }
 

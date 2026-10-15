@@ -2,7 +2,9 @@ use crate::app::Rustrest;
 use crate::collection::collection::{CollectionItem, PostmanRequestNode, PostmanResponseExample};
 use crate::message::{Message, SidebarDropTarget, SidebarItemKey};
 use crate::ui::context_menu::{FieldTarget, with_context_menu};
+use crate::ui::modal::muted_text_color;
 use crate::ui::spinner::spinner_with_label;
+use crate::ui::tokens::{RADIUS_SM, icon_button};
 use crate::ui::unsaved::{
     collection_is_unsaved, folder_is_unsaved, request_is_unsaved, unsaved_dot,
 };
@@ -24,9 +26,13 @@ fn sidebar_click_message(app: &Rustrest, key: SidebarItemKey, default: Message) 
     }
 }
 
-/// container style that highlights a row when it's part of the current
-/// sidebar multi-selection, mirroring the selected-item look used by the command palette.
-fn sidebar_row_style(is_selected: bool) -> impl Fn(&iced::Theme) -> container::Style {
+/// container style for a sidebar row: filled with the selection color when it's
+/// part of the current multi-selection, a soft neutral wash on hover, plain
+/// otherwise. Mirrors the selected-item look used by the command palette.
+fn sidebar_row_style(
+    is_selected: bool,
+    is_hovered: bool,
+) -> impl Fn(&iced::Theme) -> container::Style {
     move |theme: &iced::Theme| {
         if is_selected {
             let palette = theme.extended_palette();
@@ -34,7 +40,16 @@ fn sidebar_row_style(is_selected: bool) -> impl Fn(&iced::Theme) -> container::S
                 background: Some(palette.primary.weak.color.into()),
                 text_color: Some(palette.primary.weak.text),
                 border: iced::Border {
-                    radius: 4.0.into(),
+                    radius: RADIUS_SM.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }
+        } else if is_hovered {
+            container::Style {
+                background: Some(crate::theme::colors().element_hover.into()),
+                border: iced::Border {
+                    radius: RADIUS_SM.into(),
                     ..Default::default()
                 },
                 ..Default::default()
@@ -105,11 +120,12 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
         sidebar_contents =
             sidebar_contents.push(spinner_with_label(app.spinner_tick, "Loading workspace..."));
     } else if app.collections.is_empty() {
-        sidebar_contents = sidebar_contents.push(
-            text("No collections imported yet.")
-                .size(11)
-                .style(text::secondary),
-        );
+        sidebar_contents =
+            sidebar_contents.push(text("No collections imported yet.").size(11).style(
+                |theme: &iced::Theme| text::Style {
+                    color: Some(muted_text_color(theme)),
+                },
+            ));
     } else {
         for col in &app.collections {
             let col_id = col.id;
@@ -145,7 +161,7 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
                 let collapse_arrow =
                     button(text(if is_collapsed_col { "▶" } else { "▼" }).size(10))
                         .on_press(Message::ToggleCollectionCollapsed(col_id))
-                        .style(button::text)
+                        .style(icon_button)
                         .padding(2);
 
                 let name_color = if is_online {
@@ -215,12 +231,16 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
 
                 let collection_key = SidebarItemKey::Collection(col_id);
                 let is_row_selected = app.sidebar.selected_sidebar_items.contains(&collection_key);
+                let is_row_hovered =
+                    app.sidebar.hovered_sidebar_item.as_ref() == Some(&collection_key);
 
                 mouse_area(
                     container(header_row)
                         .padding([4, 2])
-                        .style(sidebar_row_style(is_row_selected)),
+                        .style(sidebar_row_style(is_row_selected, is_row_hovered)),
                 )
+                .on_enter(Message::SidebarItemHovered(Some(collection_key.clone())))
+                .on_exit(Message::SidebarItemHovered(None))
                 .on_press(sidebar_click_message(
                     app,
                     collection_key,
@@ -296,7 +316,11 @@ fn cloud_badge(app: &Rustrest, col_id: usize) -> Element<'_, Message> {
 fn render_plugins_section(app: &Rustrest) -> Element<'_, Message> {
     let mut section = column![
         row![
-            text("PLUGINS").size(10).style(text::secondary),
+            text("PLUGINS")
+                .size(10)
+                .style(|theme: &iced::Theme| text::Style {
+                    color: Some(muted_text_color(theme)),
+                }),
             Space::new().width(Length::Fill),
             button(text("Manage").size(11))
                 .on_press(Message::OpenPluginManagerPressed)
@@ -572,12 +596,15 @@ fn render_sidebar_item<'a>(
                     path: current_path.clone(),
                 };
                 let is_row_selected = app.sidebar.selected_sidebar_items.contains(&folder_key);
+                let is_row_hovered = app.sidebar.hovered_sidebar_item.as_ref() == Some(&folder_key);
 
                 mouse_area(
                     container(title_row)
                         .padding([2, 0])
-                        .style(sidebar_row_style(is_row_selected)),
+                        .style(sidebar_row_style(is_row_selected, is_row_hovered)),
                 )
+                .on_enter(Message::SidebarItemHovered(Some(folder_key.clone())))
+                .on_exit(Message::SidebarItemHovered(None))
                 .on_press(sidebar_click_message(
                     app,
                     folder_key,
@@ -690,6 +717,8 @@ fn render_sidebar_item<'a>(
                     request_id: req_id,
                 };
                 let is_row_selected = app.sidebar.selected_sidebar_items.contains(&request_key);
+                let is_row_hovered =
+                    app.sidebar.hovered_sidebar_item.as_ref() == Some(&request_key);
 
                 mouse_area(
                     container(label_row)
@@ -699,8 +728,10 @@ fn render_sidebar_item<'a>(
                             bottom: 2.0,
                             left: if has_saved_responses { 8.0 } else { 15.0 },
                         })
-                        .style(sidebar_row_style(is_row_selected)),
+                        .style(sidebar_row_style(is_row_selected, is_row_hovered)),
                 )
+                .on_enter(Message::SidebarItemHovered(Some(request_key.clone())))
+                .on_exit(Message::SidebarItemHovered(None))
                 .on_press(sidebar_click_message(
                     app,
                     request_key,

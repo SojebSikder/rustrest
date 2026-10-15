@@ -3,6 +3,7 @@ use crate::app::{Rustrest, WorkspaceContent};
 use crate::http_client::HttpMethod;
 use crate::message::{Message, MultilineFieldKind, ResizeKind};
 use crate::ui::context_menu::{FieldTarget, with_context_menu};
+use crate::ui::tokens::{RADIUS_MD, icon_button};
 use crate::ui::unsaved::{tab_is_unsaved, unsaved_dot};
 use iced::widget::{
     Id, Space, button, column, container, mouse_area, row, scrollable, text, text_input,
@@ -106,10 +107,10 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
         }
 
         tab_row = tab_row.push(
-            button("×")
+            button(text("×").size(12))
                 .on_press(Message::CloseTabPressed(idx))
-                .padding(2)
-                .style(button::text),
+                .padding([2, 6])
+                .style(icon_button),
         );
 
         // a plain container so the outer mouse_area's on_press
@@ -127,7 +128,7 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
                         border: iced::Border {
                             color: colors.text_accent,
                             width: 1.0,
-                            radius: 6.0.into(),
+                            radius: RADIUS_MD.into(),
                         },
                         ..Default::default()
                     },
@@ -135,7 +136,7 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
                         background: Some(theme.palette().primary.into()),
                         text_color: Some(theme.palette().background),
                         border: iced::Border {
-                            radius: 6.0.into(),
+                            radius: RADIUS_MD.into(),
                             ..Default::default()
                         },
                         ..Default::default()
@@ -143,7 +144,7 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
                     (false, _) => container::Style {
                         background: Some(colors.tab_inactive_background.into()),
                         border: iced::Border {
-                            radius: 6.0.into(),
+                            radius: RADIUS_MD.into(),
                             ..Default::default()
                         },
                         ..Default::default()

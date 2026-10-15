@@ -3,6 +3,7 @@
 use crate::app::Rustrest;
 use crate::message::Message;
 use crate::ui::modal::{card, danger_text_color, muted_text_color};
+use crate::ui::tokens::{RADIUS_MD, RADIUS_SM, semibold, tint};
 use iced::widget::text::Wrapping;
 use iced::widget::{Column, Space, button, column, container, row, scrollable, stack, svg, text};
 use iced::{Alignment, Border, Color, Element, Font, Length, Padding, Theme};
@@ -15,13 +16,6 @@ const LIST_MAX_HEIGHT: f32 = 420.0;
 static BELL_ICON: std::sync::LazyLock<svg::Handle> = std::sync::LazyLock::new(|| {
     svg::Handle::from_memory(include_bytes!("../../../assets/icons/bell.svg").as_slice())
 });
-
-fn semibold() -> Font {
-    Font {
-        weight: iced::font::Weight::Semibold,
-        ..Font::DEFAULT
-    }
-}
 
 /// "just now", "5m ago", "3h ago", "2d ago", then the date
 fn ago(created_at: &str) -> String {
@@ -107,10 +101,7 @@ pub fn bell(app: &Rustrest) -> Option<Element<'_, Message>> {
             .width(Length::Fixed(40.0))
             .height(Length::Fill)
             .style(move |_: &Theme, status| {
-                let hover = Color {
-                    a: 0.12,
-                    ..text_color
-                };
+                let hover = tint(text_color, 0.12);
                 let background = match status {
                     _ if open => Some(selected.into()),
                     button::Status::Hovered | button::Status::Pressed => Some(hover.into()),
@@ -138,7 +129,7 @@ fn row_view<'a>(app: &'a Rustrest, notification: &'a Notification) -> Element<'a
             move |_: &Theme| container::Style {
                 background: Some(accent.into()),
                 border: Border {
-                    radius: 4.0.into(),
+                    radius: RADIUS_SM.into(),
                     ..Default::default()
                 },
                 ..Default::default()
@@ -208,14 +199,14 @@ fn row_view<'a>(app: &'a Rustrest, notification: &'a Notification) -> Element<'a
         .style(move |_: &Theme, status| {
             let background = match status {
                 button::Status::Hovered | button::Status::Pressed => Some(hover),
-                _ if unread => Some(Color { a: 0.06, ..accent }),
+                _ if unread => Some(tint(accent, 0.06)),
                 _ => None,
             };
             button::Style {
                 background: background.map(Into::into),
                 text_color,
                 border: Border {
-                    radius: 6.0.into(),
+                    radius: RADIUS_MD.into(),
                     ..Default::default()
                 },
                 ..Default::default()

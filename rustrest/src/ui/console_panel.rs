@@ -1,4 +1,5 @@
 use crate::message::Message;
+use crate::ui::tokens::{RADIUS_SM, icon_button};
 use iced::widget::{Space, button, column, container, row, scrollable, text};
 use iced::{Alignment, Element, Font, Length};
 
@@ -13,7 +14,7 @@ pub fn render_console_clear_bar<'a>() -> Element<'a, Message> {
             .color(crate::theme::colors().text_muted),
         Space::new().width(Length::Fill),
         button(text("Clear").size(11))
-            .style(button::text)
+            .style(icon_button)
             .padding([2, 6])
             .on_press(Message::ClearConsoleLogs),
     ]
@@ -59,7 +60,7 @@ where
                 .style(move |_| container::Style {
                     background: Some(iced::Background::Color(level_color)),
                     border: iced::Border {
-                        radius: 4.0.into(),
+                        radius: RADIUS_SM.into(),
                         ..Default::default()
                     },
                     ..Default::default()

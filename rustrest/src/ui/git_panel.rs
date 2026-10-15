@@ -1,7 +1,8 @@
 use crate::collection::git_ops::{GitChangeKind, GitFileEntry, GitRemoteOp, GitStatusSnapshot};
 use crate::message::Message;
 use crate::ui::spinner::spinner_with_label;
-use iced::widget::{Space, button, column, container, mouse_area, row, scrollable, text};
+use crate::ui::tokens::RADIUS_SM;
+use iced::widget::{Space, button, column, container, row, scrollable, text};
 use iced::{Alignment, Color, Element, Font, Length};
 use std::path::PathBuf;
 
@@ -28,7 +29,7 @@ pub fn status_badge(status: GitChangeKind) -> Element<'static, Message> {
     .style(move |_| container::Style {
         background: Some(iced::Background::Color(color)),
         border: iced::Border {
-            radius: 4.0.into(),
+            radius: RADIUS_SM.into(),
             ..Default::default()
         },
         ..Default::default()
@@ -51,23 +52,29 @@ fn file_row(
     .spacing(10)
     .align_y(Alignment::Center);
 
-    mouse_area(
-        container(content)
-            .padding([6, 8])
-            .width(Length::Fill)
-            .style(move |_theme: &iced::Theme| {
-                if is_selected {
-                    container::Style {
-                        background: Some(crate::theme::colors().element_selected.into()),
-                        ..Default::default()
-                    }
+    button(container(content).padding([6, 8]).width(Length::Fill))
+        .padding(0)
+        .width(Length::Fill)
+        .style(move |theme: &iced::Theme, status| {
+            let colors = crate::theme::colors();
+            let hovered = matches!(status, button::Status::Hovered | button::Status::Pressed);
+            button::Style {
+                background: if is_selected {
+                    Some(colors.element_selected.into())
+                } else if hovered {
+                    Some(colors.element_hover.into())
                 } else {
-                    container::Style::default()
-                }
-            }),
-    )
-    .on_press(Message::GitDiffRequested(collection_id, entry_path))
-    .into()
+                    None
+                },
+                border: iced::Border {
+                    radius: RADIUS_SM.into(),
+                    ..Default::default()
+                },
+                ..button::text(theme, status)
+            }
+        })
+        .on_press(Message::GitDiffRequested(collection_id, entry_path))
+        .into()
 }
 
 /// header strip for the git sub-tab: branch name + refresh/fetch/pull/push/commit buttons.

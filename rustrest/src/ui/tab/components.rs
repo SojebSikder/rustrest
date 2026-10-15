@@ -3,6 +3,7 @@ use super::types::{FormDataRow, FormDataType, KeyValuePair};
 use crate::message::{KvValueField, MultilineFieldKind};
 use crate::ui::context_menu::with_context_menu;
 use crate::ui::multiline_input::multiline_input;
+use crate::ui::tokens::icon_button;
 use crate::ui::var_assist::var_input;
 use iced::widget::{
     button, checkbox, column, pick_list, row, scrollable, space, text, text_editor, text_input,
@@ -86,7 +87,7 @@ where
             button(text("✕").size(12))
                 .on_press(on_remove(idx))
                 .padding([5, 8])
-                .style(button::text)
+                .style(icon_button)
         ]
         .spacing(8)
         .align_y(Alignment::Center);
@@ -185,7 +186,7 @@ where
                                 text(path).size(12).width(Length::Fill),
                                 button(text("\u{2715}").size(11))
                                     .padding([2, 6])
-                                    .style(button::text)
+                                    .style(icon_button)
                                     .on_press_with(move || {
                                         let mut files = file_row_item.files.clone();
                                         files.remove(file_idx);
@@ -293,7 +294,7 @@ where
             button(text("✕").size(12))
                 .on_press(on_remove(idx))
                 .padding([5, 8])
-                .style(button::text),
+                .style(icon_button),
         );
 
         content = content.push(row_element);

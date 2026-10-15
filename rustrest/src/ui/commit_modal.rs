@@ -5,6 +5,7 @@ use crate::ui::git_panel::status_badge;
 use crate::ui::modal::{card, muted_text_color};
 use crate::ui::multiline_input::plain_multiline_input;
 use crate::ui::spinner::spinner_with_label;
+use crate::ui::tokens::RADIUS_MD;
 use iced::widget::{Space, button, column, container, row, scrollable, text, text_editor};
 use iced::{Alignment, Element, Font, Length, Theme};
 
@@ -60,7 +61,7 @@ pub fn view_commit_modal(
             border: iced::Border {
                 color: palette.background.weak.color,
                 width: 1.0,
-                radius: 6.0.into(),
+                radius: RADIUS_MD.into(),
             },
             ..Default::default()
         }
