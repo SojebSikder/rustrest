@@ -7,7 +7,8 @@ use crate::message::MultilineFieldKind;
 use crate::ui::context_menu::TabFieldTarget;
 use crate::ui::multiline_input::multiline_input;
 use crate::ui::spinner::spinner_with_label;
-use iced::widget::{Space, button, column, pick_list, row, text, text_input};
+use crate::ui::var_assist::var_input;
+use iced::widget::{Space, button, column, pick_list, row, text};
 use iced::{Alignment, Element, Length};
 use rustrest_core::{
     AuthLocation, AuthType, ClientAuthStyle, JwtAlgorithm, OAuth1SignatureMethod, OAuth2GrantType,
@@ -112,7 +113,7 @@ where
 
         AuthType::Bearer => column![field_row(
             "Token",
-            text_input("your_token_here", &form.bearer_token)
+            var_input("your_token_here", &form.bearer_token)
                 .on_input(move |v| wrap_auth(AuthMessage::BearerTokenChanged(v)))
                 .padding(8)
                 .into(),
@@ -123,14 +124,14 @@ where
         AuthType::ApiKey => column![
             field_row(
                 "Key",
-                text_input("X-API-Key", &form.api_key_key)
+                var_input("X-API-Key", &form.api_key_key)
                     .on_input(move |v| wrap_auth(AuthMessage::ApiKeyKeyChanged(v)))
                     .padding(8)
                     .into(),
             ),
             field_row(
                 "Value",
-                text_input("your_api_key", &form.api_key_value)
+                var_input("your_api_key", &form.api_key_value)
                     .on_input(move |v| wrap_auth(AuthMessage::ApiKeyValueChanged(v)))
                     .padding(8)
                     .into(),
@@ -150,14 +151,14 @@ where
         AuthType::Basic => column![
             field_row(
                 "Username",
-                text_input("username", &form.basic_username)
+                var_input("username", &form.basic_username)
                     .on_input(move |v| wrap_auth(AuthMessage::BasicUsernameChanged(v)))
                     .padding(8)
                     .into(),
             ),
             field_row(
                 "Password",
-                text_input("password", &form.basic_password)
+                var_input("password", &form.basic_password)
                     .on_input(move |v| wrap_auth(AuthMessage::BasicPasswordChanged(v)))
                     .secure(true)
                     .padding(8)
@@ -189,7 +190,7 @@ where
                 ),
                 field_row(
                     "Secret",
-                    text_input("your_secret", &form.jwt_secret)
+                    var_input("your_secret", &form.jwt_secret)
                         .on_input(move |v| wrap_auth(AuthMessage::JwtSecretChanged(v)))
                         .secure(true)
                         .padding(8)
@@ -197,7 +198,7 @@ where
                 ),
                 field_row(
                     "Header Prefix",
-                    text_input("Bearer", &form.jwt_header_prefix)
+                    var_input("Bearer", &form.jwt_header_prefix)
                         .on_input(move |v| wrap_auth(AuthMessage::JwtHeaderPrefixChanged(v)))
                         .padding(8)
                         .into(),
@@ -231,14 +232,14 @@ where
             ),
             field_row(
                 "Consumer Key",
-                text_input("consumer key", &form.oauth1_consumer_key)
+                var_input("consumer key", &form.oauth1_consumer_key)
                     .on_input(move |v| wrap_auth(AuthMessage::OAuth1ConsumerKeyChanged(v)))
                     .padding(8)
                     .into(),
             ),
             field_row(
                 "Consumer Secret",
-                text_input("consumer secret", &form.oauth1_consumer_secret)
+                var_input("consumer secret", &form.oauth1_consumer_secret)
                     .on_input(move |v| wrap_auth(AuthMessage::OAuth1ConsumerSecretChanged(v)))
                     .secure(true)
                     .padding(8)
@@ -246,14 +247,14 @@ where
             ),
             field_row(
                 "Access Token",
-                text_input("token (optional)", &form.oauth1_token)
+                var_input("token (optional)", &form.oauth1_token)
                     .on_input(move |v| wrap_auth(AuthMessage::OAuth1TokenChanged(v)))
                     .padding(8)
                     .into(),
             ),
             field_row(
                 "Token Secret",
-                text_input("token secret (optional)", &form.oauth1_token_secret)
+                var_input("token secret (optional)", &form.oauth1_token_secret)
                     .on_input(move |v| wrap_auth(AuthMessage::OAuth1TokenSecretChanged(v)))
                     .secure(true)
                     .padding(8)
@@ -261,7 +262,7 @@ where
             ),
             field_row(
                 "Realm",
-                text_input("realm (optional)", &form.oauth1_realm)
+                var_input("realm (optional)", &form.oauth1_realm)
                     .on_input(move |v| wrap_auth(AuthMessage::OAuth1RealmChanged(v)))
                     .padding(8)
                     .into(),
@@ -294,21 +295,21 @@ where
                 col = col
                     .push(field_row(
                         "Token URL",
-                        text_input("https://auth.example.com/oauth/token", &form.oauth2_token_url)
+                        var_input("https://auth.example.com/oauth/token", &form.oauth2_token_url)
                             .on_input(move |v| wrap_auth(AuthMessage::OAuth2TokenUrlChanged(v)))
                             .padding(8)
                             .into(),
                     ))
                     .push(field_row(
                         "Client ID",
-                        text_input("client id", &form.oauth2_client_id)
+                        var_input("client id", &form.oauth2_client_id)
                             .on_input(move |v| wrap_auth(AuthMessage::OAuth2ClientIdChanged(v)))
                             .padding(8)
                             .into(),
                     ))
                     .push(field_row(
                         "Client Secret",
-                        text_input("client secret", &form.oauth2_client_secret)
+                        var_input("client secret", &form.oauth2_client_secret)
                             .on_input(move |v| wrap_auth(AuthMessage::OAuth2ClientSecretChanged(v)))
                             .secure(true)
                             .padding(8)
@@ -316,7 +317,7 @@ where
                     ))
                     .push(field_row(
                         "Scope",
-                        text_input("scope (optional)", &form.oauth2_scope)
+                        var_input("scope (optional)", &form.oauth2_scope)
                             .on_input(move |v| wrap_auth(AuthMessage::OAuth2ScopeChanged(v)))
                             .padding(8)
                             .into(),
@@ -351,14 +352,14 @@ where
             col = col
                 .push(field_row(
                     "Access Token",
-                    text_input("access token", &form.oauth2_access_token)
+                    var_input("access token", &form.oauth2_access_token)
                         .on_input(move |v| wrap_auth(AuthMessage::OAuth2AccessTokenChanged(v)))
                         .padding(8)
                         .into(),
                 ))
                 .push(field_row(
                     "Header Prefix",
-                    text_input("Bearer", &form.oauth2_header_prefix)
+                    var_input("Bearer", &form.oauth2_header_prefix)
                         .on_input(move |v| wrap_auth(AuthMessage::OAuth2HeaderPrefixChanged(v)))
                         .padding(8)
                         .into(),

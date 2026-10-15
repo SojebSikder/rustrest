@@ -181,6 +181,21 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
 
     let active_tab_state = &app.tabs[app.active_tab_index];
 
+    // the variables the active tab's fields complete and resolve on hover
+    let collection_vars = active_tab_state
+        .tab
+        .collection_id
+        .and_then(|c_id| app.collections.iter().find(|c| c.id == c_id))
+        .map(|c| c.get_native_variables())
+        .unwrap_or_default();
+    let env_vars = app
+        .env
+        .active_env_index
+        .and_then(|i| app.env.environments.get(i))
+        .map_or(&[][..], |e| e.variables.as_slice());
+
+    crate::ui::var_assist::publish_scope(&app.env.globals, &collection_vars, env_vars);
+
     // collection root UI, routed into the active workspace window
     let tab_view: Element<Message> = match &active_tab_state.content {
         WorkspaceContent::HttpRequest => active_tab_state.tab.view(

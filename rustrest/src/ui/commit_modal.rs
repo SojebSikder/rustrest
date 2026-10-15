@@ -3,7 +3,7 @@ use crate::message::Message;
 use crate::ui::context_menu::FieldTarget;
 use crate::ui::git_panel::status_badge;
 use crate::ui::modal::{card, muted_text_color};
-use crate::ui::multiline_input::multiline_input;
+use crate::ui::multiline_input::plain_multiline_input;
 use crate::ui::spinner::spinner_with_label;
 use iced::widget::{Space, button, column, container, row, scrollable, text, text_editor};
 use iced::{Alignment, Element, Font, Length, Theme};
@@ -72,7 +72,7 @@ pub fn view_commit_modal(
             color: Some(muted_text_color(theme)),
         });
 
-    let message_input = multiline_input(
+    let message_input = plain_multiline_input(
         "e.g. Update login request",
         &state.message,
         10,

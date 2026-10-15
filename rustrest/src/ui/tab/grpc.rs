@@ -3,9 +3,7 @@ use super::types::KeyValuePair;
 use crate::message::MultilineFieldKind;
 use crate::ui::multiline_input::multiline_input;
 use crate::ui::resize_handle::{DividerOrientation, resize_handle};
-use iced::widget::{
-    button, checkbox, column, container, row, scrollable, text, text_editor, text_input,
-};
+use iced::widget::{button, checkbox, column, container, row, scrollable, text, text_editor};
 use iced::{Alignment, Element, Length};
 use std::path::PathBuf;
 
@@ -88,7 +86,7 @@ pub fn view<'a>(
     use crate::message::Message;
 
     let endpoint_row = row![
-        text_input("host:port", &state.endpoint)
+        crate::ui::var_assist::var_input("host:port", &state.endpoint)
             .on_input(move |v| wrap(GrpcTabMessage::EndpointChanged(v)))
             .padding(10)
             .width(Length::Fill),

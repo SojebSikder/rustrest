@@ -7,6 +7,7 @@ use crate::message::{KvValueField, MultilineFieldKind};
 use crate::ui::context_menu::{TabFieldTarget, with_context_menu};
 use crate::ui::multiline_input::multiline_input;
 use crate::ui::script_editor::script_editor;
+use crate::ui::var_assist::var_input;
 use iced::widget::{button, column, container, pick_list, radio, row, text, text_input};
 use iced::{Alignment, Element, Font, Length};
 
@@ -77,7 +78,7 @@ where
     }
 
     let url_input = with_context_menu(
-        text_input("https://api.example.com/v1/resource", &tab.url)
+        var_input("https://api.example.com/v1/resource", &tab.url)
             .on_input(move |u| wrap_msg(TabMessage::UrlChanged(u)))
             .padding([8, 12])
             .width(Length::Fill),

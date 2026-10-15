@@ -2,7 +2,8 @@
 //! bar, a lightweight header-row editor, and a timestamped message/event log.
 
 use super::types::KeyValuePair;
-use iced::widget::{button, checkbox, column, container, row, scrollable, text, text_input};
+use crate::ui::var_assist::var_input;
+use iced::widget::{button, checkbox, column, container, row, scrollable, text};
 use iced::{Alignment, Element, Length};
 
 pub fn url_bar<'a, Message>(
@@ -17,7 +18,7 @@ where
     Message: Clone + 'a,
 {
     let mut bar = row![
-        text_input("Enter URL", url)
+        var_input("Enter URL", url)
             .on_input(on_url_change)
             .padding([8, 12])
             .width(Length::Fill),
@@ -79,7 +80,7 @@ where
                     },
                 )
             }),
-            text_input("Key", &item.key)
+            var_input("Key", &item.key)
                 .on_input(move |k| {
                     on_change(
                         idx,
@@ -91,7 +92,7 @@ where
                     )
                 })
                 .padding([6, 8]),
-            text_input("Value", &item.value)
+            var_input("Value", &item.value)
                 .on_input(move |v| {
                     on_change(
                         idx,

@@ -3,6 +3,7 @@ use super::types::{FormDataRow, FormDataType, KeyValuePair};
 use crate::message::{KvValueField, MultilineFieldKind};
 use crate::ui::context_menu::with_context_menu;
 use crate::ui::multiline_input::multiline_input;
+use crate::ui::var_assist::var_input;
 use iced::widget::{
     button, checkbox, column, pick_list, row, scrollable, space, text, text_editor, text_input,
 };
@@ -67,7 +68,7 @@ where
                 )
             }),
             with_context_menu(
-                text_input("Key", &item.key)
+                var_input("Key", &item.key)
                     .on_input(move |k| {
                         on_change(
                             idx,
@@ -225,7 +226,7 @@ where
                 )
             }),
             with_context_menu(
-                text_input("Key", &item.key)
+                var_input("Key", &item.key)
                     .on_input(move |k| {
                         on_change(
                             idx,
