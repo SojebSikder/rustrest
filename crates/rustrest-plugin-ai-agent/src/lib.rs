@@ -3,8 +3,9 @@
 //! request/response tab.
 
 use rustrest_plugin_api::{
-    ButtonVariant, CollectionOperation, HttpRequestSpec, HttpResponseData, PickFilesResult, PickedFile, Plugin,
-    RequestPatch, RightPanelAction, RightPanelContext, TextTone, UiEvent, UiNode, UiStyle,
+    ButtonVariant, CollectionOperation, DropdownItem, HttpRequestSpec, HttpResponseData,
+    PickFilesResult, PickedFile, Plugin, RequestPatch, RightPanelAction, RightPanelContext,
+    TextTone, UiEvent, UiNode, UiStyle,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -444,11 +445,14 @@ impl AiAgentPlugin {
             ));
         }
 
-        rows.push(UiNode::Button {
-            id: "pick-files".to_string(),
-            label: "Attach Files...".to_string(),
-            primary: false,
-        });
+        rows.push(
+            UiNode::Button {
+                id: "pick-files".to_string(),
+                label: "+ Attach Files".to_string(),
+                primary: false,
+            }
+            .styled(UiStyle::new().text_size(11.0).padding(2.0, 8.0)),
+        );
         for (idx, file) in self.attached_files.iter().enumerate() {
             rows.push(UiNode::Row(vec![
                 UiNode::Muted(file.name.clone()),
@@ -465,39 +469,32 @@ impl AiAgentPlugin {
     }
 
     fn render_chat(&self, ctx: &RightPanelContext) -> UiNode {
-        // compact toolbar buttons, so the header stays one line in a narrow panel
-        let header = UiNode::Row(vec![
-            UiNode::Muted(format!("Provider: {}", self.config.provider)),
-            UiNode::HorizontalSpacer,
-            UiNode::Row(vec![
-                UiNode::Button {
-                    id: "toggle-markdown".to_string(),
-                    label: "Markdown".to_string(),
-                    primary: self.config.render_markdown,
-                },
-                UiNode::Button {
-                    id: "show-sessions".to_string(),
-                    label: "History".to_string(),
-                    primary: false,
-                },
-                UiNode::Button {
-                    id: "toggle-incognito".to_string(),
-                    label: "Incognito".to_string(),
-                    primary: self.incognito,
-                },
-                UiNode::Button {
-                    id: "new-session".to_string(),
-                    label: "New Session".to_string(),
-                    primary: false,
-                },
-                UiNode::Button {
-                    id: "toggle-settings".to_string(),
-                    label: "\u{2699}".to_string(), // gear icon
-                    primary: false,
-                },
-            ])
-            .styled(UiStyle::new().text_size(12.0).spacing(4.0)),
-        ]);
+        // every action lives in one dropdown, so the header stays a single
+        // short line in a narrow panel
+        let check = |on: bool| if on { "\u{2713} " } else { "" };
+        let menu = UiNode::Dropdown {
+            label: "Menu".to_string(),
+            items: vec![
+                DropdownItem::new("new-session", "New Session"),
+                DropdownItem::new("show-sessions", "History"),
+                DropdownItem::new(
+                    "toggle-incognito",
+                    format!("{}Incognito", check(self.incognito)),
+                ),
+                DropdownItem::new(
+                    "toggle-markdown",
+                    format!("{}Render Markdown", check(self.config.render_markdown)),
+                ),
+                DropdownItem::new("toggle-settings", "Settings"),
+            ],
+        }
+        .styled(UiStyle::new().text_size(12.0));
+
+        let mut status = format!("Provider: {}", self.config.provider);
+        if self.incognito {
+            status.push_str(" \u{00b7} Incognito");
+        }
+        let header = UiNode::Row(vec![UiNode::Muted(status), UiNode::HorizontalSpacer, menu]);
 
         let mut conversation = Vec::new();
 

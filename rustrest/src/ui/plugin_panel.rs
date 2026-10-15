@@ -3,10 +3,13 @@
 use crate::message::Message;
 use crate::ui::context_menu::with_context_menu;
 use iced::widget::{
-    Id, Space, button, checkbox, column, container, markdown, row, scrollable, text, text_input,
+    Id, Space, button, checkbox, column, container, markdown, pick_list, row, scrollable, text,
+    text_input,
 };
 use iced::{Element, Font, Length, Padding, Theme};
-use rustrest_plugin_host::{ButtonVariant, TextTone, UiEvent, UiLength, UiNode, UiStyle};
+use rustrest_plugin_host::{
+    ButtonVariant, DropdownItem, TextTone, UiEvent, UiLength, UiNode, UiStyle,
+};
 use std::collections::HashMap;
 
 #[derive(Default)]
@@ -395,6 +398,30 @@ pub(crate) fn render_node<'a>(
                 });
             }
             with_layout(widget.into(), style)
+        }
+
+        // a pick list that never holds a selection, so it always shows
+        // `label` and works as a menu of actions
+        UiNode::Dropdown { label, items } => {
+            // a pick list can't be disabled. offer nothing to pick instead
+            let options: &[DropdownItem] = if disabled { &[] } else { items };
+            let mut widget = pick_list(options, None::<DropdownItem>, move |item| {
+                to_message(
+                    plugin_id.clone(),
+                    panel_id.clone(),
+                    UiEvent::Clicked(item.id),
+                )
+            })
+            .placeholder(label.clone())
+            .padding(style.padding.map(padding).unwrap_or(Padding::from([4, 8])));
+
+            if let Some(size) = style.text_size {
+                widget = widget.text_size(size);
+            }
+            if let Some(width) = style.width {
+                widget = widget.width(length(width));
+            }
+            widget.into()
         }
 
         UiNode::List(items) => {

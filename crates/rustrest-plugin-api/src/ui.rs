@@ -35,6 +35,11 @@ pub enum UiNode {
         label: String,
         checked: bool,
     },
+    /// a compact menu button showing `label`.
+    Dropdown {
+        label: String,
+        items: Vec<DropdownItem>,
+    },
     List(Vec<String>),
     Row(Vec<UiNode>),
     Column(Vec<UiNode>),
@@ -63,6 +68,29 @@ pub enum UiNode {
         style: UiStyle,
         child: Box<UiNode>,
     },
+}
+
+/// one entry in a `UiNode::Dropdown`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DropdownItem {
+    /// sent back as `UiEvent::Clicked(id)` when picked.
+    pub id: String,
+    pub label: String,
+}
+
+impl DropdownItem {
+    pub fn new(id: impl Into<String>, label: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            label: label.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for DropdownItem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.label)
+    }
 }
 
 impl UiNode {
