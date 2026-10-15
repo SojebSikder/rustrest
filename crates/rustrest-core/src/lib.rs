@@ -1,6 +1,7 @@
 mod common;
 
 pub mod auth;
+pub mod codegen;
 pub mod collection;
 pub mod docs;
 pub mod http;

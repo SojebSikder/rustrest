@@ -105,7 +105,20 @@ where
         .padding([8, 20])
     };
 
-    request_row.push(url_input).push(send_btn).into()
+    let code_btn = crate::ui::tooltip::with_tooltip(
+        button(text("</>").size(13).font(Font::MONOSPACE))
+            .on_press(wrap_msg(TabMessage::GenerateCode))
+            .style(button::secondary)
+            .padding([8, 12]),
+        "Generate code (cURL, ...)",
+        iced::widget::tooltip::Position::Bottom,
+    );
+
+    request_row
+        .push(url_input)
+        .push(code_btn)
+        .push(send_btn)
+        .into()
 }
 
 #[allow(clippy::too_many_arguments)]

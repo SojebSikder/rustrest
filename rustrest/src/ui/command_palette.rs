@@ -10,6 +10,7 @@ use rustrest_command_palette::{Command, PaletteState, filter};
 pub enum AppCommand {
     NewRequestTab,
     NewTerminal,
+    GenerateCode,
     ImportCollection,
     ImportGitFolder,
     CreateNewCollection,
@@ -40,6 +41,12 @@ pub fn commands(app: &Rustrest) -> Vec<Command<AppCommand>> {
         ),
         Command::new("new-terminal", "New Terminal", AppCommand::NewTerminal)
             .with_subtitle("Ctrl+`"),
+        Command::new(
+            "generate-code",
+            "Generate Code Snippet...",
+            AppCommand::GenerateCode,
+        )
+        .with_subtitle("cURL and more, for the active request"),
         Command::new(
             "import-collection",
             "Import Collection...",
@@ -131,6 +138,7 @@ pub fn to_message(action: AppCommand) -> Message {
     match action {
         AppCommand::NewRequestTab => Message::NewTabPressed,
         AppCommand::NewTerminal => Message::NewTerminalTabPressed,
+        AppCommand::GenerateCode => Message::ShowCodegenModal,
         AppCommand::ImportCollection => Message::ImportCollectionPressed,
         AppCommand::ImportGitFolder => Message::ImportGitCollectionPressed,
         AppCommand::CreateNewCollection => Message::CreateNewCollectionPressed,

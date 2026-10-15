@@ -140,6 +140,10 @@ pub enum TabMessage {
     /// at the app level before reaching `Tab::update`.
     ShowResponseTimingModal(Option<usize>),
 
+    /// opens the "Generate Code" modal for this request. intercepted at the
+    /// app level before reaching `Tab::update`.
+    GenerateCode,
+
     /// copies the given text straight to the clipboard, with no context menu
     /// in between (e.g. a row's "Copy" button); intercepted at the app level
     /// before reaching `Tab::update`.
@@ -218,6 +222,7 @@ impl TabMessage {
             | TabMessage::ViewSavedResponse(_)
             | TabMessage::ShowFieldContextMenu(_, _)
             | TabMessage::ShowResponseTimingModal(_)
+            | TabMessage::GenerateCode
             | TabMessage::CopyToClipboard(_)
             | TabMessage::DocsModeSelected(_)
             | TabMessage::DocsLinkClicked(_) => false,

@@ -22,6 +22,8 @@ pub struct OverlaysState {
     pub download_toast_id: Option<usize>,
     pub response_timing_modal: Option<crate::ui::response_timing_modal::ResponseTimingModalState>,
     pub about_modal: Option<crate::ui::about_modal::AboutModalState>,
+    pub codegen_modal: Option<crate::ui::codegen_modal::CodegenModalState>,
+    pub codegen_prefs: crate::ui::codegen_modal::CodegenPrefs,
     pub confirm_dialog: Option<ConfirmDialogState>,
     pub active_context_menu: Option<ContextMenu>,
     pub context_menu_position: iced::Point,

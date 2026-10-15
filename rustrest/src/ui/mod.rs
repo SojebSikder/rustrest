@@ -1,6 +1,7 @@
 pub mod about_modal;
 pub mod badge;
 pub mod cloud;
+pub mod codegen_modal;
 pub mod collection_settings;
 pub mod collection_viewer;
 pub mod command_palette;
