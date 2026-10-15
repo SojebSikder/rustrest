@@ -1,9 +1,12 @@
 use crate::app::Rustrest;
 use crate::message::Message;
 use crate::ui::modal::card;
-use crate::ui::tokens::RADIUS_MD;
+use crate::ui::tokens::{
+    RADIUS_MD, SPACE_MD, SPACE_XL, TEXT_BASE, TEXT_BODY, TEXT_SMALL, TEXT_SUBTITLE, input_style,
+    semibold,
+};
 use iced::widget::{Id, button, column, container, scrollable, text, text_input};
-use iced::{Alignment, Element, Font, Length};
+use iced::{Alignment, Element, Length};
 use rustrest_command_palette::{Command, PaletteState, filter};
 
 /// every action reachable from the command palette.
@@ -180,29 +183,30 @@ pub fn view<'a>(app: &'a Rustrest, state: &'a PaletteState) -> Element<'a, Messa
         .id(input_id())
         .on_input(Message::CommandPaletteQueryChanged)
         .on_submit(Message::CommandPaletteConfirm)
-        .padding(10)
-        .size(15);
+        .padding(SPACE_MD)
+        .size(TEXT_SUBTITLE)
+        .style(input_style);
 
     let mut list = column![].spacing(2);
     if matches.is_empty() {
         list = list.push(
             container(
                 text("No matching commands")
-                    .size(12)
+                    .size(TEXT_BODY)
                     .color(crate::theme::colors().text_muted),
             )
-            .padding(8),
+            .padding(SPACE_MD),
         );
     }
     for (idx, cmd) in matches.iter().enumerate() {
         let is_selected = idx == state.selected;
 
-        let mut row_content = column![text(cmd.title.clone()).size(13)].spacing(2);
+        let mut row_content = column![text(cmd.title.clone()).size(TEXT_BASE)].spacing(2);
         if let Some(subtitle) = &cmd.subtitle {
             let subtitle = subtitle.clone();
             row_content = row_content.push(
                 text(subtitle)
-                    .size(11)
+                    .size(TEXT_SMALL)
                     .color(crate::theme::colors().text_muted),
             );
         }
@@ -244,14 +248,11 @@ pub fn view<'a>(app: &'a Rustrest, state: &'a PaletteState) -> Element<'a, Messa
         );
     }
 
-    let title = text("Command Palette").size(14).font(Font {
-        weight: iced::font::Weight::Bold,
-        ..Font::DEFAULT
-    });
+    let title = text("Command Palette").size(TEXT_SUBTITLE).font(semibold());
 
     let body = column![title, input, scrollable(list).height(Length::Fixed(320.0)),]
-        .spacing(10)
-        .padding(20)
+        .spacing(SPACE_MD)
+        .padding(SPACE_XL)
         .align_x(Alignment::Start);
 
     card(body, 480.0)

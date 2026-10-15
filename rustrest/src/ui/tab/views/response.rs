@@ -2,7 +2,11 @@ use super::super::Tab;
 use super::super::messages::TabMessage;
 use super::super::types::{ResponseSubTab, ResponseView, SavedResponse};
 use crate::ui::context_menu::{TabFieldTarget, with_context_menu};
-use crate::ui::tokens::{RADIUS_MD, RADIUS_SM, chip, secondary_button, subtab_style};
+use crate::ui::tokens::{
+    RADIUS_MD, RADIUS_SM, SPACE_LG, SPACE_MD, SPACE_SM, TEXT_BASE, TEXT_BODY, TEXT_SMALL,
+    TEXT_SUBTITLE, chip, editor_surface, icon_button, primary_button, secondary_button, semibold,
+    subtab_style,
+};
 use iced::widget::text::Wrapping;
 use iced::widget::{
     Space, button, column, container, pick_list, responsive, row, scrollable, text, text_editor,
@@ -51,7 +55,7 @@ where
     }
 
     column![render_saved_responses_bar(tab, wrap_msg), content]
-        .spacing(10)
+        .spacing(SPACE_MD)
         .height(Length::Fill)
         .into()
 }
@@ -65,30 +69,30 @@ where
     Message: Clone + 'static,
 {
     let live_is_active = tab.viewing_saved_response.is_none();
-    let mut live_btn = button(text("Live").size(12)).padding([4, 10]);
+    let mut live_btn = button(text("Live").size(TEXT_BODY)).padding([4, 10]);
     live_btn = if live_is_active {
-        live_btn.style(button::primary)
+        live_btn.style(primary_button)
     } else {
         live_btn
-            .style(button::secondary)
+            .style(secondary_button)
             .on_press(wrap_msg(TabMessage::ViewSavedResponse(None)))
     };
-    let mut bar = row![live_btn].spacing(6).align_y(Alignment::Center);
+    let mut bar = row![live_btn].spacing(SPACE_SM).align_y(Alignment::Center);
 
     for (index, saved) in tab.saved_responses.iter().enumerate() {
         let is_active = tab.viewing_saved_response == Some(index);
-        let mut select_btn = button(text(&saved.name).size(12)).padding([4, 10]);
+        let mut select_btn = button(text(&saved.name).size(TEXT_BODY)).padding([4, 10]);
         select_btn = if is_active {
-            select_btn.style(button::primary)
+            select_btn.style(primary_button)
         } else {
             select_btn
-                .style(button::secondary)
+                .style(secondary_button)
                 .on_press(wrap_msg(TabMessage::ViewSavedResponse(Some(index))))
         };
 
-        let delete_btn = button(text("✕").size(11))
+        let delete_btn = button(text("✕").size(TEXT_BODY))
             .padding([4, 6])
-            .style(button::text)
+            .style(icon_button)
             .on_press(wrap_msg(TabMessage::DeleteSavedResponse(index)));
 
         bar = bar.push(
@@ -108,21 +112,14 @@ fn response_tab_bar<Message>(
 where
     Message: Clone + 'static,
 {
-    let mut resp_tab_bar = row![].spacing(6).align_y(Alignment::Center);
+    let mut resp_tab_bar = row![].spacing(SPACE_SM).align_y(Alignment::Center);
 
     for variant in ResponseSubTab::ALL.iter() {
         let is_resp_active = active == *variant;
         let variant_clone = *variant;
-        let resp_btn = button(text(variant.label()).size(12).font(Font {
-            weight: if is_resp_active {
-                iced::font::Weight::Bold
-            } else {
-                iced::font::Weight::Normal
-            },
-            ..Font::DEFAULT
-        }))
-        .padding([5, 12])
-        .style(subtab_style(is_resp_active));
+        let resp_btn = button(text(variant.label()).size(TEXT_BODY))
+            .padding([5, 12])
+            .style(subtab_style(is_resp_active));
 
         let resp_btn = if is_resp_active {
             resp_btn
@@ -225,7 +222,7 @@ where
             .collect::<Vec<_>>()
             .join("\n");
         container(
-            button(text("Copy All").size(11))
+            button(text("Copy All").size(TEXT_SMALL))
                 .padding([2, 8])
                 .style(button::text)
                 .on_press(wrap_msg(TabMessage::CopyToClipboard(all_text))),
@@ -240,11 +237,11 @@ where
     let title_row = row![
         text(column_labels.0)
             .width(Length::FillPortion(column_portions.0))
-            .size(12)
+            .size(TEXT_BODY)
             .color(crate::theme::colors().text_muted),
         text(column_labels.1)
             .width(Length::FillPortion(column_portions.1))
-            .size(12)
+            .size(TEXT_BODY)
             .color(crate::theme::colors().text_muted),
         copy_all_area,
     ]
@@ -253,13 +250,13 @@ where
 
     let mut table = column![]
         .spacing(1)
-        .push(container(title_row).style(container::bordered_box));
+        .push(container(title_row).style(editor_surface));
 
     if rows.is_empty() {
         table = table.push(
             container(
                 text(empty_message)
-                    .size(13)
+                    .size(TEXT_BASE)
                     .color(crate::theme::colors().text_muted),
             )
             .padding(10),
@@ -270,11 +267,8 @@ where
 
             let key_field = with_context_menu(
                 text(key.clone())
-                    .font(Font {
-                        weight: iced::font::Weight::Bold,
-                        ..Font::DEFAULT
-                    })
-                    .size(13)
+                    .font(semibold())
+                    .size(TEXT_BASE)
                     .width(Length::FillPortion(column_portions.0)),
                 wrap_msg(TabMessage::ShowFieldContextMenu(
                     TabFieldTarget::ResponseField,
@@ -285,7 +279,7 @@ where
             let value_field = with_context_menu(
                 text(val.clone())
                     .font(Font::MONOSPACE)
-                    .size(13)
+                    .size(TEXT_BASE)
                     .width(Length::FillPortion(column_portions.1)),
                 wrap_msg(TabMessage::ShowFieldContextMenu(
                     TabFieldTarget::ResponseField,
@@ -294,7 +288,7 @@ where
             );
 
             let copy_area = container(
-                button(text("Copy").size(11))
+                button(text("Copy").size(TEXT_SMALL))
                     .padding([2, 8])
                     .style(button::text)
                     .on_press(wrap_msg(TabMessage::CopyToClipboard(row_text))),
@@ -308,10 +302,13 @@ where
                         .padding(8)
                         .align_y(Alignment::Center),
                 )
-                .style(if index % 2 == 0 {
-                    container::bordered_box
-                } else {
-                    container::transparent
+                .style(move |_theme: &iced::Theme| container::Style {
+                    background: if index % 2 == 0 {
+                        Some(crate::theme::colors().element_hover.into())
+                    } else {
+                        None
+                    },
+                    ..Default::default()
                 }),
             );
         }
@@ -333,27 +330,23 @@ where
         None => {
             let empty_content = if tab.is_loading {
                 column![
-                    text("Sending Request...").size(15).font(Font {
-                        weight: iced::font::Weight::Bold,
-                        ..Font::DEFAULT
-                    }),
+                    text("Sending Request...")
+                        .size(TEXT_SUBTITLE)
+                        .font(semibold()),
                     text("Awaiting network response from server...")
-                        .size(12)
+                        .size(TEXT_BODY)
                         .color(crate::theme::colors().text_muted),
                 ]
-                .spacing(8)
+                .spacing(SPACE_SM)
                 .align_x(Alignment::Center)
             } else {
                 column![
-                    text("Ready to Send").size(15).font(Font {
-                        weight: iced::font::Weight::Bold,
-                        ..Font::DEFAULT
-                    }),
+                    text("Ready to Send").size(TEXT_SUBTITLE).font(semibold()),
                     text("Enter a URL and click 'Send' to inspect the response.")
-                        .size(12)
+                        .size(TEXT_BODY)
                         .color(crate::theme::colors().text_muted),
                 ]
-                .spacing(8)
+                .spacing(SPACE_SM)
                 .align_x(Alignment::Center)
             };
 
@@ -378,48 +371,53 @@ where
                 row![
                     text("●").size(8).color(st_color),
                     text(status_text_str)
-                        .size(12)
-                        .font(Font {
-                            weight: iced::font::Weight::Bold,
-                            ..Font::DEFAULT
-                        })
+                        .size(TEXT_BODY)
+                        .font(semibold())
                         .color(st_color),
                 ]
-                .spacing(6)
+                .spacing(SPACE_SM)
                 .align_y(Alignment::Center),
             )
             .padding(iced::Padding::from([4, 10]))
             .style(move |_theme: &iced::Theme| chip(st_color, 0.12, 0.3));
 
             let time_str = crate::ui::badge::format_duration(resp.elapsed.as_millis());
-            let time_btn = button(text(time_str).size(12).color(crate::theme::colors().text))
-                .padding([4, 10])
-                .style(secondary_button)
-                .on_press(wrap_msg(TabMessage::ShowResponseTimingModal(None)));
+            let time_btn = button(
+                text(time_str)
+                    .size(TEXT_BODY)
+                    .color(crate::theme::colors().text),
+            )
+            .padding([4, 10])
+            .style(secondary_button)
+            .on_press(wrap_msg(TabMessage::ShowResponseTimingModal(None)));
 
             let size_str = crate::ui::badge::format_bytes(resp.response_size);
-            let size_badge = container(text(size_str).size(12).color(crate::theme::colors().text))
-                .padding(iced::Padding::from([4, 10]))
-                .style(|_theme: &iced::Theme| container::Style {
-                    background: Some(crate::theme::colors().surface_background.into()),
-                    border: iced::Border {
-                        radius: RADIUS_MD.into(),
-                        width: 1.0,
-                        color: crate::theme::colors().border_variant,
-                    },
-                    ..Default::default()
-                });
+            let size_badge = container(
+                text(size_str)
+                    .size(TEXT_BODY)
+                    .color(crate::theme::colors().text),
+            )
+            .padding(iced::Padding::from([4, 10]))
+            .style(|_theme: &iced::Theme| container::Style {
+                background: Some(crate::theme::colors().surface_background.into()),
+                border: iced::Border {
+                    radius: RADIUS_MD.into(),
+                    width: 1.0,
+                    color: crate::theme::colors().border_variant,
+                },
+                ..Default::default()
+            });
 
             let metadata_row = row![
                 status_badge,
                 time_btn,
                 size_badge,
-                button(text("Save Response").size(12))
+                button(text("Save Response").size(TEXT_BODY))
                     .padding([4, 10])
                     .style(secondary_button)
                     .on_press(wrap_msg(TabMessage::SaveResponse)),
             ]
-            .spacing(8)
+            .spacing(SPACE_MD)
             .align_y(Alignment::Center);
 
             let postman_header = row![
@@ -436,7 +434,7 @@ where
                         &tab.sse_log,
                         crate::ui::tab::protocol_common::sse_log_id(tab.id),
                     ))
-                    .style(container::bordered_box)
+                    .style(editor_surface)
                     .width(Length::Fill)
                     .height(Length::Fill)
                     .into()
@@ -449,7 +447,9 @@ where
                         })
                         .padding([4, 10]);
 
-                    let view_toggle_bar = row![view_dropdown].spacing(8).align_y(Alignment::Center);
+                    let view_toggle_bar = row![view_dropdown]
+                        .spacing(SPACE_MD)
+                        .align_y(Alignment::Center);
 
                     let context_menu_msg = wrap_msg(TabMessage::ShowFieldContextMenu(
                         TabFieldTarget::ResponseBodyEditor,
@@ -482,11 +482,11 @@ where
                     column![
                         view_toggle_bar,
                         container(response_editor)
-                            .style(container::bordered_box)
+                            .style(editor_surface)
                             .width(Length::Fill)
                             .height(Length::Fill)
                     ]
-                    .spacing(8)
+                    .spacing(SPACE_MD)
                     .height(Length::Fill)
                     .into()
                 }
@@ -495,13 +495,13 @@ where
                 ResponseSubTab::Headers => build_headers_table(&resp.headers, wrap_msg),
 
                 ResponseSubTab::TestResults => {
-                    let mut test_list = column![].spacing(8);
+                    let mut test_list = column![].spacing(SPACE_MD);
 
                     if resp.test_results.is_empty() {
                         test_list = test_list.push(
                             container(
                                 text("No test results. Add assertions in the Post-request script tab (e.g. pm.test(...)) to view test outcomes here.")
-                                    .size(13)
+                                    .size(TEXT_BASE)
                                     .color(crate::theme::colors().text_muted),
                             )
                             .padding(10),
@@ -516,24 +516,30 @@ where
 
                             let test_row = container(
                                 row![
-                                    container(text(status_text).size(11).color(iced::Color::WHITE))
-                                        .padding([2, 6])
-                                        .style(move |_| container::Style {
+                                    container(
+                                        text(status_text)
+                                            .size(TEXT_SMALL)
+                                            .color(iced::Color::WHITE)
+                                    )
+                                    .padding([2, 6])
+                                    .style(move |_| {
+                                        container::Style {
                                             background: Some(iced::Background::Color(status_color)),
                                             border: iced::Border {
                                                 radius: RADIUS_SM.into(),
                                                 ..Default::default()
                                             },
                                             ..Default::default()
-                                        }),
-                                    text(&test.name).size(13),
+                                        }
+                                    }),
+                                    text(&test.name).size(TEXT_BASE),
                                 ]
-                                .spacing(10)
+                                .spacing(SPACE_MD)
                                 .align_y(Alignment::Center),
                             )
                             .padding(8)
                             .width(Length::Fill)
-                            .style(container::bordered_box);
+                            .style(editor_surface);
 
                             test_list = test_list.push(test_row);
                         }
@@ -545,27 +551,26 @@ where
                 }
             };
 
-            column![postman_header, dynamic_pane].spacing(12).into()
+            column![postman_header, dynamic_pane]
+                .spacing(SPACE_LG)
+                .into()
         }
 
         Some(Err(err_msg)) => container(
             column![
                 text("Transaction Failure")
                     .color(crate::theme::colors().error)
-                    .size(13)
-                    .font(Font {
-                        weight: iced::font::Weight::Bold,
-                        ..Font::DEFAULT
-                    }),
+                    .size(TEXT_BASE)
+                    .font(semibold()),
                 scrollable(
                     text(err_msg)
                         .font(Font::MONOSPACE)
-                        .size(12)
+                        .size(TEXT_BODY)
                         .color(crate::theme::colors().text)
                 )
                 .height(Length::Fixed(140.0)),
             ]
-            .spacing(8),
+            .spacing(SPACE_MD),
         )
         .padding(12)
         .width(Length::Fill)
@@ -596,37 +601,38 @@ where
         row![
             text("●").size(8).color(st_color),
             text(status_text_str)
-                .size(12)
-                .font(Font {
-                    weight: iced::font::Weight::Bold,
-                    ..Font::DEFAULT
-                })
+                .size(TEXT_BODY)
+                .font(semibold())
                 .color(st_color),
         ]
-        .spacing(6)
+        .spacing(SPACE_SM)
         .align_y(Alignment::Center),
     )
     .padding(iced::Padding::from([4, 10]))
     .style(move |_theme: &iced::Theme| chip(st_color, 0.12, 0.3));
 
     let time_str = crate::ui::badge::format_duration(saved.elapsed_ms);
-    let time_btn = button(text(time_str).size(12).color(crate::theme::colors().text))
-        .padding([4, 10])
-        .style(secondary_button)
-        .on_press(wrap_msg(TabMessage::ShowResponseTimingModal(Some(index))));
+    let time_btn = button(
+        text(time_str)
+            .size(TEXT_BODY)
+            .color(crate::theme::colors().text),
+    )
+    .padding([4, 10])
+    .style(secondary_button)
+    .on_press(wrap_msg(TabMessage::ShowResponseTimingModal(Some(index))));
 
     let metadata_row = row![
         status_badge,
         time_btn,
         text(format!("Saved: {}", saved.name))
             .color(crate::theme::colors().text_muted)
-            .size(12),
-        button(text("Back to Live").size(12))
+            .size(TEXT_BODY),
+        button(text("Back to Live").size(TEXT_BODY))
             .padding([4, 10])
             .style(secondary_button)
             .on_press(wrap_msg(TabMessage::ViewSavedResponse(None))),
     ]
-    .spacing(8)
+    .spacing(SPACE_MD)
     .align_y(Alignment::Center);
 
     let postman_header = row![
@@ -659,7 +665,7 @@ where
                     .width(Length::Fill)
                     .height(Length::Fill),
             )
-            .style(container::bordered_box)
+            .style(editor_surface)
             .width(Length::Fill)
             .height(Length::Fill)
             .padding(10)
@@ -671,12 +677,14 @@ where
 
         ResponseSubTab::TestResults => container(
             text("Test results aren't captured in saved responses.")
-                .size(13)
+                .size(TEXT_BASE)
                 .color(crate::theme::colors().text_muted),
         )
         .padding(10)
         .into(),
     };
 
-    column![postman_header, dynamic_pane].spacing(12).into()
+    column![postman_header, dynamic_pane]
+        .spacing(SPACE_LG)
+        .into()
 }

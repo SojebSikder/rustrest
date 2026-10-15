@@ -2,6 +2,7 @@
 
 use crate::app::Rustrest;
 use crate::message::Message;
+use crate::ui::tokens::{SPACE_SM, TEXT_BASE, TEXT_BODY, secondary_button};
 use iced::widget::{Space, button, container, row, text};
 use iced::{Alignment, Element, Length, Padding};
 
@@ -107,7 +108,7 @@ fn cloud_indicator(app: &Rustrest) -> Element<'_, Message> {
     };
 
     let entry = button(
-        row![text("●").size(9).color(dot), text(label).size(12)]
+        row![text("●").size(9).color(dot), text(label).size(TEXT_BODY)]
             .spacing(5)
             .align_y(Alignment::Center),
     )
@@ -127,14 +128,14 @@ pub fn render_status_bar(app: &Rustrest) -> Element<'_, Message> {
         let entry: Element<'_, Message> = if item.spinner {
             super::spinner::spinner_with_label(app.spinner_tick, item.label.as_str())
         } else if let Some(msg) = item.on_press.clone() {
-            button(text(item.label.as_str()).size(13))
+            button(text(item.label.as_str()).size(TEXT_BASE))
                 .style(button::text)
                 .padding(0)
                 .on_press(msg)
                 .into()
         } else {
             text(item.label.as_str())
-                .size(13)
+                .size(TEXT_BASE)
                 .color(crate::theme::colors().text_muted)
                 .into()
         };
@@ -147,13 +148,13 @@ pub fn render_status_bar(app: &Rustrest) -> Element<'_, Message> {
     // command-palette entries already use.
     for (plugin_id, item) in app.plugins.plugin_manager.status_bar_items() {
         let entry: Element<'_, Message> = match item.command_id {
-            Some(command_id) => button(text(item.label).size(13))
+            Some(command_id) => button(text(item.label).size(TEXT_BASE))
                 .style(button::text)
                 .padding(0)
                 .on_press(Message::PluginCommand(plugin_id, command_id))
                 .into(),
             None => text(item.label)
-                .size(13)
+                .size(TEXT_BASE)
                 .color(crate::theme::colors().text_muted)
                 .into(),
         };
@@ -167,12 +168,15 @@ pub fn render_status_bar(app: &Rustrest) -> Element<'_, Message> {
         format!("Console ({})", app.layout.console_logs.len())
     };
     let console_toggle = button(
-        row![text("≡").size(12), text(console_label).size(12),]
-            .spacing(4)
-            .align_y(Alignment::Center),
+        row![
+            text("≡").size(TEXT_BODY),
+            text(console_label).size(TEXT_BODY),
+        ]
+        .spacing(4)
+        .align_y(Alignment::Center),
     )
     .style(if !console_collapsed {
-        button::secondary
+        secondary_button
     } else {
         button::text
     })
@@ -180,7 +184,7 @@ pub fn render_status_bar(app: &Rustrest) -> Element<'_, Message> {
     .on_press(Message::ToggleConsolePanel);
 
     let terminal_button = button(
-        row![text(">_").size(11), text("Terminal").size(12),]
+        row![text(">_").size(TEXT_BODY), text("Terminal").size(TEXT_BODY),]
             .spacing(4)
             .align_y(Alignment::Center),
     )
@@ -189,7 +193,7 @@ pub fn render_status_bar(app: &Rustrest) -> Element<'_, Message> {
     .on_press(Message::NewTerminalTabPressed);
 
     let right = row![cloud_indicator(app), console_toggle, terminal_button]
-        .spacing(6)
+        .spacing(SPACE_SM)
         .align_y(Alignment::Center);
 
     container(row![left, Space::new().width(Length::Fill), right].align_y(Alignment::Center))

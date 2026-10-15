@@ -3,7 +3,10 @@ use super::types::{FormDataRow, FormDataType, KeyValuePair};
 use crate::message::{KvValueField, MultilineFieldKind};
 use crate::ui::context_menu::with_context_menu;
 use crate::ui::multiline_input::multiline_input;
-use crate::ui::tokens::icon_button;
+use crate::ui::tokens::{
+    SPACE_MD, SPACE_SM, TEXT_BASE, TEXT_BODY, TEXT_SMALL, icon_button, input_style,
+    secondary_button,
+};
 use crate::ui::var_assist::var_input;
 use iced::widget::{
     button, checkbox, column, pick_list, row, scrollable, space, text, text_editor, text_input,
@@ -30,7 +33,7 @@ pub fn kv_editor_pane<'a, Message>(
 where
     Message: Clone + 'a,
 {
-    let mut content = column![].spacing(5);
+    let mut content = column![].spacing(SPACE_SM);
 
     for (idx, item) in pairs.iter().enumerate() {
         let item_clone = item.clone();
@@ -54,7 +57,10 @@ where
                     on_resize_start(key),
                 )
             }
-            None => text_input("Value", &item.value).padding([6, 8]).into(),
+            None => text_input("Value", &item.value)
+                .padding([6, 8])
+                .style(input_style)
+                .into(),
         };
 
         let row_element = row![
@@ -84,12 +90,12 @@ where
                 on_show_key_menu(idx, item.key.clone()),
             ),
             value_field,
-            button(text("✕").size(12))
+            button(text("✕").size(TEXT_BODY))
                 .on_press(on_remove(idx))
                 .padding([5, 8])
                 .style(icon_button)
         ]
-        .spacing(8)
+        .spacing(SPACE_MD)
         .align_y(Alignment::Center);
 
         content = content.push(row_element);
@@ -100,15 +106,18 @@ where
             .id(kv_rows_id(tab_id))
             .height(Length::Fixed(150.0)),
         button(
-            row![text("+").size(13), text(add_button_label).size(12)]
-                .spacing(6)
-                .align_y(Alignment::Center),
+            row![
+                text("+").size(TEXT_BASE),
+                text(add_button_label).size(TEXT_BODY)
+            ]
+            .spacing(SPACE_SM)
+            .align_y(Alignment::Center),
         )
         .on_press(on_add)
         .padding([6, 12])
-        .style(button::secondary),
+        .style(secondary_button),
     ]
-    .spacing(10)
+    .spacing(SPACE_MD)
     .into()
 }
 
@@ -133,7 +142,7 @@ pub fn form_data_editor_pane<'a, Message>(
 where
     Message: Clone + 'a,
 {
-    let mut content = column![].spacing(5);
+    let mut content = column![].spacing(SPACE_SM);
 
     for (idx, item) in rows.iter().enumerate() {
         // dropdown type picker (Text vs File)
@@ -165,14 +174,14 @@ where
                 } else {
                     "Add Files"
                 };
-                let pick_btn = button(text(pick_label).size(12))
+                let pick_btn = button(text(pick_label).size(TEXT_BODY))
                     .padding([4, 10])
-                    .style(button::secondary)
+                    .style(secondary_button)
                     .on_press(on_file_pick(idx));
 
                 if item.files.is_empty() {
-                    row![pick_btn, text("No files selected").size(12)]
-                        .spacing(10)
+                    row![pick_btn, text("No files selected").size(TEXT_BODY)]
+                        .spacing(SPACE_MD)
                         .align_y(Alignment::Center)
                         .width(Length::Fill)
                         .into()
@@ -183,8 +192,8 @@ where
                         let file_row_item = item.clone();
                         files_list = files_list.push(
                             row![
-                                text(path).size(12).width(Length::Fill),
-                                button(text("\u{2715}").size(11))
+                                text(path).size(TEXT_BODY).width(Length::Fill),
+                                button(text("\u{2715}").size(TEXT_SMALL))
                                     .padding([2, 6])
                                     .style(icon_button)
                                     .on_press_with(move || {
@@ -199,12 +208,12 @@ where
                                         )
                                     }),
                             ]
-                            .spacing(6)
+                            .spacing(SPACE_SM)
                             .align_y(Alignment::Center),
                         );
                     }
                     row![pick_btn, files_list]
-                        .spacing(10)
+                        .spacing(SPACE_MD)
                         .align_y(Alignment::Center)
                         .width(Length::Fill)
                         .into()
@@ -244,7 +253,7 @@ where
             type_picker,
             value_field,
         ]
-        .spacing(8)
+        .spacing(SPACE_MD)
         .align_y(Alignment::Center);
 
         // per-part Content-Type, e.g. `application/json` for a JSON text
@@ -291,7 +300,7 @@ where
         }
 
         row_element = row_element.push(
-            button(text("✕").size(12))
+            button(text("✕").size(TEXT_BODY))
                 .on_press(on_remove(idx))
                 .padding([5, 8])
                 .style(icon_button),
@@ -309,7 +318,7 @@ where
     column![
         row![
             space::horizontal(),
-            button(text(toggle_label).size(12))
+            button(text(toggle_label).size(TEXT_BODY))
                 .on_press(on_toggle_content_type)
                 .padding([2, 8])
                 .style(button::text),
@@ -318,14 +327,17 @@ where
             .id(kv_rows_id(tab_id))
             .height(Length::Fixed(150.0)),
         button(
-            row![text("+").size(13), text("Add Form Field").size(12)]
-                .spacing(6)
-                .align_y(Alignment::Center),
+            row![
+                text("+").size(TEXT_BASE),
+                text("Add Form Field").size(TEXT_BODY)
+            ]
+            .spacing(SPACE_SM)
+            .align_y(Alignment::Center),
         )
         .on_press(on_add)
         .padding([6, 12])
-        .style(button::secondary),
+        .style(secondary_button),
     ]
-    .spacing(6)
+    .spacing(SPACE_SM)
     .into()
 }

@@ -12,6 +12,7 @@ use crate::ui::resize_handle::{DividerOrientation, resize_handle};
 use crate::ui::script_editor::ScriptContent;
 use crate::ui::tab::types::ScriptTab;
 use crate::ui::tab::views;
+use crate::ui::tokens::{SPACE_LG, SPACE_MD, editor_surface};
 use crate::{APP_NAME, APP_VERSION};
 use iced::widget::text_editor;
 use iced::widget::{column, container};
@@ -165,12 +166,12 @@ impl Tab {
             container(response_content)
                 .height(Length::Fill)
                 .width(Length::Fill)
-                .padding(15)
-                .style(container::bordered_box)
+                .padding(SPACE_LG)
+                .style(editor_surface)
         ]
         .height(Length::Fill)
         .width(Length::Fill)
-        .spacing(10)
+        .spacing(SPACE_MD)
         .into()
     }
 

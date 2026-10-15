@@ -4,7 +4,10 @@ use crate::message::{Message, SidebarDropTarget, SidebarItemKey};
 use crate::ui::context_menu::{FieldTarget, with_context_menu};
 use crate::ui::modal::muted_text_color;
 use crate::ui::spinner::spinner_with_label;
-use crate::ui::tokens::{RADIUS_SM, icon_button};
+use crate::ui::tokens::{
+    SPACE_MD, SPACE_SM, SPACE_XS, TEXT_BASE, TEXT_BODY, TEXT_CAPTION, TEXT_SMALL, card_surface,
+    icon_button, input_style, list_row, primary_button, secondary_button, semibold,
+};
 use crate::ui::unsaved::{
     collection_is_unsaved, folder_is_unsaved, request_is_unsaved, unsaved_dot,
 };
@@ -23,40 +26,6 @@ fn sidebar_click_message(app: &Rustrest, key: SidebarItemKey, default: Message) 
         Message::SidebarItemToggleSelect(key)
     } else {
         default
-    }
-}
-
-/// container style for a sidebar row: filled with the selection color when it's
-/// part of the current multi-selection, a soft neutral wash on hover, plain
-/// otherwise. Mirrors the selected-item look used by the command palette.
-fn sidebar_row_style(
-    is_selected: bool,
-    is_hovered: bool,
-) -> impl Fn(&iced::Theme) -> container::Style {
-    move |theme: &iced::Theme| {
-        if is_selected {
-            let palette = theme.extended_palette();
-            container::Style {
-                background: Some(palette.primary.weak.color.into()),
-                text_color: Some(palette.primary.weak.text),
-                border: iced::Border {
-                    radius: RADIUS_SM.into(),
-                    ..Default::default()
-                },
-                ..Default::default()
-            }
-        } else if is_hovered {
-            container::Style {
-                background: Some(crate::theme::colors().element_hover.into()),
-                border: iced::Border {
-                    radius: RADIUS_SM.into(),
-                    ..Default::default()
-                },
-                ..Default::default()
-            }
-        } else {
-            container::Style::default()
-        }
     }
 }
 
@@ -114,7 +83,7 @@ fn flatten_sidebar_item(
 }
 
 pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
-    let mut sidebar_contents = column![].spacing(10);
+    let mut sidebar_contents = column![].spacing(SPACE_MD);
 
     if app.status_bar.is_active("startup-workspace") {
         sidebar_contents =
@@ -138,6 +107,8 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
                         text_input("Collection Name...", &col.info.name)
                             .on_input(move |txt| Message::CollectionNameChanged(col_id, txt))
                             .on_submit(Message::SaveCollectionNamePressed(col_id))
+                            .size(TEXT_BASE)
+                            .style(input_style)
                             .width(Length::Fixed(120.0))
                             .padding(2),
                         Message::ShowTextFieldContextMenu(
@@ -159,7 +130,7 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
                     .unwrap_or(true);
 
                 let collapse_arrow =
-                    button(text(if is_collapsed_col { "▶" } else { "▼" }).size(10))
+                    button(text(if is_collapsed_col { "▶" } else { "▼" }).size(TEXT_CAPTION))
                         .on_press(Message::ToggleCollectionCollapsed(col_id))
                         .style(icon_button)
                         .padding(2);
@@ -173,14 +144,11 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
                 let mut header_row = row![
                     collapse_arrow,
                     text(&col.info.name)
-                        .font(Font {
-                            weight: iced::font::Weight::Bold,
-                            ..Font::DEFAULT
-                        })
-                        .size(13)
+                        .font(semibold())
+                        .size(TEXT_BASE)
                         .style(move |_theme: &iced::Theme| text::Style { color: name_color }),
                 ]
-                .spacing(6)
+                .spacing(SPACE_XS)
                 .align_y(Alignment::Center);
 
                 if collection_is_unsaved(app, col) {
@@ -236,8 +204,8 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
 
                 mouse_area(
                     container(header_row)
-                        .padding([4, 2])
-                        .style(sidebar_row_style(is_row_selected, is_row_hovered)),
+                        .padding([4, 6])
+                        .style(list_row(is_row_selected, is_row_hovered)),
                 )
                 .on_enter(Message::SidebarItemHovered(Some(collection_key.clone())))
                 .on_exit(Message::SidebarItemHovered(None))
@@ -253,7 +221,7 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
                 .into()
             };
 
-            let mut col_tree = column![collection_header_title].spacing(4);
+            let mut col_tree = column![collection_header_title].spacing(SPACE_XS);
 
             if !is_collapsed_col {
                 for item in &col.item {
@@ -269,8 +237,8 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
     container(scrollable(sidebar_contents))
         .width(Length::Fixed(app.layout.sidebar_width))
         .height(Length::Fill)
-        .padding(10)
-        .style(container::bordered_box)
+        .padding(SPACE_MD)
+        .style(card_surface)
         .into()
 }
 
@@ -317,19 +285,19 @@ fn render_plugins_section(app: &Rustrest) -> Element<'_, Message> {
     let mut section = column![
         row![
             text("PLUGINS")
-                .size(10)
+                .size(TEXT_CAPTION)
                 .style(|theme: &iced::Theme| text::Style {
                     color: Some(muted_text_color(theme)),
                 }),
             Space::new().width(Length::Fill),
-            button(text("Manage").size(11))
+            button(text("Manage").size(TEXT_SMALL))
                 .on_press(Message::OpenPluginManagerPressed)
                 .style(button::text)
                 .padding([2, 4]),
         ]
         .align_y(Alignment::Center)
     ]
-    .spacing(4);
+    .spacing(SPACE_XS);
 
     for plugin in app.plugins.plugin_manager.installed() {
         if !plugin.is_active() {
@@ -399,28 +367,28 @@ pub fn render_env_selector(app: &Rustrest) -> Element<'_, Message> {
         .width(Length::Fixed(150.0))
         .padding([4, 8]),
         // add Environment button
-        button(text("+").size(13))
+        button(text("+").size(TEXT_BASE))
             .on_press(Message::CreateEnvironmentPressed)
             .padding([4, 8])
-            .style(button::secondary)
+            .style(secondary_button)
     ]
-    .spacing(6)
+    .spacing(SPACE_SM)
     .align_y(Alignment::Center);
 
     // show Edit and Delete buttons if an active environment is selected
     if let Some(active_idx) = app.env.active_env_index {
         env_row = env_row
             .push(
-                button(text("⛭").size(13))
+                button(text("⛭").size(TEXT_BASE))
                     .on_press(Message::EditEnvironmentPressed(active_idx))
                     .padding([4, 8])
-                    .style(button::secondary),
+                    .style(secondary_button),
             )
             .push(
-                button(text("✕").size(12))
+                button(text("✕").size(TEXT_BODY))
                     .on_press(Message::DeleteEnvironmentPressed(active_idx))
                     .padding([4, 8])
-                    .style(button::secondary),
+                    .style(secondary_button),
             );
     }
 
@@ -452,6 +420,8 @@ pub fn render_workspace_selector(app: &Rustrest) -> Element<'_, Message> {
                 text_input("Workspace Name...", &current_name)
                     .on_input(move |txt| Message::WorkspaceNameChanged(active_id, txt))
                     .on_submit(Message::SaveWorkspaceNamePressed(active_id))
+                    .size(TEXT_BASE)
+                    .style(input_style)
                     .width(Length::Fixed(140.0))
                     .padding([4, 8]),
                 Message::ShowTextFieldContextMenu(
@@ -459,12 +429,12 @@ pub fn render_workspace_selector(app: &Rustrest) -> Element<'_, Message> {
                     current_name.clone(),
                 ),
             ),
-            button(text("Save").size(12))
+            button(text("Save").size(TEXT_BASE))
                 .on_press(Message::SaveWorkspaceNamePressed(active_id))
-                .padding([4, 10])
-                .style(button::primary)
+                .padding([4, 12])
+                .style(primary_button)
         ]
-        .spacing(6)
+        .spacing(SPACE_SM)
         .align_y(Alignment::Center)
         .into()
     } else {
@@ -482,24 +452,24 @@ pub fn render_workspace_selector(app: &Rustrest) -> Element<'_, Message> {
             .placeholder("Workspace")
             .width(Length::Fixed(140.0))
             .padding([4, 8]),
-            button(text("+").size(13))
+            button(text("+").size(TEXT_BASE))
                 .on_press(Message::CreateWorkspacePressed)
                 .padding([4, 8])
-                .style(button::secondary),
-            button(text("✎").size(12))
+                .style(secondary_button),
+            button(text("✎").size(TEXT_BODY))
                 .on_press(Message::RenameWorkspacePressed(active_id))
                 .padding([4, 8])
-                .style(button::secondary),
+                .style(secondary_button),
         ]
-        .spacing(6)
+        .spacing(SPACE_SM)
         .align_y(Alignment::Center);
 
         if app.workspace.workspaces.len() > 1 {
             ws_row = ws_row.push(
-                button(text("✕").size(12))
+                button(text("✕").size(TEXT_BODY))
                     .on_press(Message::DeleteWorkspacePressed(active_id))
                     .padding([4, 8])
-                    .style(button::secondary),
+                    .style(secondary_button),
             );
         }
 
@@ -554,6 +524,8 @@ fn render_sidebar_item<'a>(
                                 collection_id,
                                 folder_path: path_for_save.clone(),
                             })
+                            .size(TEXT_BASE)
+                            .style(input_style)
                             .width(Length::Fixed(110.0))
                             .padding(2),
                         Message::ShowTextFieldContextMenu(
@@ -575,16 +547,17 @@ fn render_sidebar_item<'a>(
                 .align_y(Alignment::Center)
                 .into()
             } else {
-                let collapse_arrow = button(text(if is_collapsed { "▶" } else { "▼" }).size(10))
-                    .on_press(Message::ToggleFolderCollapsed {
-                        collection_id,
-                        folder_path: path_for_toggle,
-                    })
-                    .style(button::text)
-                    .padding(2);
+                let collapse_arrow =
+                    button(text(if is_collapsed { "▶" } else { "▼" }).size(TEXT_CAPTION))
+                        .on_press(Message::ToggleFolderCollapsed {
+                            collection_id,
+                            folder_path: path_for_toggle,
+                        })
+                        .style(button::text)
+                        .padding(2);
 
-                let mut title_row = row![collapse_arrow, text(&folder.name).size(13)]
-                    .spacing(6)
+                let mut title_row = row![collapse_arrow, text(&folder.name).size(TEXT_BASE)]
+                    .spacing(SPACE_XS)
                     .align_y(Alignment::Center);
 
                 if folder_is_unsaved(app, &folder.item) {
@@ -600,8 +573,8 @@ fn render_sidebar_item<'a>(
 
                 mouse_area(
                     container(title_row)
-                        .padding([2, 0])
-                        .style(sidebar_row_style(is_row_selected, is_row_hovered)),
+                        .padding([3, 6])
+                        .style(list_row(is_row_selected, is_row_hovered)),
                 )
                 .on_enter(Message::SidebarItemHovered(Some(folder_key.clone())))
                 .on_exit(Message::SidebarItemHovered(None))
@@ -673,9 +646,10 @@ fn render_sidebar_item<'a>(
                             collection_id,
                             request_id: req_id,
                         })
+                        .style(input_style)
                         .width(Length::Fixed(120.0))
                         .padding(2)
-                        .size(13),
+                        .size(TEXT_BASE),
                     button(text("Save").size(10))
                         .on_press(Message::SaveRequestNamePressed {
                             collection_id,
@@ -693,20 +667,22 @@ fn render_sidebar_item<'a>(
                 })
                 .into()
             } else {
-                let mut label_row = row![].spacing(6).align_y(Alignment::Center);
+                let mut label_row = row![].spacing(SPACE_XS).align_y(Alignment::Center);
                 if has_saved_responses {
                     label_row = label_row.push(
-                        button(text(if is_responses_collapsed { "▶" } else { "▼" }).size(9))
-                            .on_press(Message::ToggleSavedResponsesCollapsed(req_id))
-                            .style(button::text)
-                            .padding(1),
+                        button(
+                            text(if is_responses_collapsed { "▶" } else { "▼" }).size(TEXT_CAPTION),
+                        )
+                        .on_press(Message::ToggleSavedResponsesCollapsed(req_id))
+                        .style(button::text)
+                        .padding(1),
                     );
                 }
                 label_row = label_row.push(crate::ui::badge::method_badge(
                     &req_node.request.method,
                     Some(36.0),
                 ));
-                label_row = label_row.push(text(&req_node.name).size(13));
+                label_row = label_row.push(text(&req_node.name).size(TEXT_BASE));
                 if request_is_unsaved(app, req_node) {
                     label_row = label_row.push(unsaved_dot());
                 }
@@ -723,12 +699,12 @@ fn render_sidebar_item<'a>(
                 mouse_area(
                     container(label_row)
                         .padding(Padding {
-                            top: 2.0,
-                            right: 0.0,
-                            bottom: 2.0,
+                            top: 3.0,
+                            right: 6.0,
+                            bottom: 3.0,
                             left: if has_saved_responses { 8.0 } else { 15.0 },
                         })
-                        .style(sidebar_row_style(is_row_selected, is_row_hovered)),
+                        .style(list_row(is_row_selected, is_row_hovered)),
                 )
                 .on_enter(Message::SidebarItemHovered(Some(request_key.clone())))
                 .on_exit(Message::SidebarItemHovered(None))
@@ -796,9 +772,10 @@ fn render_saved_response_row<'a>(
                     new_name: txt,
                 })
                 .on_submit(Message::SaveSavedResponseNamePressed)
+                .style(input_style)
                 .width(Length::Fixed(120.0))
                 .padding(2)
-                .size(12),
+                .size(TEXT_BODY),
             button(text("Save").size(10))
                 .on_press(Message::SaveSavedResponseNamePressed)
                 .style(button::text)
@@ -814,18 +791,20 @@ fn render_saved_response_row<'a>(
         .into()
     } else {
         let title_row = row![
-            text("•").size(11).color(crate::theme::colors().text_muted),
+            text("•")
+                .size(TEXT_SMALL)
+                .color(crate::theme::colors().text_muted),
             text(example.name.clone())
-                .size(12)
+                .size(TEXT_BODY)
                 .color(crate::theme::colors().text_muted),
         ]
-        .spacing(6)
+        .spacing(SPACE_XS)
         .align_y(Alignment::Center);
 
         mouse_area(container(title_row).padding(Padding {
-            top: 2.0,
-            right: 0.0,
-            bottom: 2.0,
+            top: 3.0,
+            right: 6.0,
+            bottom: 3.0,
             left: 30.0,
         }))
         .on_press(Message::SidebarSavedResponseClicked {
