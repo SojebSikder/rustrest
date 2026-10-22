@@ -130,16 +130,12 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
         // clicks on release, which is too late to catch the drag motion
         let tab_surface = container(tab_row)
             .padding([6, 12])
-            .style(move |_theme: &iced::Theme| {
+            .style(move |theme: &iced::Theme| {
                 let colors = crate::theme::colors();
-                if is_active {
-                    container::Style {
-                        background: Some(
-                            colors
-                                .tab_active_background
-                                .unwrap_or(colors.surface_background)
-                                .into(),
-                        ),
+                match (is_active, colors.tab_active_background) {
+                    // themes: the active tab takes the editor's surface with an accent outline, instead of a fill
+                    (true, Some(active_bg)) => container::Style {
+                        background: Some(active_bg.into()),
                         text_color: Some(colors.text),
                         border: iced::Border {
                             color: colors.text_accent,
@@ -147,16 +143,24 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
                             radius: RADIUS_MD.into(),
                         },
                         ..Default::default()
-                    }
-                } else {
-                    container::Style {
+                    },
+                    (true, None) => container::Style {
+                        background: Some(theme.palette().primary.into()),
+                        text_color: Some(theme.palette().background),
+                        border: iced::Border {
+                            radius: RADIUS_MD.into(),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    (false, _) => container::Style {
                         background: Some(colors.tab_inactive_background.into()),
                         border: iced::Border {
                             radius: RADIUS_MD.into(),
                             ..Default::default()
                         },
                         ..Default::default()
-                    }
+                    },
                 }
             });
 
