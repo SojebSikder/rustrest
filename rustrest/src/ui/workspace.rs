@@ -4,14 +4,14 @@ use crate::http_client::HttpMethod;
 use crate::message::{Message, MultilineFieldKind, ResizeKind};
 use crate::ui::context_menu::{FieldTarget, with_context_menu};
 use crate::ui::tokens::{
-    RADIUS_MD, SPACE_SM, SPACE_XL, TEXT_BASE, TEXT_TITLE, icon_button, primary_button,
-    secondary_button, semibold, success_button, tint,
+    RADIUS_MD, SPACE_SM, SPACE_XL, TEXT_BASE, TEXT_TITLE, primary_button, secondary_button,
+    semibold, success_button,
 };
 use crate::ui::unsaved::{tab_is_unsaved, unsaved_dot};
 use iced::widget::{
     Id, Space, button, column, container, mouse_area, row, scrollable, text, text_input,
 };
-use iced::{Alignment, Color, Element, Length};
+use iced::{Alignment, Element, Length};
 
 /// id of the horizontally-scrolling tab strip, used to snap it to the newest tab whenever one is added
 pub fn tab_bar_scroll_id() -> Id {
@@ -119,10 +119,10 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
         }
 
         tab_row = tab_row.push(
-            button(text("×").size(12))
+            button("×")
                 .on_press(Message::CloseTabPressed(idx))
-                .padding([2, 6])
-                .style(icon_button),
+                .padding(2)
+                .style(button::text),
         );
 
         // a plain container so the outer mouse_area's on_press
@@ -133,8 +133,6 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
             .style(move |_theme: &iced::Theme| {
                 let colors = crate::theme::colors();
                 if is_active {
-                    // a theme may supply its own active-tab fill; otherwise the
-                    // active tab sits on the raised surface with an accent border.
                     container::Style {
                         background: Some(
                             colors
@@ -144,7 +142,7 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
                         ),
                         text_color: Some(colors.text),
                         border: iced::Border {
-                            color: tint(colors.text_accent, 0.55),
+                            color: colors.text_accent,
                             width: 1.0,
                             radius: RADIUS_MD.into(),
                         },
@@ -152,13 +150,10 @@ pub fn render_workbench(app: &Rustrest) -> Element<'_, Message> {
                     }
                 } else {
                     container::Style {
-                        text_color: Some(colors.text_muted),
-                        // a transparent 1px border keeps inactive tabs the same
-                        // height as the bordered active one, so nothing shifts
+                        background: Some(colors.tab_inactive_background.into()),
                         border: iced::Border {
-                            color: Color::TRANSPARENT,
-                            width: 1.0,
                             radius: RADIUS_MD.into(),
+                            ..Default::default()
                         },
                         ..Default::default()
                     }

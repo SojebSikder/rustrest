@@ -5,7 +5,7 @@ use crate::app::cloud::CloudModal;
 use crate::message::Message;
 use crate::ui::modal::{card, danger_text_color, muted_text_color};
 use crate::ui::spinner::spinner_with_label;
-use crate::ui::tokens::{RADIUS_MD, RADIUS_SM, chip, semibold, tint};
+use crate::ui::tokens::{RADIUS_SM, chip, semibold, tint};
 use iced::widget::text::Wrapping;
 use iced::widget::{
     Column, Space, button, column, container, pick_list, row, rule, scrollable, text, text_input,
@@ -96,7 +96,7 @@ fn panel<'a>(content: impl Into<Element<'a, Message>>) -> Element<'a, Message> {
                 border: Border {
                     color: colors.border_variant,
                     width: 1.0,
-                    radius: RADIUS_MD.into(),
+                    radius: 8.0.into(),
                 },
                 ..Default::default()
             }

@@ -43,13 +43,15 @@ pub const SPACE_LG: f32 = 12.0;
 pub const SPACE_XL: f32 = 16.0;
 
 // ── Corner radii ──────────────────────────────────────────────────────────
-// Only the three "steps" of corner radius the UI actually uses live here;
+// Only the steps of corner radius the UI actually uses live here;
 // anything that is deliberately a different shape (the window outline, pill
 // badges) keeps its own value at the call site.
 
+/// Corner radius for standard controls (buttons, inputs, dropdowns) - matches iced default (2.0).
+pub const RADIUS_CONTROL: f32 = 2.0;
 /// Corner radius for small elements: badges, menu rows, list rows, chips.
 pub const RADIUS_SM: f32 = 4.0;
-/// Corner radius for standard controls: tabs, buttons, inputs, cards, dropdowns.
+/// Corner radius for standard surfaces: tabs, cards, dropdown menus, modals.
 pub const RADIUS_MD: f32 = 6.0;
 /// Corner radius for large floating surfaces: modals and popovers.
 pub const RADIUS_LG: f32 = 10.0;
@@ -80,27 +82,27 @@ fn with_radius(mut style: button::Style, radius: f32) -> button::Style {
 }
 
 // ── Buttons ───────────────────────────────────────────────────────────────
-// One shape (rounded, `RADIUS_MD`) in four roles. Use these in place of
-// `button::primary` / `button::danger` directly so radii never drift.
+// Standard button roles with default corner radius (2.0, RADIUS_CONTROL)
+// for UI consistency with pick-lists, inputs, and controls across the app.
 
 /// The primary call to action ("Send", "Save"): accent fill, on-accent text.
 pub fn primary_button(theme: &iced::Theme, status: button::Status) -> button::Style {
-    with_radius(button::primary(theme, status), RADIUS_MD)
+    with_radius(button::primary(theme, status), RADIUS_CONTROL)
 }
 
 /// A confirming action ("New Request"): success fill.
 pub fn success_button(theme: &iced::Theme, status: button::Status) -> button::Style {
-    with_radius(button::success(theme, status), RADIUS_MD)
+    with_radius(button::success(theme, status), RADIUS_CONTROL)
 }
 
 /// A destructive action ("Cancel request", deletes): danger fill.
 pub fn danger_button(theme: &iced::Theme, status: button::Status) -> button::Style {
-    with_radius(button::danger(theme, status), RADIUS_MD)
+    with_radius(button::danger(theme, status), RADIUS_CONTROL)
 }
 
 /// A quiet secondary action ("Generate code", "Back to Live"): neutral fill.
 pub fn secondary_button(theme: &iced::Theme, status: button::Status) -> button::Style {
-    with_radius(button::secondary(theme, status), RADIUS_MD)
+    with_radius(button::secondary(theme, status), RADIUS_CONTROL)
 }
 
 /// Style for a pill-style sub-tab button (the Request/Response/Collection
@@ -160,7 +162,7 @@ pub fn icon_button(theme: &iced::Theme, status: button::Status) -> button::Style
             colors.text_muted
         },
         border: Border {
-            radius: RADIUS_SM.into(),
+            radius: RADIUS_CONTROL.into(),
             ..Default::default()
         },
         ..button::text(theme, status)
@@ -254,7 +256,7 @@ pub fn input_style(_theme: &iced::Theme, status: text_input::Status) -> text_inp
     let base = text_input::Style {
         background: colors.editor_background.into(),
         border: Border {
-            radius: RADIUS_MD.into(),
+            radius: RADIUS_CONTROL.into(),
             width: 1.0,
             color: colors.border_variant,
         },

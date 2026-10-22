@@ -1,6 +1,6 @@
 use crate::message::Message;
 use crate::ui::spinner::spinner;
-use crate::ui::tokens::RADIUS_MD;
+use crate::ui::tokens::RADIUS_SM;
 use iced::widget::{button, column, container, row, text};
 use iced::{Alignment, Border, Length};
 use std::time::{Duration, Instant};
@@ -259,7 +259,7 @@ impl ToastManager {
                     border: Border {
                         color: border_color,
                         width: 2.0,
-                        radius: RADIUS_MD.into(),
+                        radius: RADIUS_SM.into(),
                     },
                     text_color: Some(toast_text),
                     ..Default::default()

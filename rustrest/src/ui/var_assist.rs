@@ -530,7 +530,7 @@ impl<Message> VarAssist<'_, Message> {
                                 height: line_height,
                             },
                             border: Border {
-                                radius: RADIUS_SM.into(),
+                                radius: 3.0.into(),
                                 ..Border::default()
                             },
                             ..renderer::Quad::default()
@@ -1192,7 +1192,7 @@ impl<Message> overlay::Overlay<Message, Theme, Renderer> for AssistOverlay<'_, '
                         renderer::Quad {
                             bounds: badge,
                             border: Border {
-                                radius: RADIUS_SM.into(),
+                                radius: 3.0.into(),
                                 ..Border::default()
                             },
                             ..renderer::Quad::default()
