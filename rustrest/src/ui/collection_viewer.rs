@@ -8,12 +8,16 @@ use crate::ui::modal::muted_text_color;
 use crate::ui::script_editor::script_editor;
 use crate::ui::tab::types::ScriptTab;
 use crate::ui::tab::{AuthFormContext, render_auth_form};
+use crate::ui::tokens::{
+    SPACE_LG, SPACE_MD, SPACE_XL, TEXT_BODY, TEXT_TITLE, icon_button, secondary_button,
+    subtab_style,
+};
 use iced::widget::{button, checkbox, column, container, radio, row, scrollable, text, text_input};
 use iced::{Alignment, Element, Length, Theme};
 
 fn hint(label: &str) -> Element<'_, Message> {
     text(label)
-        .size(12)
+        .size(TEXT_BODY)
         .style(|theme: &Theme| text::Style {
             color: Some(muted_text_color(theme)),
         })
@@ -25,49 +29,10 @@ fn collection_tab_btn<'a>(
     target: CollectionSubTab,
     is_active: bool,
 ) -> iced::widget::Button<'a, Message, Theme, iced::Renderer> {
-    button(text(label).size(12).font(iced::Font {
-        weight: if is_active {
-            iced::font::Weight::Bold
-        } else {
-            iced::font::Weight::Normal
-        },
-        ..iced::Font::DEFAULT
-    }))
-    .padding([5, 12])
-    .style(move |theme: &iced::Theme, status| {
-        let colors = crate::theme::colors();
-        if is_active {
-            button::Style {
-                background: Some(
-                    iced::Color::from_rgba(
-                        colors.text_accent.r,
-                        colors.text_accent.g,
-                        colors.text_accent.b,
-                        0.12,
-                    )
-                    .into(),
-                ),
-                text_color: colors.text_accent,
-                border: iced::Border {
-                    radius: 4.0.into(),
-                    width: 1.0,
-                    color: iced::Color::from_rgba(
-                        colors.text_accent.r,
-                        colors.text_accent.g,
-                        colors.text_accent.b,
-                        0.35,
-                    ),
-                },
-                ..button::text(theme, status)
-            }
-        } else {
-            button::Style {
-                text_color: colors.text_muted,
-                ..button::text(theme, status)
-            }
-        }
-    })
-    .on_press(Message::CollectionSubTabSelected(target))
+    button(text(label).size(TEXT_BODY))
+        .padding([5, 12])
+        .style(subtab_style(is_active))
+        .on_press(Message::CollectionSubTabSelected(target))
 }
 
 /// Authorization sub-tab: the auth every request set to "Inherit auth from
@@ -102,7 +67,7 @@ fn render_collection_auth<'a>(
             ),
             form,
         ]
-        .spacing(14),
+        .spacing(SPACE_LG),
     )
     .height(Length::Fill)
     .into()
@@ -113,7 +78,7 @@ fn render_collection_scripts<'a>(
     collection_id: usize,
     settings: &'a CollectionSettingsState,
 ) -> Element<'a, Message> {
-    let mut radio_bar = row![].spacing(15).align_y(Alignment::Center);
+    let mut radio_bar = row![].spacing(SPACE_XL).align_y(Alignment::Center);
     for variant in ScriptTab::ALL {
         radio_bar = radio_bar.push(radio(
             variant.label(),
@@ -143,7 +108,7 @@ fn render_collection_scripts<'a>(
     );
 
     column![radio_bar, hint(note), editor]
-        .spacing(10)
+        .spacing(SPACE_MD)
         .height(Length::Fill)
         .into()
 }
@@ -186,7 +151,7 @@ pub fn render_collection_root<'a>(
             *active_sub_tab == CollectionSubTab::Scripts,
         ),
     ]
-    .spacing(8);
+    .spacing(SPACE_MD);
 
     if is_git_backed {
         tabs_nav = tabs_nav.push(collection_tab_btn(
@@ -215,10 +180,10 @@ pub fn render_collection_root<'a>(
                         text("Current Value").width(Length::FillPortion(3)),
                         text("Actions").width(Length::Shrink),
                     ]
-                    .spacing(10)
+                    .spacing(SPACE_MD)
                     .padding(5)
                 ]
-                .spacing(10);
+                .spacing(SPACE_MD);
 
             if let Some(col) = target_collection {
                 if let Some(ref variables) = col.variable {
@@ -277,15 +242,15 @@ pub fn render_collection_root<'a>(
                                     val_str.clone(),
                                 ),
                             ),
-                            button(text("\u{2715}").size(12))
+                            button(text("\u{2715}").size(TEXT_BODY))
                                 .padding([4, 8])
-                                .style(button::text)
+                                .style(icon_button)
                                 .on_press(Message::DeleteCollectionVariablePressed(
                                     collection_id,
                                     idx,
                                 )),
                         ]
-                        .spacing(10)
+                        .spacing(SPACE_MD)
                         .align_y(Alignment::Center);
 
                         vars_column = vars_column.push(row_item);
@@ -297,10 +262,11 @@ pub fn render_collection_root<'a>(
                 scrollable(vars_column)
                     .id(collection_vars_id(collection_id))
                     .height(Length::FillPortion(4)),
-                button(text("+ Add Variable"))
+                button(text("+ Add Variable").size(TEXT_BODY))
                     .on_press(Message::AddCollectionVariablePressed(collection_id))
+                    .style(secondary_button)
             ]
-            .spacing(15)
+            .spacing(SPACE_XL)
             .into()
         }
         CollectionSubTab::Documentation => match docs {
@@ -332,15 +298,17 @@ pub fn render_collection_root<'a>(
     };
 
     column![
-        text(collection_name.to_string()).size(28),
+        text(collection_name.to_string())
+            .size(TEXT_TITLE)
+            .font(crate::ui::tokens::semibold()),
         tabs_nav,
         container(content_pane)
-            .padding(10)
+            .padding(SPACE_MD)
             .width(Length::Fill)
             .height(Length::Fill)
     ]
-    .spacing(20)
-    .padding(20)
+    .spacing(SPACE_XL)
+    .padding(SPACE_XL)
     .width(Length::Fill)
     .height(Length::Fill)
     .into()
@@ -354,25 +322,27 @@ pub fn render_folder_root<'a>(
 ) -> Element<'a, Message, Theme, iced::Renderer> {
     let collection = app.collections.iter().find(|c| c.id == docs.collection_id);
     column![
-        text(folder_name.to_string()).size(28),
+        text(folder_name.to_string())
+            .size(TEXT_TITLE)
+            .font(crate::ui::tokens::semibold()),
         row![collection_tab_btn(
             "Docs",
             CollectionSubTab::Documentation,
             true
         )]
-        .spacing(10),
+        .spacing(SPACE_MD),
         container(crate::ui::docs_view::view(
             docs,
             collection,
             &app.theme.active.iced,
             Message::Docs,
         ))
-        .padding(10)
+        .padding(SPACE_MD)
         .width(Length::Fill)
         .height(Length::Fill)
     ]
-    .spacing(20)
-    .padding(20)
+    .spacing(SPACE_XL)
+    .padding(SPACE_XL)
     .width(Length::Fill)
     .height(Length::Fill)
     .into()

@@ -37,6 +37,7 @@ use crate::ui::settings::view_settings_modal;
 use crate::ui::titlebar::{
     TITLEBAR_HEIGHT, render_titlebar, render_window_border, render_window_resize_handles,
 };
+use crate::ui::tokens::{SPACE_LG, SPACE_MD};
 use crate::ui::tooltip::with_tooltip;
 use app::Rustrest;
 use iced::futures::{SinkExt, StreamExt, stream::BoxStream};
@@ -661,7 +662,7 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
         top: 0.0,
         left: 0.0,
         right: 0.0,
-        bottom: 10.0,
+        bottom: SPACE_MD,
     });
 
     let sidebar = ui::sidebar::render_sidebar(app);
@@ -678,7 +679,7 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
     );
 
     let mut workbench_column = column![workbench]
-        .spacing(10)
+        .spacing(SPACE_MD)
         .width(Length::Fill)
         .height(Length::Fill);
 
@@ -694,7 +695,7 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
         .height(Length::Fixed(app.layout.console_panel_height))
         .width(Length::Fill)
         .padding(10)
-        .style(container::bordered_box);
+        .style(crate::ui::tokens::card_surface);
 
         workbench_column = workbench_column
             .push(console_resize_handle)
@@ -702,7 +703,7 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
     }
 
     let mut content_row = row![sidebar, sidebar_resize_handle, workbench_column]
-        .spacing(10)
+        .spacing(SPACE_MD)
         .width(Length::Fill)
         .height(Length::Fill);
 
@@ -720,7 +721,7 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
         .width(Length::Fixed(app.plugins.right_panel_width))
         .height(Length::Fill)
         .padding(10)
-        .style(container::bordered_box);
+        .style(crate::ui::tokens::card_surface);
 
         content_row = content_row
             .push(right_panel_resize_handle)
@@ -735,12 +736,12 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
     let status_bar = ui::status_bar::render_status_bar(app);
 
     let base_layout = column![top_bar, content_row, status_bar]
-        .spacing(8)
+        .spacing(SPACE_MD)
         .padding(Padding {
-            top: TITLEBAR_HEIGHT + 8.0,
-            left: 15.0,
-            bottom: 15.0,
-            right: 15.0,
+            top: TITLEBAR_HEIGHT + SPACE_MD,
+            left: SPACE_LG,
+            bottom: SPACE_LG,
+            right: SPACE_LG,
         })
         .width(Length::Fill)
         .height(Length::Fill);

@@ -7,6 +7,10 @@ use crate::message::{KvValueField, MultilineFieldKind};
 use crate::ui::context_menu::{TabFieldTarget, with_context_menu};
 use crate::ui::multiline_input::multiline_input;
 use crate::ui::script_editor::script_editor;
+use crate::ui::tokens::{
+    SPACE_LG, SPACE_MD, SPACE_SM, SPACE_XL, TEXT_BASE, TEXT_BODY, danger_button, editor_surface,
+    primary_button, secondary_button, semibold, subtab_style,
+};
 use crate::ui::var_assist::var_input;
 use iced::widget::{button, column, container, pick_list, radio, row, text, text_input};
 use iced::{Alignment, Element, Font, Length};
@@ -89,27 +93,21 @@ where
     );
 
     let send_btn = if tab.is_loading {
-        button(text("Cancel").size(13).font(Font {
-            weight: iced::font::Weight::Bold,
-            ..Font::DEFAULT
-        }))
-        .on_press(wrap_msg(TabMessage::CancelRequest))
-        .style(button::danger)
-        .padding([8, 18])
+        button(text("Cancel").size(TEXT_BASE).font(semibold()))
+            .on_press(wrap_msg(TabMessage::CancelRequest))
+            .style(danger_button)
+            .padding([8, 18])
     } else {
-        button(text("Send").size(13).font(Font {
-            weight: iced::font::Weight::Bold,
-            ..Font::DEFAULT
-        }))
-        .on_press(on_send)
-        .style(button::primary)
-        .padding([8, 20])
+        button(text("Send").size(TEXT_BASE).font(semibold()))
+            .on_press(on_send)
+            .style(primary_button)
+            .padding([8, 20])
     };
 
     let code_btn = crate::ui::tooltip::with_tooltip(
-        button(text("</>").size(13).font(Font::MONOSPACE))
+        button(text("</>").size(TEXT_BASE).font(Font::MONOSPACE))
             .on_press(wrap_msg(TabMessage::GenerateCode))
-            .style(button::secondary)
+            .style(secondary_button)
             .padding([8, 12]),
         "Generate code (cURL, ...)",
         iced::widget::tooltip::Position::Bottom,
@@ -136,63 +134,13 @@ where
     Message: Clone + 'static,
 {
     let tab_id = tab.id;
-    let mut sub_tab_bar = row![].spacing(6);
+    let mut sub_tab_bar = row![].spacing(SPACE_SM).align_y(Alignment::Center);
     for variant in RequestSubTab::ALL.iter() {
         let is_sub_active = tab.active_sub_tab == *variant;
         let variant_clone = *variant;
-        let sub_btn = button(text(variant.name()).size(12).font(Font {
-            weight: if is_sub_active {
-                iced::font::Weight::Bold
-            } else {
-                iced::font::Weight::Normal
-            },
-            ..Font::DEFAULT
-        }))
-        .padding([5, 12])
-        .style(move |theme: &iced::Theme, status| {
-            let colors = crate::theme::colors();
-            if is_sub_active {
-                button::Style {
-                    background: Some(
-                        iced::Color::from_rgba(
-                            colors.text_accent.r,
-                            colors.text_accent.g,
-                            colors.text_accent.b,
-                            0.12,
-                        )
-                        .into(),
-                    ),
-                    text_color: colors.text_accent,
-                    border: iced::Border {
-                        radius: 6.0.into(),
-                        width: 1.0,
-                        color: iced::Color::from_rgba(
-                            colors.text_accent.r,
-                            colors.text_accent.g,
-                            colors.text_accent.b,
-                            0.35,
-                        ),
-                    },
-                    ..Default::default()
-                }
-            } else {
-                match status {
-                    button::Status::Hovered => button::Style {
-                        background: Some(iced::Background::Color(colors.element_hover)),
-                        text_color: colors.text,
-                        border: iced::Border {
-                            radius: 6.0.into(),
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    },
-                    _ => button::Style {
-                        text_color: colors.text_muted,
-                        ..button::text(theme, status)
-                    },
-                }
-            }
-        });
+        let sub_btn = button(text(variant.name()).size(TEXT_BODY))
+            .padding([5, 12])
+            .style(subtab_style(is_sub_active));
 
         let sub_btn = if is_sub_active {
             sub_btn
@@ -287,7 +235,7 @@ where
         ),
 
         RequestSubTab::Body => {
-            let mut radio_bar = row![].spacing(15).align_y(Alignment::Center);
+            let mut radio_bar = row![].spacing(SPACE_LG).align_y(Alignment::Center);
             for variant in BodyType::ALL.iter() {
                 let radio_btn = radio(variant.label(), *variant, Some(tab.body_type), move |b| {
                     wrap_msg(TabMessage::BodyTypeChanged(b))
@@ -387,12 +335,9 @@ where
                         on_multiline_resize_start(MultilineFieldKind::RawBody(tab_id)),
                     );
 
-                    column![
-                        raw_dropdown,
-                        container(editor).style(container::bordered_box)
-                    ]
-                    .spacing(10)
-                    .into()
+                    column![raw_dropdown, container(editor).style(editor_surface)]
+                        .spacing(SPACE_MD)
+                        .into()
                 }
 
                 BodyType::GraphQl => {
@@ -427,26 +372,26 @@ where
                     );
 
                     let query_pane = column![
-                        text("Query").size(12),
-                        container(query_editor).style(container::bordered_box),
+                        text("Query").size(TEXT_BODY),
+                        container(query_editor).style(editor_surface),
                     ]
-                    .spacing(6)
+                    .spacing(SPACE_SM)
                     .width(Length::FillPortion(3));
 
                     let variables_pane = column![
-                        text("Variables (JSON)").size(12),
-                        container(variables_editor).style(container::bordered_box),
+                        text("Variables (JSON)").size(TEXT_BODY),
+                        container(variables_editor).style(editor_surface),
                     ]
-                    .spacing(6)
+                    .spacing(SPACE_SM)
                     .width(Length::FillPortion(2));
 
-                    row![query_pane, variables_pane].spacing(12).into()
+                    row![query_pane, variables_pane].spacing(SPACE_LG).into()
                 }
 
                 BodyType::Binary => {
-                    let select_file_btn = button(text("Select File").size(13))
+                    let select_file_btn = button(text("Select File").size(TEXT_BASE))
                         .padding([7, 16])
-                        .style(button::secondary)
+                        .style(secondary_button)
                         .on_press(wrap_msg(TabMessage::SelectBinaryFile));
 
                     let file_info = if let Some(path) = &tab.binary_file_path {
@@ -457,17 +402,17 @@ where
 
                     container(
                         row![select_file_btn, file_info]
-                            .spacing(15)
+                            .spacing(SPACE_LG)
                             .align_y(Alignment::Center),
                     )
-                    .padding(20)
-                    .style(container::bordered_box)
+                    .padding(SPACE_XL)
+                    .style(editor_surface)
                     .width(Length::Fill)
                     .into()
                 }
             };
 
-            column![radio_bar, body_input].spacing(10).into()
+            column![radio_bar, body_input].spacing(SPACE_MD).into()
         }
 
         RequestSubTab::Docs => {
@@ -492,13 +437,13 @@ where
                     },
                 ),
             ]
-            .spacing(10)
+            .spacing(SPACE_MD)
             .height(Length::Fill)
             .into()
         }
 
         RequestSubTab::Scripts => {
-            let mut radio_bar = row![].spacing(15).align_y(Alignment::Center);
+            let mut radio_bar = row![].spacing(SPACE_LG).align_y(Alignment::Center);
             for variant in ScriptTab::ALL.iter() {
                 let radio_btn = radio(variant.label(), *variant, Some(tab.script_tab), move |s| {
                     wrap_msg(TabMessage::ScriptTabChanged(s))
@@ -526,11 +471,13 @@ where
             };
 
             column![radio_bar, script_input]
-                .spacing(10)
+                .spacing(SPACE_MD)
                 .height(Length::Fill)
                 .into()
         }
     };
 
-    column![sub_tab_bar, inner_input_field].spacing(10).into()
+    column![sub_tab_bar, inner_input_field]
+        .spacing(SPACE_MD)
+        .into()
 }

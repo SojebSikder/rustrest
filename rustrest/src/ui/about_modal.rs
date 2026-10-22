@@ -1,5 +1,9 @@
 use crate::message::Message;
 use crate::ui::modal::{card, muted_text_color};
+use crate::ui::tokens::{
+    SPACE_LG, SPACE_MD, SPACE_XL, TEXT_BASE, TEXT_BODY, TEXT_TITLE, primary_button,
+    secondary_button, semibold,
+};
 use crate::{APP_NAME, APP_VERSION};
 use iced::widget::{button, column, container, row, text, text_editor};
 use iced::{Element, Font, Length, Theme};
@@ -35,12 +39,11 @@ pub fn about_info() -> String {
 
 pub fn view_about_modal(state: &AboutModalState) -> Element<'_, Message> {
     let title = column![
-        text(format!("About {APP_NAME}")).size(18).font(Font {
-            weight: iced::font::Weight::Bold,
-            ..Font::DEFAULT
-        }),
+        text(format!("About {APP_NAME}"))
+            .size(TEXT_TITLE)
+            .font(semibold()),
         text("API Testing Platform")
-            .size(12)
+            .size(TEXT_BODY)
             .style(|theme: &Theme| text::Style {
                 color: Some(muted_text_color(theme)),
             }),
@@ -50,27 +53,27 @@ pub fn view_about_modal(state: &AboutModalState) -> Element<'_, Message> {
     let info = text_editor(&state.content)
         .on_action(Message::AboutModalAction)
         .font(Font::MONOSPACE)
-        .size(13)
-        .padding(12);
+        .size(TEXT_BASE)
+        .padding(SPACE_LG);
 
-    let copy_btn = button(text("Copy").size(14))
+    let copy_btn = button(text("Copy").size(TEXT_BASE))
         .on_press(Message::CopyToClipboard(state.content.text()))
         .padding([8, 16])
-        .style(button::primary);
+        .style(primary_button);
 
-    let close_btn = button(text("Close").size(14))
+    let close_btn = button(text("Close").size(TEXT_BASE))
         .on_press(Message::CloseAboutModal)
         .padding([8, 16])
-        .style(button::secondary);
+        .style(secondary_button);
 
     let body = column![
         title,
         info,
-        container(row![copy_btn, close_btn].spacing(8))
+        container(row![copy_btn, close_btn].spacing(SPACE_MD))
             .width(Length::Fill)
             .align_x(iced::alignment::Horizontal::Right),
     ]
-    .spacing(16)
+    .spacing(SPACE_XL)
     .padding(24);
 
     card(body, 480.0)

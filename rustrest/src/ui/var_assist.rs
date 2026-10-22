@@ -4,6 +4,7 @@
 
 use crate::collection::env::replace_vars_in;
 use crate::ui::tab::types::KeyValuePair;
+use crate::ui::tokens::{RADIUS_MD, RADIUS_SM, tint};
 use iced::advanced::layout::{self, Layout};
 use iced::advanced::text::{self as adv_text, Paragraph as _, Renderer as _};
 use iced::advanced::widget::{Operation, Tree, tree};
@@ -534,7 +535,7 @@ impl<Message> VarAssist<'_, Message> {
                             },
                             ..renderer::Quad::default()
                         },
-                        Color { a: 0.14, ..color },
+                        tint(color, 0.14),
                     );
                     renderer.fill_text(
                         adv_text::Text {
@@ -1092,7 +1093,7 @@ fn panel(renderer: &mut Renderer, bounds: Rectangle) {
         renderer::Quad {
             bounds,
             border: Border {
-                radius: 6.0.into(),
+                radius: RADIUS_MD.into(),
                 width: 1.0,
                 color: colors.border,
             },
@@ -1169,7 +1170,7 @@ impl<Message> overlay::Overlay<Message, Theme, Renderer> for AssistOverlay<'_, '
                             renderer::Quad {
                                 bounds: row_bounds,
                                 border: Border {
-                                    radius: 4.0.into(),
+                                    radius: RADIUS_SM.into(),
                                     ..Border::default()
                                 },
                                 ..renderer::Quad::default()
@@ -1196,10 +1197,7 @@ impl<Message> overlay::Overlay<Message, Theme, Renderer> for AssistOverlay<'_, '
                             },
                             ..renderer::Quad::default()
                         },
-                        Color {
-                            a: 0.2,
-                            ..source_color
-                        },
+                        tint(source_color, 0.2),
                     );
                     renderer.fill_text(
                         adv_text::Text {

@@ -229,6 +229,8 @@ pub enum Message {
     // sidebar multi-select (Ctrl/Cmd-click toggle, Shift-click range) + batch ops
     SidebarItemToggleSelect(SidebarItemKey),
     SidebarItemRangeSelect(SidebarItemKey),
+    /// the sidebar row the cursor is currently over, for hover highlighting
+    SidebarItemHovered(Option<SidebarItemKey>),
     ClearSidebarSelection,
     BatchDeleteSelectedPressed,
     BatchDeleteConfirmed,

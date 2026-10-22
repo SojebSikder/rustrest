@@ -1,3 +1,4 @@
+use crate::ui::tokens::{RADIUS_MD, RADIUS_SM, tint};
 use iced::widget::{Space, button, column, container, opaque, row, text};
 use iced::{Border, Color, Element, Length, Padding, Shadow, Vector, alignment};
 
@@ -111,6 +112,84 @@ pub fn menu_button_width(title: &str) -> f32 {
     (text_width + 28.0_f32).max(44.0).ceil()
 }
 
+/// Style for the floating panel that hosts a menu or context dropdown: elevated
+/// surface, hairline border, rounded corners and a soft drop shadow.
+pub fn panel_style(_theme: &iced::Theme) -> container::Style {
+    let colors = crate::theme::colors();
+    container::Style {
+        background: Some(colors.elevated_surface_background.into()),
+        text_color: Some(colors.text),
+        border: Border {
+            color: colors.border_variant,
+            width: 1.0,
+            radius: RADIUS_MD.into(),
+        },
+        shadow: Shadow {
+            color: Color::from_rgba(0.0, 0.0, 0.0, 0.38),
+            offset: Vector::new(0.0, 6.0),
+            blur_radius: 20.0,
+        },
+        ..Default::default()
+    }
+}
+
+/// Style for a dropdown row: the same rounded shape in every state, with a soft
+/// accent wash on hover/press so the targeted row reads clearly.
+pub fn item_style(theme: &iced::Theme, status: button::Status) -> button::Style {
+    let colors = crate::theme::colors();
+    let highlighted = matches!(status, button::Status::Hovered | button::Status::Pressed);
+    button::Style {
+        background: if highlighted {
+            Some(tint(colors.text_accent, 0.12).into())
+        } else {
+            None
+        },
+        text_color: if highlighted {
+            colors.text_accent
+        } else {
+            colors.text
+        },
+        border: Border {
+            radius: RADIUS_SM.into(),
+            ..Default::default()
+        },
+        ..button::text(theme, status)
+    }
+}
+
+/// Style for a top-level menu-bar button: the open group is filled with an
+/// accent wash, any other group gets a subtle neutral wash on hover.
+fn header_style(is_open: bool, theme: &iced::Theme, status: button::Status) -> button::Style {
+    let colors = crate::theme::colors();
+    if is_open {
+        button::Style {
+            background: Some(tint(colors.text_accent, 0.15).into()),
+            text_color: colors.text_accent,
+            border: Border {
+                radius: RADIUS_SM.into(),
+                width: 1.0,
+                color: tint(colors.text_accent, 0.35),
+            },
+            ..button::text(theme, status)
+        }
+    } else {
+        let hovered = matches!(status, button::Status::Hovered | button::Status::Pressed);
+        button::Style {
+            background: if hovered {
+                Some(colors.element_hover.into())
+            } else {
+                None
+            },
+            text_color: colors.text,
+            border: Border {
+                radius: RADIUS_SM.into(),
+                ..Default::default()
+            },
+            ..button::text(theme, status)
+        }
+    }
+}
+
 /// renders the floating dropdown overlay panel if one is open.
 pub fn render_menu_overlay<'a, T: 'static + Clone>(
     state: &DropdownMenuState,
@@ -124,95 +203,53 @@ pub fn render_menu_overlay<'a, T: 'static + Clone>(
     for item in &target_group.items {
         if item.is_separator {
             items_column = items_column.push(
-                container(Space::new().height(1))
-                    .width(Length::Fill)
-                    .height(Length::Fixed(1.0))
-                    .padding(Padding::from([3, 4]))
-                    .style(|_theme: &iced::Theme| container::Style {
-                        background: Some(crate::theme::colors().border_variant.into()),
-                        ..Default::default()
-                    }),
+                container(
+                    container(Space::new())
+                        .width(Length::Fill)
+                        .height(Length::Fixed(1.0))
+                        .style(|_theme: &iced::Theme| container::Style {
+                            background: Some(crate::theme::colors().border_variant.into()),
+                            ..Default::default()
+                        }),
+                )
+                .width(Length::Fill)
+                .padding(Padding::from([4, 6])),
             );
             continue;
         }
 
-        let mut item_row = row![text(item.label.clone()).size(13)]
+        let Some(action) = item.action.clone() else {
+            continue;
+        };
+
+        let mut content = row![text(item.label.clone()).size(13)]
             .width(Length::Fill)
-            .spacing(16)
+            .spacing(8)
             .align_y(alignment::Vertical::Center);
 
+        // a filler keeps every shortcut pinned to the same right edge
         if let Some(shortcut) = &item.shortcut {
-            item_row = item_row.push(
+            content = content.push(Space::new().width(Length::Fill));
+            content = content.push(
                 text(shortcut.clone())
                     .size(11)
                     .color(crate::theme::colors().text_muted),
             );
         }
 
-        if let Some(action) = &item.action {
-            let action_clone = action.clone();
-            items_column = items_column.push(
-                button(item_row)
-                    .width(Length::Fill)
-                    .padding([5, 10])
-                    .style(|theme: &iced::Theme, status| {
-                        let colors = crate::theme::colors();
-                        match status {
-                            iced::widget::button::Status::Hovered
-                            | iced::widget::button::Status::Pressed => button::Style {
-                                background: Some(
-                                    Color::from_rgba(
-                                        colors.text_accent.r,
-                                        colors.text_accent.g,
-                                        colors.text_accent.b,
-                                        0.12,
-                                    )
-                                    .into(),
-                                ),
-                                text_color: colors.text_accent,
-                                border: Border {
-                                    radius: 4.0.into(),
-                                    ..Default::default()
-                                },
-                                ..button::text(theme, status)
-                            },
-                            _ => button::Style {
-                                text_color: colors.text,
-                                border: Border {
-                                    radius: 4.0.into(),
-                                    ..Default::default()
-                                },
-                                ..button::text(theme, status)
-                            },
-                        }
-                    })
-                    .on_press(DropdownMessage::TriggerAction(action_clone)),
-            );
-        }
+        items_column = items_column.push(
+            button(content)
+                .width(Length::Fill)
+                .padding([6, 10])
+                .style(item_style)
+                .on_press(DropdownMessage::TriggerAction(action)),
+        );
     }
 
-    let dropdown_panel =
-        container(items_column)
-            .width(230)
-            .padding(5)
-            .style(|_theme: &iced::Theme| {
-                let colors = crate::theme::colors();
-                container::Style {
-                    background: Some(colors.elevated_surface_background.into()),
-                    text_color: Some(colors.text),
-                    border: Border {
-                        color: colors.border_variant,
-                        width: 1.0,
-                        radius: 6.0.into(),
-                    },
-                    shadow: Shadow {
-                        color: Color::from_rgba(0.0, 0.0, 0.0, 0.38),
-                        offset: Vector::new(0.0, 6.0),
-                        blur_radius: 20.0,
-                    },
-                    ..Default::default()
-                }
-            });
+    let dropdown_panel = container(items_column)
+        .width(230)
+        .padding(6)
+        .style(panel_style);
 
     // Compute cumulative horizontal offset matching each header button's position
     let mut horizontal_offset: f32 = 8.0;
@@ -243,58 +280,15 @@ pub fn render_menu_bar<'a, T: 'static + Clone>(
     for (group_idx, group) in groups.iter().enumerate() {
         let is_open = state.open_index == Some(group_idx);
         let button_w = menu_button_width(&group.title);
-        let header_button = button(
-            container(text(group.title.clone()).size(13).font(iced::Font {
-                weight: if is_open {
-                    iced::font::Weight::Bold
-                } else {
-                    iced::font::Weight::Normal
-                },
-                ..iced::Font::DEFAULT
-            }))
+        let header_label = container(text(group.title.clone()).size(13))
             .width(Length::Fill)
-            .align_x(alignment::Horizontal::Center),
-        )
-        .width(Length::Fixed(button_w))
-        .padding([4, 10])
-        .style(move |theme: &iced::Theme, status| {
-            let colors = crate::theme::colors();
-            if is_open {
-                button::Style {
-                    background: Some(
-                        Color::from_rgba(
-                            colors.text_accent.r,
-                            colors.text_accent.g,
-                            colors.text_accent.b,
-                            0.15,
-                        )
-                        .into(),
-                    ),
-                    text_color: colors.text_accent,
-                    border: Border {
-                        radius: 4.0.into(),
-                        width: 1.0,
-                        color: Color::from_rgba(
-                            colors.text_accent.r,
-                            colors.text_accent.g,
-                            colors.text_accent.b,
-                            0.35,
-                        ),
-                    },
-                    ..button::text(theme, status)
-                }
-            } else {
-                button::Style {
-                    text_color: colors.text,
-                    border: Border {
-                        radius: 4.0.into(),
-                        ..Default::default()
-                    },
-                    ..button::text(theme, status)
-                }
-            }
-        })
-        .on_press(DropdownMessage::Toggle(group_idx));
+            .align_x(alignment::Horizontal::Center);
+
+        let header_button = button(header_label)
+            .width(Length::Fixed(button_w))
+            .padding([5, 10])
+            .style(move |theme, status| header_style(is_open, theme, status))
+            .on_press(DropdownMessage::Toggle(group_idx));
 
         menu_row = menu_row.push(header_button);
     }

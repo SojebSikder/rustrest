@@ -3,6 +3,7 @@
 
 use crate::app::Rustrest;
 use crate::message::Message;
+use crate::ui::tokens::tint;
 use iced::widget::{Space, button, column, container, mouse_area, row, stack, text};
 use iced::{Alignment, Border, Color, Element, Length, Padding};
 
@@ -21,8 +22,8 @@ pub fn render_titlebar<'a>(
     let colors = crate::theme::colors();
 
     // ── Right: window controls ─────────────────────────────────────────────────
-    let neutral_hover = Color::from_rgba(colors.text.r, colors.text.g, colors.text.b, 0.12);
-    let neutral_pressed = Color::from_rgba(colors.text.r, colors.text.g, colors.text.b, 0.22);
+    let neutral_hover = tint(colors.text, 0.12);
+    let neutral_pressed = tint(colors.text, 0.22);
     let close_hover = Color::from_rgba(0.86, 0.21, 0.27, 0.90);
     let close_pressed = Color::from_rgba(0.72, 0.15, 0.20, 0.95);
 

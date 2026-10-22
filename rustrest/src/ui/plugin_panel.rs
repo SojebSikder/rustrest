@@ -2,6 +2,7 @@
 
 use crate::message::Message;
 use crate::ui::context_menu::with_context_menu;
+use crate::ui::modal::muted_text_color;
 use iced::widget::{
     Id, Space, button, checkbox, column, container, markdown, pick_list, row, scrollable, text,
     text_input,
@@ -116,7 +117,9 @@ fn styled_text<'a>(
 
     match style.tone.unwrap_or(default_tone) {
         TextTone::Default => widget,
-        TextTone::Muted => widget.style(text::secondary),
+        TextTone::Muted => widget.style(|theme: &Theme| text::Style {
+            color: Some(muted_text_color(theme)),
+        }),
         TextTone::Primary => widget.style(text::primary),
         TextTone::Success => widget.style(text::success),
         TextTone::Warning => widget.style(text::warning),

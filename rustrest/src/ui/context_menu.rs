@@ -1,6 +1,7 @@
 use crate::app::Rustrest;
 use crate::http_client::HttpMethod;
 use crate::message::{Message, SidebarItemKey};
+use crate::ui::menu::menu::{item_style, panel_style};
 use crate::ui::script_editor::ScriptEditorEvent;
 use crate::ui::tab::messages::{TabMessage, ValueField};
 use crate::ui::tab::types::{FormDataRow, KeyValuePair};
@@ -494,23 +495,18 @@ fn render_dropdown<'a, S: Into<String>>(options: Vec<(S, Message)>) -> Element<'
 
     for (label, message) in options {
         menu = menu.push(
-            button(
-                text(label.into())
-                    .size(12)
-                    .width(Length::Fill)
-                    .style(text::primary),
-            )
-            .on_press(message)
-            .padding([4, 8])
-            .style(button::text)
-            .width(Length::Fill),
+            button(text(label.into()).size(13))
+                .on_press(message)
+                .padding([6, 10])
+                .style(item_style)
+                .width(Length::Fill),
         );
     }
 
     container(menu)
-        .padding(4)
-        .width(Length::Fixed(140.0))
-        .style(container::bordered_box)
+        .padding(6)
+        .width(Length::Fixed(210.0))
+        .style(panel_style)
         .into()
 }
 
