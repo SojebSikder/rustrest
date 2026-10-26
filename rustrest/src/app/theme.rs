@@ -142,6 +142,7 @@ pub fn files_changed(app: &mut Rustrest, paths: Vec<PathBuf>) -> Task<Message> {
             app.theme.overrides = settings.theme_overrides;
             app.settings.close_on_outside_click = settings.close_on_outside_click;
             app.settings.show_form_data_content_type = settings.show_form_data_content_type;
+            super::settings::apply_proxy(app, settings.proxy);
         }
     }
 

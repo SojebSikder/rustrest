@@ -6675,7 +6675,7 @@ dependencies = [
 
 [[package]]
 name = "rustrest"
-version = "0.1.25"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "dirs",
@@ -6775,19 +6775,23 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "http",
+ "hyper-util",
  "prost",
  "prost-reflect",
  "prost-types",
  "protox",
+ "rustrest-core",
  "serde_json",
  "tokio",
  "tokio-stream",
  "tonic",
+ "tower 0.5.3",
+ "url",
 ]
 
 [[package]]
 name = "rustrest-js-lsp"
-version = "0.1.25"
+version = "0.2.0"
 dependencies = [
  "lsp-server",
  "lsp-types",
@@ -6849,7 +6853,7 @@ dependencies = [
 
 [[package]]
 name = "rustrest-remote-agent"
-version = "0.1.25"
+version = "0.2.0"
 dependencies = [
  "rustrest-remote-protocol",
  "tokio",
@@ -6902,6 +6906,7 @@ dependencies = [
  "rustrest-core",
  "tokio",
  "tokio-tungstenite",
+ "url",
 ]
 
 [[package]]

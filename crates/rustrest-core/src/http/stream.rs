@@ -101,17 +101,38 @@ pub async fn open_stream(
         .port_or_known_default()
         .unwrap_or(if scheme_https { 443 } else { 80 });
 
+    let proxy = super::proxy::for_url(url);
+
     let connect_fut = async {
-        let mut addrs = tokio::net::lookup_host((host.as_str(), port))
+        let (dial_host, dial_port) = match &proxy {
+            Some(p) => (p.host.as_str(), p.port),
+            None => (host.as_str(), port),
+        };
+        let mut addrs = tokio::net::lookup_host((dial_host, dial_port))
             .await
             .map_err(|e| format!("DNS Lookup Error: {}", e))?;
-        let addr = addrs
-            .next()
-            .ok_or_else(|| format!("DNS Lookup Error: no addresses found for host '{}'", host))?;
-        let tcp_stream = TcpStream::connect(addr)
-            .await
-            .map_err(|e| format!("TCP Handshake Error: {}", e))?;
+        let addr = addrs.next().ok_or_else(|| {
+            format!(
+                "DNS Lookup Error: no addresses found for host '{}'",
+                dial_host
+            )
+        })?;
+        let mut tcp_stream = TcpStream::connect(addr).await.map_err(|e| match &proxy {
+            Some(_) => format!(
+                "Proxy Connection Error ({}:{}): {}",
+                dial_host, dial_port, e
+            ),
+            None => format!("TCP Handshake Error: {}", e),
+        })?;
+
         let _ = tcp_stream.set_nodelay(true);
+        // everything but plain http via an HTTP proxy is tunnelled
+        if let Some(p) = proxy
+            .as_ref()
+            .filter(|p| scheme_https || !p.forwards_plain_http())
+        {
+            p.open_tunnel(&mut tcp_stream, &host, port).await?;
+        }
 
         let stream = if scheme_https {
             MaybeTlsStream::Tls(Box::new(super::tls::connect(&host, tcp_stream).await?))
@@ -138,6 +159,18 @@ pub async fn open_stream(
         Some(q) => format!("{}?{}", url.path(), q),
         None => url.path().to_string(),
     };
+    let plain_proxy = proxy
+        .as_ref()
+        .filter(|p| !scheme_https && p.forwards_plain_http());
+    let request_target = match plain_proxy {
+        Some(_) => {
+            let mut absolute = url.clone();
+            absolute.set_fragment(None);
+            absolute.to_string()
+        }
+        None => path_and_query,
+    };
+
     let host_header_value = if (scheme_https && port == 443) || (!scheme_https && port == 80) {
         host.clone()
     } else {
@@ -146,8 +179,12 @@ pub async fn open_stream(
 
     let mut req_builder = Request::builder()
         .method(method)
-        .uri(path_and_query)
+        .uri(request_target)
         .header("Host", host_header_value);
+
+    if let Some(auth) = plain_proxy.and_then(|p| p.auth_header()) {
+        req_builder = req_builder.header("Proxy-Authorization", auth.as_str());
+    }
 
     for (key, val) in &headers {
         let key = key.trim();

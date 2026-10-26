@@ -1,3 +1,4 @@
+use crate::http_client::ProxyConfig;
 use crate::theme::{ThemeOverrides, ThemeSelection};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -14,6 +15,8 @@ pub struct PersistedSettings {
     pub close_on_outside_click: bool,
     #[serde(default)]
     pub show_form_data_content_type: bool,
+    #[serde(default)]
+    pub proxy: ProxyConfig,
 }
 
 fn default_true() -> bool {
@@ -27,6 +30,7 @@ impl Default for PersistedSettings {
             theme_overrides: ThemeOverrides::default(),
             close_on_outside_click: true,
             show_form_data_content_type: false,
+            proxy: ProxyConfig::default(),
         }
     }
 }
