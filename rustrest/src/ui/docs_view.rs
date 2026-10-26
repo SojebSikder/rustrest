@@ -7,6 +7,11 @@
 
 use crate::collection::collection::PostmanCollection;
 use crate::ui::context_menu::{FieldTarget, with_context_menu};
+use crate::ui::modal::muted_text_color;
+use crate::ui::tokens::{
+    SPACE_LG, SPACE_MD, SPACE_SM, SPACE_XL, TEXT_BASE, TEXT_BODY, editor_surface, primary_button,
+    secondary_button, subtab_style,
+};
 use iced::widget::{
     button, checkbox, column, container, markdown, row, scrollable, space, text, text_editor,
 };
@@ -82,13 +87,13 @@ pub fn mode_bar<'a, Message: Clone + 'a>(
     modes: &[DocsMode],
     on_select: impl Fn(DocsMode) -> Message,
 ) -> Element<'a, Message> {
-    let mut bar = row![].spacing(6).align_y(Alignment::Center);
+    let mut bar = row![].spacing(SPACE_SM).align_y(Alignment::Center);
     for &mode in modes {
-        let btn = button(text(mode.label()).size(12)).padding([4, 10]);
+        let btn = button(text(mode.label()).size(TEXT_BODY)).padding([4, 10]);
         bar = bar.push(if mode == current {
-            btn.style(button::primary)
+            btn.style(subtab_style(true))
         } else {
-            btn.style(button::text).on_press(on_select(mode))
+            btn.style(subtab_style(false)).on_press(on_select(mode))
         });
     }
     bar.into()
@@ -104,14 +109,16 @@ pub fn rendered_markdown<'a, Message: Clone + 'a>(
 ) -> Element<'a, Message> {
     let body: Element<'a, Message> = if items.is_empty() {
         text("No documentation yet. Switch to Edit to write some in Markdown.")
-            .size(13)
-            .style(text::secondary)
+            .size(TEXT_BASE)
+            .style(|theme: &Theme| text::Style {
+                color: Some(muted_text_color(theme)),
+            })
             .into()
     } else {
         markdown::view(items, theme).map(on_link)
     };
     with_context_menu(
-        scrollable(container(body).padding(12).width(Length::Fill)).height(Length::Fill),
+        scrollable(container(body).padding(SPACE_LG).width(Length::Fill)).height(Length::Fill),
         on_right_click,
     )
 }
@@ -133,7 +140,7 @@ pub fn markdown_doc_view<'a, Message: Clone + 'a>(
         on_link,
         on_context_menu(DocsField::Preview, doc.text()),
     ))
-    .style(container::bordered_box)
+    .style(editor_surface)
     .width(Length::FillPortion(1))
     .height(Length::Fill);
 
@@ -144,18 +151,18 @@ pub fn markdown_doc_view<'a, Message: Clone + 'a>(
     let editor = text_editor(&doc.editor)
         .placeholder("Write documentation in Markdown…")
         .on_action(on_action)
-        .padding(10)
+        .padding(SPACE_MD)
         .height(Length::Fill);
     // the editor's live selection is looked up when the menu renders
     let editor = with_context_menu(editor, on_context_menu(DocsField::Editor, String::new()));
     row![
         container(editor)
-            .style(container::bordered_box)
+            .style(editor_surface)
             .width(Length::FillPortion(1))
             .height(Length::Fill),
         preview,
     ]
-    .spacing(10)
+    .spacing(SPACE_MD)
     .height(Length::Fill)
     .into()
 }
@@ -229,7 +236,7 @@ pub fn view<'a, Message: Clone + 'a>(
         .and_then(|c| docs::target_name(c, &state.target))
         .is_none()
     {
-        return container(text("This item no longer exists.").size(14))
+        return container(text("This item no longer exists.").size(TEXT_BASE))
             .padding(20)
             .into();
     }
@@ -241,16 +248,16 @@ pub fn view<'a, Message: Clone + 'a>(
             move |mode| wrap(DocsMessage::ModeSelected(mode)),
         ),
         space::horizontal(),
-        button(text("Copy Markdown").size(12))
+        button(text("Copy Markdown").size(TEXT_BODY))
             .padding([4, 10])
-            .style(button::secondary)
+            .style(secondary_button)
             .on_press(wrap(DocsMessage::CopyMarkdown)),
-        button(text("Export .md").size(12))
+        button(text("Export .md").size(TEXT_BODY))
             .padding([4, 10])
-            .style(button::primary)
+            .style(primary_button)
             .on_press(wrap(DocsMessage::ExportMarkdown)),
     ]
-    .spacing(10)
+    .spacing(SPACE_MD)
     .align_y(Alignment::Center);
 
     let on_link = move |uri| wrap(DocsMessage::LinkClicked(uri));
@@ -259,7 +266,7 @@ pub fn view<'a, Message: Clone + 'a>(
         let toggle = |label: &'static str, value: bool, apply: fn(&mut DocsOptions, bool)| {
             checkbox(value)
                 .label(label)
-                .text_size(12)
+                .text_size(TEXT_BODY)
                 .on_toggle(move |v| {
                     let mut next = options;
                     apply(&mut next, v);
@@ -278,7 +285,7 @@ pub fn view<'a, Message: Clone + 'a>(
                     .include_scripts =
                     v),
             ]
-            .spacing(16)
+            .spacing(SPACE_XL)
             .align_y(Alignment::Center),
             container(rendered_markdown(
                 &state.generated_preview,
@@ -289,10 +296,10 @@ pub fn view<'a, Message: Clone + 'a>(
                     state.generated.clone(),
                 )),
             ))
-            .style(container::bordered_box)
+            .style(editor_surface)
             .height(Length::Fill),
         ]
-        .spacing(10)
+        .spacing(SPACE_MD)
         .height(Length::Fill)
         .into()
     } else {
@@ -312,7 +319,7 @@ pub fn view<'a, Message: Clone + 'a>(
     };
 
     column![toolbar, content]
-        .spacing(12)
+        .spacing(SPACE_LG)
         .height(Length::Fill)
         .into()
 }

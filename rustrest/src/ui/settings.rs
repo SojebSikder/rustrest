@@ -2,6 +2,7 @@ use crate::app::Rustrest;
 use crate::message::Message;
 use crate::theme::{Appearance, ThemeMode, ThemeSelection};
 use crate::ui::modal::{card, muted_text_color};
+use crate::ui::tokens::RADIUS_MD;
 use iced::widget::{button, checkbox, column, container, pick_list, row, text};
 use iced::{Alignment, Font, Length, Theme};
 
@@ -53,7 +54,7 @@ pub fn view_settings_modal(app: &Rustrest) -> iced::Element<'_, Message> {
                             border: iced::Border {
                                 color: palette.primary.base.color,
                                 width: 1.0,
-                                radius: 6.0.into(),
+                                radius: RADIUS_MD.into(),
                             },
                             ..Default::default()
                         }
@@ -65,7 +66,7 @@ pub fn view_settings_modal(app: &Rustrest) -> iced::Element<'_, Message> {
                                 )),
                                 text_color: palette.background.weak.text,
                                 border: iced::Border {
-                                    radius: 6.0.into(),
+                                    radius: RADIUS_MD.into(),
                                     ..Default::default()
                                 },
                                 ..Default::default()
@@ -138,7 +139,7 @@ fn view_theme_tab(app: &Rustrest) -> iced::Element<'_, Message> {
                             border: iced::Border {
                                 color: palette.primary.base.color,
                                 width: 1.0,
-                                radius: 6.0.into(),
+                                radius: RADIUS_MD.into(),
                             },
                             ..Default::default()
                         }
@@ -152,7 +153,7 @@ fn view_theme_tab(app: &Rustrest) -> iced::Element<'_, Message> {
                                 border: iced::Border {
                                     color: palette.background.weak.color,
                                     width: 1.0,
-                                    radius: 6.0.into(),
+                                    radius: RADIUS_MD.into(),
                                 },
                                 ..Default::default()
                             },
@@ -162,7 +163,7 @@ fn view_theme_tab(app: &Rustrest) -> iced::Element<'_, Message> {
                                 border: iced::Border {
                                     color: palette.background.weak.color,
                                     width: 1.0,
-                                    radius: 6.0.into(),
+                                    radius: RADIUS_MD.into(),
                                 },
                                 ..Default::default()
                             },

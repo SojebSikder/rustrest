@@ -1,4 +1,5 @@
 use crate::message::Message;
+use crate::ui::tokens::RADIUS_LG;
 use iced::advanced::layout::{self, Layout};
 use iced::advanced::widget::{Operation, Tree, tree};
 use iced::advanced::{Clipboard, Shell, overlay, renderer};
@@ -18,7 +19,7 @@ pub fn card<'a>(body: impl Into<Element<'a, Message>>, width: f32) -> Element<'a
                 border: Border {
                     color: palette.background.strong.color,
                     width: 1.0,
-                    radius: 10.0.into(),
+                    radius: RADIUS_LG.into(),
                 },
                 shadow: Shadow {
                     color: Color::from_rgba(0.0, 0.0, 0.0, 0.4),

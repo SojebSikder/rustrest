@@ -5,11 +5,12 @@ use crate::app::cloud::CloudModal;
 use crate::message::Message;
 use crate::ui::modal::{card, danger_text_color, muted_text_color};
 use crate::ui::spinner::spinner_with_label;
+use crate::ui::tokens::{RADIUS_SM, chip, semibold, tint};
 use iced::widget::text::Wrapping;
 use iced::widget::{
     Column, Space, button, column, container, pick_list, row, rule, scrollable, text, text_input,
 };
-use iced::{Alignment, Border, Color, Element, Font, Length, Theme};
+use iced::{Alignment, Border, Color, Element, Length, Theme};
 use rustrest_cloud::Resolution;
 use rustrest_cloud::wire::{Role, Team};
 
@@ -45,13 +46,6 @@ impl std::fmt::Display for TeamChoice {
 }
 
 // ---- building blocks ----
-
-fn semibold() -> Font {
-    Font {
-        weight: iced::font::Weight::Semibold,
-        ..Font::DEFAULT
-    }
-}
 
 /// text that takes the rest of its row and wraps, so long names and emails
 /// never push the row's buttons out of the card
@@ -116,20 +110,12 @@ fn callout<'a>(content: impl Into<Element<'a, Message>>, danger: bool) -> Elemen
         .padding(10)
         .width(Length::Fill)
         .style(move |theme: &Theme| {
-            let tint = if danger {
+            let accent = if danger {
                 danger_text_color(theme)
             } else {
                 crate::theme::colors().info
             };
-            container::Style {
-                background: Some(Color { a: 0.08, ..tint }.into()),
-                border: Border {
-                    color: Color { a: 0.4, ..tint },
-                    width: 1.0,
-                    radius: 6.0.into(),
-                },
-                ..Default::default()
-            }
+            chip(accent, 0.08, 0.4)
         })
         .into()
 }
@@ -138,9 +124,9 @@ fn badge<'a>(label: impl text::IntoFragment<'a>, color: Color) -> Element<'a, Me
     container(text(label).size(10).font(semibold()).color(color))
         .padding([1, 6])
         .style(move |_: &Theme| container::Style {
-            background: Some(Color { a: 0.14, ..color }.into()),
+            background: Some(tint(color, 0.14).into()),
             border: Border {
-                radius: 4.0.into(),
+                radius: RADIUS_SM.into(),
                 ..Default::default()
             },
             ..Default::default()
@@ -212,10 +198,7 @@ pub fn view_cloud_modal<'a>(app: &'a Rustrest, modal: &'a CloudModal) -> Element
         _ => None,
     };
 
-    let title = text("Rustrest Cloud").size(18).font(Font {
-        weight: iced::font::Weight::Bold,
-        ..Font::DEFAULT
-    });
+    let title = text("Rustrest Cloud").size(18).font(semibold());
     let header: Element<'a, Message> = match &signed_in {
         Some((server, email)) => row![
             column![
