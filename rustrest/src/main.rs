@@ -587,21 +587,26 @@ fn terminal_events_stream(data: &TerminalEventsData) -> BoxStream<'static, Messa
 fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
     let menu_structure = vec![
         {
-            let mut items = vec![
-                DropdownItem::new("New Collection", MenuMessage::FileNew),
-                DropdownItem::separator(),
-                DropdownItem::new("Import Collection", MenuMessage::FileOpen),
-                DropdownItem::new("Import Git Folder...", MenuMessage::FileOpenGitFolder),
+            let mut imports = vec![
+                DropdownItem::new("Collection...", MenuMessage::FileOpen),
+                DropdownItem::new("Git Folder...", MenuMessage::FileOpenGitFolder),
             ];
             for (plugin_id, format) in app.plugins.plugin_manager.import_formats() {
-                items.push(DropdownItem::new(
-                    format!("Import via {}", format.title),
+                imports.push(DropdownItem::new(
+                    format.title,
                     MenuMessage::ImportViaPlugin(plugin_id, format.id, format.extensions),
                 ));
             }
-            items.push(DropdownItem::separator());
-            items.push(DropdownItem::new("Exit", MenuMessage::FileExit));
-            MenuGroup::new("File", items)
+            MenuGroup::new(
+                "File",
+                vec![
+                    DropdownItem::new("New Collection", MenuMessage::FileNew),
+                    DropdownItem::separator(),
+                    DropdownItem::submenu("Import", imports),
+                    DropdownItem::separator(),
+                    DropdownItem::new("Exit", MenuMessage::FileExit),
+                ],
+            )
         },
         MenuGroup::new(
             "Go",

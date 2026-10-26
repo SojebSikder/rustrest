@@ -1,23 +1,29 @@
 use crate::ui::tokens::{RADIUS_MD, RADIUS_SM, tint};
-use iced::widget::{Space, button, column, container, opaque, row, text};
+use iced::widget::{Space, button, column, container, mouse_area, opaque, row, text};
 use iced::{Border, Color, Element, Length, Padding, Shadow, Vector, alignment};
 
 /// tracks the open/closed state of a reusable dropdown menu.
 #[derive(Debug, Clone, Default)]
 pub struct DropdownMenuState {
     pub open_index: Option<usize>,
+    /// index (within the open group) of the item whose submenu is expanded.
+    pub open_submenu: Option<usize>,
 }
 
 impl DropdownMenuState {
     /// Creates a new inactive dropdown menu state.
     pub fn new() -> Self {
-        Self { open_index: None }
+        Self {
+            open_index: None,
+            open_submenu: None,
+        }
     }
 
     /// Handles the internal state mutation when a menu item or header is clicked.
     pub fn update<T: Clone>(&mut self, message: DropdownMessage<T>) -> Option<T> {
         match message {
             DropdownMessage::Toggle(index) => {
+                self.open_submenu = None;
                 if self.open_index == Some(index) {
                     self.open_index = None;
                 } else {
@@ -27,11 +33,17 @@ impl DropdownMenuState {
             }
             DropdownMessage::Close => {
                 self.open_index = None;
+                self.open_submenu = None;
                 None
             }
             DropdownMessage::TriggerAction(action) => {
                 self.open_index = None; // Automatically close menu on action selection
+                self.open_submenu = None;
                 Some(action)
+            }
+            DropdownMessage::HoverSubmenu(index) => {
+                self.open_submenu = index;
+                None
             }
         }
     }
@@ -42,6 +54,8 @@ pub enum DropdownMessage<T> {
     Toggle(usize),
     Close,
     TriggerAction(T),
+    /// the pointer entered a row: `Some` for a submenu parent, `None` otherwise.
+    HoverSubmenu(Option<usize>),
 }
 
 /// represents an individual actionable item inside a dropdown list.
@@ -50,6 +64,8 @@ pub struct DropdownItem<T> {
     pub action: Option<T>,
     pub shortcut: Option<String>,
     pub is_separator: bool,
+    /// nested items shown in a flyout panel when this item is hovered.
+    pub children: Vec<DropdownItem<T>>,
 }
 
 impl<T> DropdownItem<T> {
@@ -60,6 +76,18 @@ impl<T> DropdownItem<T> {
             action: Some(action),
             shortcut: None,
             is_separator: false,
+            children: Vec::new(),
+        }
+    }
+
+    /// Creates an item that opens a flyout of nested items on hover.
+    pub fn submenu(label: impl Into<String>, children: Vec<DropdownItem<T>>) -> Self {
+        Self {
+            label: label.into(),
+            action: None,
+            shortcut: None,
+            is_separator: false,
+            children,
         }
     }
 
@@ -70,6 +98,7 @@ impl<T> DropdownItem<T> {
             action: None,
             shortcut: None,
             is_separator: true,
+            children: Vec::new(),
         }
     }
 
@@ -96,20 +125,46 @@ impl<T> MenuGroup<T> {
     }
 }
 
-/// Computes the exact layout width for a menu header button based on its title.
-pub fn menu_button_width(title: &str) -> f32 {
-    let mut text_width: f32 = 0.0;
-    for ch in title.chars() {
-        text_width += match ch {
+/// Estimates the rendered width of a size-13 label.
+fn label_width(label: &str) -> f32 {
+    label
+        .chars()
+        .map(|ch| match ch {
             'i' | 'l' | 't' | 'j' | 'r' | ' ' | '.' | ':' | '-' => 4.5,
             'f' | 'I' => 5.5,
             'm' | 'w' | 'M' | 'W' => 10.5,
             'A'..='Z' => 8.5,
             _ => 7.0,
-        };
-    }
+        })
+        .sum()
+}
+
+/// Computes the exact layout width for a menu header button based on its title.
+pub fn menu_button_width(title: &str) -> f32 {
     // 20.0 padding (10 left + 10 right) + 8.0 breathing room, with minimum width of 44.0
-    (text_width + 28.0_f32).max(44.0).ceil()
+    (label_width(title) + 28.0_f32).max(44.0).ceil()
+}
+
+/// Width of a dropdown panel: wide enough for its longest row, never below
+/// `PANEL_MIN_WIDTH`.
+fn panel_width<T>(items: &[DropdownItem<T>]) -> f32 {
+    items
+        .iter()
+        .filter(|item| !item.is_separator)
+        .map(|item| {
+            let trailing = if !item.children.is_empty() {
+                16.0
+            } else if let Some(shortcut) = &item.shortcut {
+                // shortcuts render at size 11 instead of 13
+                label_width(shortcut) * 11.0 / 13.0 + 8.0
+            } else {
+                0.0
+            };
+            // 20.0 row padding + 12.0 panel padding + 16.0 breathing room
+            label_width(&item.label) + trailing + 48.0
+        })
+        .fold(PANEL_MIN_WIDTH, f32::max)
+        .ceil()
 }
 
 /// Style for the floating panel that hosts a menu or context dropdown: elevated
@@ -190,17 +245,22 @@ fn header_style(is_open: bool, theme: &iced::Theme, status: button::Status) -> b
     }
 }
 
-/// renders the floating dropdown overlay panel if one is open.
-pub fn render_menu_overlay<'a, T: 'static + Clone>(
-    state: &DropdownMenuState,
-    groups: &[MenuGroup<T>],
-) -> Option<Element<'a, DropdownMessage<T>>> {
-    let open_idx = state.open_index?;
-    let target_group = groups.get(open_idx)?;
+// fixed row metrics so a submenu flyout can be aligned with its parent row
+const ITEM_HEIGHT: f32 = 29.0;
+const SEPARATOR_HEIGHT: f32 = 9.0;
+const ITEM_SPACING: f32 = 2.0;
+const PANEL_MIN_WIDTH: f32 = 230.0;
 
-    let mut items_column = column![].spacing(2);
+/// builds one dropdown panel. `hover_tracking` makes each row report hover so
+/// the panel can open/close submenu flyouts.
+fn render_panel<'a, T: 'static + Clone>(
+    items: &[DropdownItem<T>],
+    open_submenu: Option<usize>,
+    hover_tracking: bool,
+) -> Element<'a, DropdownMessage<T>> {
+    let mut items_column = column![].spacing(ITEM_SPACING);
 
-    for item in &target_group.items {
+    for (idx, item) in items.iter().enumerate() {
         if item.is_separator {
             items_column = items_column.push(
                 container(
@@ -213,43 +273,85 @@ pub fn render_menu_overlay<'a, T: 'static + Clone>(
                         }),
                 )
                 .width(Length::Fill)
+                .height(Length::Fixed(SEPARATOR_HEIGHT))
                 .padding(Padding::from([4, 6])),
             );
             continue;
         }
 
-        let Some(action) = item.action.clone() else {
+        let has_children = !item.children.is_empty();
+        let message = if has_children {
+            DropdownMessage::HoverSubmenu(Some(idx))
+        } else if let Some(action) = item.action.clone() {
+            DropdownMessage::TriggerAction(action)
+        } else {
             continue;
         };
 
-        let mut content = row![text(item.label.clone()).size(13)]
+        // rows have a fixed height, so a wrapped label would spill out of its row
+        let label = text(item.label.clone())
+            .size(13)
+            .wrapping(text::Wrapping::None);
+        let mut content = row![label]
             .width(Length::Fill)
             .spacing(8)
             .align_y(alignment::Vertical::Center);
 
-        // a filler keeps every shortcut pinned to the same right edge
-        if let Some(shortcut) = &item.shortcut {
+        // a filler keeps every shortcut / submenu arrow pinned to the same right edge
+        let trailing = if has_children {
+            Some("▸".to_string())
+        } else {
+            item.shortcut.clone()
+        };
+        if let Some(trailing) = trailing {
             content = content.push(Space::new().width(Length::Fill));
             content = content.push(
-                text(shortcut.clone())
+                text(trailing)
                     .size(11)
                     .color(crate::theme::colors().text_muted),
             );
         }
 
-        items_column = items_column.push(
-            button(content)
-                .width(Length::Fill)
-                .padding([6, 10])
-                .style(item_style)
-                .on_press(DropdownMessage::TriggerAction(action)),
-        );
+        // keep a submenu parent highlighted while its flyout is open
+        let is_expanded = has_children && open_submenu == Some(idx);
+        let row_button = button(content)
+            .width(Length::Fill)
+            .height(Length::Fixed(ITEM_HEIGHT))
+            .padding([6, 10])
+            .style(move |theme, status| {
+                let status = if is_expanded {
+                    button::Status::Hovered
+                } else {
+                    status
+                };
+                item_style(theme, status)
+            })
+            .on_press(message);
+
+        if hover_tracking {
+            let hover = DropdownMessage::HoverSubmenu(has_children.then_some(idx));
+            items_column = items_column.push(mouse_area(row_button).on_enter(hover));
+        } else {
+            items_column = items_column.push(row_button);
+        }
     }
 
-    let dropdown_panel = container(items_column)
-        .width(230)
+    container(items_column)
+        .width(panel_width(items))
         .padding(6)
-        .style(panel_style);
+        .style(panel_style)
+        .into()
+}
+
+/// renders the floating dropdown overlay panel if one is open.
+pub fn render_menu_overlay<'a, T: 'static + Clone>(
+    state: &DropdownMenuState,
+    groups: &[MenuGroup<T>],
+) -> Option<Element<'a, DropdownMessage<T>>> {
+    let open_idx = state.open_index?;
+    let target_group = groups.get(open_idx)?;
+
+    let dropdown_panel = render_panel(&target_group.items, state.open_submenu, true);
 
     // Compute cumulative horizontal offset matching each header button's position
     let mut horizontal_offset: f32 = 8.0;
@@ -257,12 +359,34 @@ pub fn render_menu_overlay<'a, T: 'static + Clone>(
         horizontal_offset += menu_button_width(&group.title) + 2.0;
     }
 
+    let mut panels = row![opaque(dropdown_panel)];
+
+    if let Some((sub_idx, parent)) = state
+        .open_submenu
+        .and_then(|idx| Some((idx, target_group.items.get(idx)?)))
+        .filter(|(_, item)| !item.children.is_empty())
+    {
+        // shift the flyout down so its first row lines up with the parent row
+        let vertical_offset: f32 = target_group.items[..sub_idx]
+            .iter()
+            .map(|item| {
+                let height = if item.is_separator {
+                    SEPARATOR_HEIGHT
+                } else {
+                    ITEM_HEIGHT
+                };
+                height + ITEM_SPACING
+            })
+            .sum();
+        panels = panels.push(column![
+            Space::new().height(vertical_offset),
+            opaque(render_panel(&parent.children, None, false))
+        ]);
+    }
+
     let overlay_layer = column![
         container(text("")).height(crate::ui::titlebar::TITLEBAR_HEIGHT),
-        row![
-            container(text("")).width(horizontal_offset),
-            opaque(dropdown_panel)
-        ]
+        row![container(text("")).width(horizontal_offset), panels]
     ]
     .width(Length::Fill)
     .height(Length::Fill);
