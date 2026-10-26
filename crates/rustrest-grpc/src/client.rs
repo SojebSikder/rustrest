@@ -27,6 +27,7 @@ impl MethodKind {
 
 pub async fn connect(endpoint: &str, use_tls: bool) -> Result<Channel, String> {
     let uri = build_uri(endpoint, use_tls)?;
+    let proxy_target = proxy_target(&uri);
     let mut builder = Channel::builder(uri);
     if use_tls {
         let tls = ClientTlsConfig::new().with_webpki_roots();
@@ -34,10 +35,32 @@ pub async fn connect(endpoint: &str, use_tls: bool) -> Result<Channel, String> {
             .tls_config(tls)
             .map_err(|e| format!("TLS config error: {}", error_chain(&e)))?;
     }
-    builder
-        .connect()
-        .await
-        .map_err(|e| format!("Connection to '{endpoint}' failed: {}", error_chain(&e)))
+
+    let connected = match proxy_target {
+        // through the app-wide proxy: tonic still does TLS/HTTP2, over a
+        // CONNECT tunnel opened by rustrest-core instead of a direct socket
+        Some(target) => {
+            builder
+                .connect_with_connector(tower::service_fn(move |_: Uri| {
+                    let target = target.clone();
+                    async move {
+                        rustrest_core::http::connect_tcp(&target)
+                            .await
+                            .map(hyper_util::rt::TokioIo::new)
+                            .map_err(std::io::Error::other)
+                    }
+                }))
+                .await
+        }
+        None => builder.connect().await,
+    };
+    connected.map_err(|e| format!("Connection to '{endpoint}' failed: {}", error_chain(&e)))
+}
+
+/// `uri` as a `Url`, if connections to it currently go through a proxy.
+fn proxy_target(uri: &Uri) -> Option<url::Url> {
+    let target = url::Url::parse(&uri.to_string()).ok()?;
+    rustrest_core::http::uses_proxy(&target).then_some(target)
 }
 
 /// Normalizes `endpoint` (typically a bare `host:port`) into a URI with an

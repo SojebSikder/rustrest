@@ -115,22 +115,42 @@ async fn execute_hop_head(
     let port = url
         .port_or_known_default()
         .unwrap_or(if scheme_https { 443 } else { 80 });
+    let proxy = super::proxy::for_url(url);
+    // through a proxy, DNS/TCP (and the CONNECT tunnel) are to the proxy itself
+    let (dial_host, dial_port) = match &proxy {
+        Some(p) => (p.host.as_str(), p.port),
+        None => (host.as_str(), port),
+    };
     let socket_init = hop_start.elapsed();
 
     let dns_start = Instant::now();
-    let mut addrs = tokio::net::lookup_host((host.as_str(), port))
+    let mut addrs = tokio::net::lookup_host((dial_host, dial_port))
         .await
         .map_err(|e| format!("DNS Lookup Error: {}", e))?;
-    let addr = addrs
-        .next()
-        .ok_or_else(|| format!("DNS Lookup Error: no addresses found for host '{}'", host))?;
+    let addr = addrs.next().ok_or_else(|| {
+        format!(
+            "DNS Lookup Error: no addresses found for host '{}'",
+            dial_host
+        )
+    })?;
     let dns = dns_start.elapsed();
 
     let tcp_start = Instant::now();
-    let tcp_stream = TcpStream::connect(addr)
-        .await
-        .map_err(|e| format!("TCP Handshake Error: {}", e))?;
+    let mut tcp_stream = TcpStream::connect(addr).await.map_err(|e| match &proxy {
+        Some(_) => format!(
+            "Proxy Connection Error ({}:{}): {}",
+            dial_host, dial_port, e
+        ),
+        None => format!("TCP Handshake Error: {}", e),
+    })?;
     let _ = tcp_stream.set_nodelay(true);
+    // everything but plain http via an HTTP proxy is tunnelled
+    if let Some(p) = proxy
+        .as_ref()
+        .filter(|p| scheme_https || !p.forwards_plain_http())
+    {
+        p.open_tunnel(&mut tcp_stream, &host, port).await?;
+    }
     let tcp = tcp_start.elapsed();
 
     let (stream, tls) = if scheme_https {
@@ -156,6 +176,19 @@ async fn execute_hop_head(
         Some(q) => format!("{}?{}", url.path(), q),
         None => url.path().to_string(),
     };
+    // a plain-http request to a proxy names the full URL (absolute form);
+    // through a CONNECT tunnel it's an ordinary origin-form request
+    let plain_proxy = proxy
+        .as_ref()
+        .filter(|p| !scheme_https && p.forwards_plain_http());
+    let request_target = match plain_proxy {
+        Some(_) => {
+            let mut absolute = url.clone();
+            absolute.set_fragment(None);
+            absolute.to_string()
+        }
+        None => path_and_query,
+    };
 
     let host_header_value = if (scheme_https && port == 443) || (!scheme_https && port == 80) {
         host.clone()
@@ -167,8 +200,13 @@ async fn execute_hop_head(
         vec![("Host".to_string(), host_header_value.clone())];
     let mut req_builder = Request::builder()
         .method(method.clone())
-        .uri(path_and_query.clone())
+        .uri(request_target.as_str())
         .header("Host", host_header_value);
+
+    if let Some(auth) = plain_proxy.and_then(|p| p.auth_header()) {
+        req_builder = req_builder.header("Proxy-Authorization", auth.as_str());
+        sent_headers.push(("Proxy-Authorization".to_string(), auth));
+    }
 
     for (key, val) in headers {
         let key = key.trim();
@@ -188,7 +226,7 @@ async fn execute_hop_head(
     req_builder = req_builder.header("Connection", "close");
     sent_headers.push(("Connection".to_string(), "close".to_string()));
 
-    let request_line_len = format!("{} {} HTTP/1.1\r\n", method, path_and_query).len();
+    let request_line_len = format!("{} {} HTTP/1.1\r\n", method, request_target).len();
     let headers_len: usize = sent_headers
         .iter()
         .map(|(k, v)| k.len() + 2 + v.len() + 2)

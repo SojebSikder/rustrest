@@ -3,24 +3,41 @@ use crate::message::Message;
 use crate::theme::{Appearance, ThemeMode, ThemeSelection};
 use crate::ui::modal::{card, muted_text_color};
 use crate::ui::tokens::RADIUS_MD;
-use iced::widget::{button, checkbox, column, container, pick_list, row, text};
+use iced::widget::{button, checkbox, column, container, pick_list, row, text, text_input};
 use iced::{Alignment, Font, Length, Theme};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsTab {
     Theme,
     General,
+    Proxy,
 }
 
 impl SettingsTab {
-    pub const ALL: [SettingsTab; 2] = [SettingsTab::Theme, SettingsTab::General];
+    pub const ALL: [SettingsTab; 3] =
+        [SettingsTab::Theme, SettingsTab::General, SettingsTab::Proxy];
 
     pub fn label(&self) -> &'static str {
         match self {
             SettingsTab::Theme => "Theme",
             SettingsTab::General => "General",
+            SettingsTab::Proxy => "Proxy",
         }
     }
+}
+
+/// one field of the Proxy settings tab changing
+#[derive(Debug, Clone)]
+pub enum ProxyEdit {
+    Enabled(bool),
+    Protocol(crate::http_client::ProxyProtocol),
+    Host(String),
+    Port(String),
+    AuthEnabled(bool),
+    Username(String),
+    Password(String),
+    Bypass(String),
+    UseSystem(bool),
 }
 
 impl Default for SettingsTab {
@@ -85,6 +102,7 @@ pub fn view_settings_modal(app: &Rustrest) -> iced::Element<'_, Message> {
     let tab_content = match app.settings.settings_tab {
         SettingsTab::Theme => view_theme_tab(app),
         SettingsTab::General => view_general_tab(app),
+        SettingsTab::Proxy => view_proxy_tab(app),
     };
 
     let close_btn = button(text("Close").size(14))
@@ -274,4 +292,105 @@ fn view_general_tab(app: &Rustrest) -> iced::Element<'_, Message> {
     ]
     .spacing(10)
     .into()
+}
+
+fn view_proxy_tab(app: &Rustrest) -> iced::Element<'_, Message> {
+    let proxy = &app.settings.proxy;
+    let hint = |s: &'static str| {
+        text(s).size(11).style(|theme: &Theme| text::Style {
+            color: Some(muted_text_color(theme)),
+        })
+    };
+    let field = |label: &'static str, input: iced::Element<'static, Message>| {
+        row![text(label).size(13).width(Length::Fixed(90.0)), input]
+            .spacing(8)
+            .align_y(Alignment::Center)
+    };
+    let input = |placeholder: &str, value: &str, on_input: fn(String) -> ProxyEdit| {
+        text_input(placeholder, value)
+            .on_input(move |v| Message::ProxySettingChanged(on_input(v)))
+            .padding([6, 10])
+            .size(13)
+    };
+
+    let mut content = column![
+        section_label("Custom proxy"),
+        checkbox(proxy.enabled)
+            .label("Use a custom proxy for all requests")
+            .on_toggle(|v| Message::ProxySettingChanged(ProxyEdit::Enabled(v))),
+        field(
+            "Proxy type",
+            pick_list(
+                crate::http_client::ProxyProtocol::ALL,
+                Some(proxy.protocol),
+                |p| Message::ProxySettingChanged(ProxyEdit::Protocol(p)),
+            )
+            .text_size(13)
+            .width(Length::Fixed(120.0))
+            .into(),
+        ),
+        field(
+            "Server",
+            row![
+                input("proxy.example.com", &proxy.host, ProxyEdit::Host).width(Length::Fill),
+                text(":").size(13),
+                input("8080", &app.settings.proxy_port_input, ProxyEdit::Port)
+                    .width(Length::Fixed(80.0)),
+            ]
+            .spacing(6)
+            .align_y(Alignment::Center)
+            .into(),
+        ),
+        checkbox(proxy.auth_enabled)
+            .label("Proxy requires authentication")
+            .on_toggle(|v| Message::ProxySettingChanged(ProxyEdit::AuthEnabled(v))),
+    ]
+    .spacing(10);
+
+    if proxy.auth_enabled {
+        content = content
+            .push(field(
+                "Username",
+                input("", &proxy.username, ProxyEdit::Username)
+                    .width(Length::Fill)
+                    .into(),
+            ))
+            .push(field(
+                "Password",
+                input("", &proxy.password, ProxyEdit::Password)
+                    .secure(true)
+                    .width(Length::Fill)
+                    .into(),
+            ));
+        if matches!(
+            proxy.protocol,
+            crate::http_client::ProxyProtocol::Socks4 | crate::http_client::ProxyProtocol::Socks4a
+        ) {
+            content = content.push(hint(
+                "SOCKS4 has no passwords: only the username is sent, as the user ID.",
+            ));
+        }
+    }
+
+    content
+        .push(field(
+            "Bypass",
+            input("localhost, *.internal", &proxy.bypass, ProxyEdit::Bypass)
+                .width(Length::Fill)
+                .into(),
+        ))
+        .push(hint(
+            "Comma-separated hosts that skip the proxy. *.example.com matches subdomains.",
+        ))
+        .push(section_label("System proxy"))
+        .push(
+            checkbox(proxy.use_system)
+                .label("Use system proxy when no custom proxy is enabled")
+                .on_toggle(|v| Message::ProxySettingChanged(ProxyEdit::UseSystem(v))),
+        )
+        .push(hint(
+            "Reads HTTP_PROXY, HTTPS_PROXY, ALL_PROXY and NO_PROXY from the environment \
+             (http:// or socks5h:// style URLs).",
+        ))
+        .into()
 }

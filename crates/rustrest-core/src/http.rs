@@ -1,9 +1,12 @@
 mod multipart;
+mod proxy;
+mod socks;
 mod stream;
 mod timed_client;
 mod tls;
 
 pub use multipart::guess_mime;
+pub use proxy::{ProxyConfig, ProxyProtocol, connect_tcp, set_proxy_config, uses_proxy};
 pub use stream::{StreamingResponse, open_stream};
 pub use tls::client_config;
 

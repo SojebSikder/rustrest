@@ -836,6 +836,7 @@ pub enum Message {
     ThemeSelectorClosed,
     ThemeSelectorItemClicked(String),
     CloseOnOutsideClickToggled(bool),
+    ProxySettingChanged(crate::ui::settings::ProxyEdit),
 
     // new tab protocol picker
     ShowNewTabMenu,

@@ -64,15 +64,18 @@ pub async fn run_session(
         }
     }
 
-    let connector = Connector::Rustls(rustrest_core::http::client_config());
-    let ws_stream = match tokio_tungstenite::connect_async_tls_with_config(
-        request,
-        None,
-        false,
-        Some(connector),
-    )
-    .await
-    {
+    // the TCP leg goes through core so it honours the app-wide proxy.
+    // tungstenite then layers TLS (for wss) and the upgrade on top
+    let connect = async {
+        let target = url::Url::parse(&request.uri().to_string())
+            .map_err(|e| format!("Invalid WebSocket URL: {}", e))?;
+        let tcp = rustrest_core::http::connect_tcp(&target).await?;
+        let connector = Connector::Rustls(rustrest_core::http::client_config());
+        tokio_tungstenite::client_async_tls_with_config(request, tcp, None, Some(connector))
+            .await
+            .map_err(|e| e.to_string())
+    };
+    let ws_stream = match connect.await {
         Ok((stream, _response)) => stream,
         Err(e) => {
             let _ = events
