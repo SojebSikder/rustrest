@@ -17,6 +17,9 @@ pub struct PersistedSettings {
     pub show_form_data_content_type: bool,
     #[serde(default)]
     pub proxy: ProxyConfig,
+    /// off lets requests reach sites with self-signed/invalid certificates
+    #[serde(default = "default_true")]
+    pub ssl_verification: bool,
 }
 
 fn default_true() -> bool {
@@ -31,6 +34,7 @@ impl Default for PersistedSettings {
             close_on_outside_click: true,
             show_form_data_content_type: false,
             proxy: ProxyConfig::default(),
+            ssl_verification: true,
         }
     }
 }

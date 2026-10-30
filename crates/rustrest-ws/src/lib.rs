@@ -70,7 +70,8 @@ pub async fn run_session(
         let target = url::Url::parse(&request.uri().to_string())
             .map_err(|e| format!("Invalid WebSocket URL: {}", e))?;
         let tcp = rustrest_core::http::connect_tcp(&target).await?;
-        let connector = Connector::Rustls(rustrest_core::http::client_config());
+        let connector = Connector::Rustls(rustrest_core::http::request_client_config());
+
         tokio_tungstenite::client_async_tls_with_config(request, tcp, None, Some(connector))
             .await
             .map_err(|e| e.to_string())

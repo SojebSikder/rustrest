@@ -289,6 +289,17 @@ fn view_general_tab(app: &Rustrest) -> iced::Element<'_, Message> {
         checkbox(app.settings.close_on_outside_click)
             .label("Close windows by clicking outside")
             .on_toggle(Message::CloseOnOutsideClickToggled),
+        text("Requests").size(12).style(|theme: &Theme| text::Style {
+            color: Some(muted_text_color(theme)),
+        }),
+        checkbox(app.settings.ssl_verification)
+            .label("SSL certificate verification")
+            .on_toggle(Message::SslVerificationToggled),
+        text("Turn off to send requests to HTTPS sites with self-signed, expired or otherwise invalid certificates.")
+            .size(11)
+            .style(|theme: &Theme| text::Style {
+                color: Some(muted_text_color(theme)),
+            }),
     ]
     .spacing(10)
     .into()

@@ -8,7 +8,7 @@ mod tls;
 pub use multipart::guess_mime;
 pub use proxy::{ProxyConfig, ProxyProtocol, connect_tcp, set_proxy_config, uses_proxy};
 pub use stream::{StreamingResponse, open_stream};
-pub use tls::client_config;
+pub use tls::{client_config, request_client_config, set_ssl_verification};
 
 use crate::common::{BodyType, FormDataRow};
 use bytes::Bytes;

@@ -18,6 +18,8 @@ pub struct SettingsState {
     pub proxy: ProxyConfig,
     /// the port field's text, which may be empty or mid-edit
     pub proxy_port_input: String,
+    /// whether HTTPS/WSS requests check the server certificate
+    pub ssl_verification: bool,
 }
 
 pub(super) fn persist(app: &Rustrest) {
@@ -27,6 +29,7 @@ pub(super) fn persist(app: &Rustrest) {
         close_on_outside_click: app.settings.close_on_outside_click,
         show_form_data_content_type: app.settings.show_form_data_content_type,
         proxy: app.settings.proxy.clone(),
+        ssl_verification: app.settings.ssl_verification,
     });
 }
 
@@ -55,6 +58,18 @@ pub fn close_on_outside_click_toggled(app: &mut Rustrest, enabled: bool) -> Task
     app.settings.close_on_outside_click = enabled;
     persist(app);
     Task::none()
+}
+
+pub fn ssl_verification_toggled(app: &mut Rustrest, enabled: bool) -> Task<Message> {
+    apply_ssl_verification(app, enabled);
+    persist(app);
+    Task::none()
+}
+
+/// Adopts the SSL verification setting, for every request sent from now on.
+pub fn apply_ssl_verification(app: &mut Rustrest, enabled: bool) {
+    app.settings.ssl_verification = enabled;
+    crate::http_client::set_ssl_verification(enabled);
 }
 
 pub fn proxy_changed(app: &mut Rustrest, edit: ProxyEdit) -> Task<Message> {
