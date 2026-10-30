@@ -238,12 +238,28 @@ pub fn toggle_saved_responses_collapsed(app: &mut Rustrest, request_id: usize) -
     Task::none()
 }
 
-pub fn drag_started(app: &mut Rustrest, item: SidebarDragItem) -> Task<Message> {
-    let key = SidebarItemKey::from_drag_item(&item);
+/// plain click: the row opens in a tab (and is highlighted via the active tab),
+/// so drop any multi-selection - unless the row is part of it, which
+/// keeps the group intact for a batch drag. the row anchors Shift-click.
+pub fn select_single(app: &mut Rustrest, key: SidebarItemKey) {
     if !app.sidebar.selected_sidebar_items.contains(&key) {
         app.sidebar.selected_sidebar_items.clear();
-        app.sidebar.sidebar_selection_anchor = None;
+        app.sidebar.sidebar_selection_anchor = Some(key);
     }
+}
+
+/// a left click landed somewhere; unless it was on a sidebar row, it's a
+/// click "outside" the tree and clears the multi-selection. the active tab's
+/// row stays highlighted regardless.
+pub fn outside_press(app: &mut Rustrest) -> Task<Message> {
+    if app.sidebar.hovered_sidebar_item.is_none() && app.overlays.active_context_menu.is_none() {
+        return clear_selection(app);
+    }
+    Task::none()
+}
+
+pub fn drag_started(app: &mut Rustrest, item: SidebarDragItem) -> Task<Message> {
+    select_single(app, SidebarItemKey::from_drag_item(&item));
     app.sidebar.sidebar_drag = Some(item);
     Task::none()
 }
@@ -251,6 +267,30 @@ pub fn drag_started(app: &mut Rustrest, item: SidebarDragItem) -> Task<Message> 
 pub fn dropped(app: &mut Rustrest, target: crate::message::SidebarDropTarget) -> Task<Message> {
     if let Some(drag) = app.sidebar.sidebar_drag.take() {
         let dragged_key = SidebarItemKey::from_drag_item(&drag);
+
+        // released on the row it was pressed on: a plain click, not a move,
+        // so keep the selection that click just made
+        let released_on_self = match (&drag, &target) {
+            (
+                SidebarDragItem::Request { request_id: a, .. },
+                crate::message::SidebarDropTarget::Request { request_id: b, .. },
+            ) => a == b,
+            (
+                SidebarDragItem::Folder {
+                    collection_id: ca,
+                    path,
+                },
+                crate::message::SidebarDropTarget::Folder {
+                    collection_id: cb,
+                    folder_path,
+                },
+            ) => ca == cb && path == folder_path,
+            _ => false,
+        };
+        if released_on_self {
+            return Task::none();
+        }
+
         let is_batch = app.sidebar.selected_sidebar_items.len() > 1
             && app.sidebar.selected_sidebar_items.contains(&dragged_key);
 

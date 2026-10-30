@@ -1,4 +1,5 @@
-use crate::app::Rustrest;
+use crate::app::{Rustrest, WorkspaceContent};
+use rustrest_core::docs::DocsTarget;
 use crate::collection::collection::{
     CollectionItem, PostmanCollection, PostmanRequestNode, PostmanResponseExample,
 };
@@ -19,6 +20,45 @@ use iced::widget::{
     text_input,
 };
 use iced::{Alignment, Element, Font, Length};
+
+/// whether `key` is the item open in the active tab; that row stays
+/// highlighted for as long as its tab is the active one.
+fn is_active_tab_item(app: &Rustrest, key: &SidebarItemKey) -> bool {
+    let Some(tab_state) = app.tabs.get(app.active_tab_index) else {
+        return false;
+    };
+    match (&tab_state.content, key) {
+        (WorkspaceContent::CollectionRoot { collection_id, .. }, SidebarItemKey::Collection(id)) => {
+            collection_id == id
+        }
+        (
+            WorkspaceContent::Folder(state),
+            SidebarItemKey::Folder {
+                collection_id,
+                path,
+            },
+        ) => {
+            state.collection_id == *collection_id
+                && matches!(&state.target, DocsTarget::Folder(p) if p == path)
+        }
+        (
+            WorkspaceContent::HttpRequest,
+            SidebarItemKey::Request {
+                collection_id,
+                request_id,
+                ..
+            },
+        ) => {
+            tab_state.tab.collection_id == Some(*collection_id)
+                && tab_state.tab.request_id == Some(*request_id)
+        }
+        _ => false,
+    }
+}
+
+fn is_row_selected(app: &Rustrest, key: &SidebarItemKey) -> bool {
+    app.sidebar.selected_sidebar_items.contains(key) || is_active_tab_item(app, key)
+}
 
 fn sidebar_click_message(app: &Rustrest, key: SidebarItemKey, default: Message) -> Message {
     let modifiers = app.sidebar.current_modifiers;
@@ -312,7 +352,7 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
                 }
 
                 let collection_key = SidebarItemKey::Collection(col_id);
-                let is_row_selected = app.sidebar.selected_sidebar_items.contains(&collection_key);
+                let is_row_selected = is_row_selected(app, &collection_key);
                 let is_row_hovered =
                     app.sidebar.hovered_sidebar_item.as_ref() == Some(&collection_key);
 
@@ -711,7 +751,7 @@ fn render_sidebar_item<'a>(
                     collection_id,
                     path: current_path.clone(),
                 };
-                let is_row_selected = app.sidebar.selected_sidebar_items.contains(&folder_key);
+                let is_row_selected = is_row_selected(app, &folder_key);
                 let is_row_hovered = app.sidebar.hovered_sidebar_item.as_ref() == Some(&folder_key);
 
                 mouse_area(
@@ -838,7 +878,7 @@ fn render_sidebar_item<'a>(
                     parent_path: current_path.clone(),
                     request_id: req_id,
                 };
-                let is_row_selected = app.sidebar.selected_sidebar_items.contains(&request_key);
+                let is_row_selected = is_row_selected(app, &request_key);
                 let is_row_hovered =
                     app.sidebar.hovered_sidebar_item.as_ref() == Some(&request_key);
 

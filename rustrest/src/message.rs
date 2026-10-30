@@ -232,6 +232,8 @@ pub enum Message {
     /// the sidebar row the cursor is currently over, for hover highlighting
     SidebarItemHovered(Option<SidebarItemKey>),
     ClearSidebarSelection,
+    /// any left mouse press; clears the sidebar selection unless it landed on a row
+    SidebarOutsidePress,
     /// sidebar collection search box text changed (empty clears the filter)
     SidebarSearchChanged(String),
     /// focuses the sidebar search box (Ctrl/Cmd+F)

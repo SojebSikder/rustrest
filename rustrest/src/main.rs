@@ -230,6 +230,21 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         _ => Subscription::none(),
     };
 
+    // a left press anywhere but a sidebar row clears the selection
+    let sidebar_selection_outside_sub = match active_overlay {
+        None if !app.sidebar.selected_sidebar_items.is_empty()
+            && app.overlays.active_context_menu.is_none() =>
+        {
+            event::listen_with(|event, _status, _window| match event {
+                Event::Mouse(iced::mouse::Event::ButtonPressed(iced::mouse::Button::Left)) => {
+                    Some(Message::SidebarOutsidePress)
+                }
+                _ => None,
+            })
+        }
+        _ => Subscription::none(),
+    };
+
     // Escape closes whichever overlay is topmost, using the same priority
     // as `click_outside_sub` above - independent of `close_on_outside_click`,
     // since that setting only governs the click-outside behavior.
@@ -549,6 +564,7 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         cursor_tracker,
         modifiers_tracker,
         sidebar_selection_escape_sub,
+        sidebar_selection_outside_sub,
         tab_rename_sub,
         resize_drag_sub,
         tab_drag_sub,
