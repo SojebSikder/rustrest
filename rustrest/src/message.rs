@@ -417,6 +417,10 @@ pub enum Message {
     ShowCodegenModal,
     Codegen(crate::ui::codegen_modal::CodegenMessage),
 
+    // "Import cURL" modal
+    ShowCurlImportModal,
+    CurlImport(crate::ui::curl_import_modal::CurlImportMessage),
+
     // Help > About modal
     ShowAboutModal,
     CloseAboutModal,

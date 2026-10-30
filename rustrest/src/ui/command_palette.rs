@@ -17,6 +17,7 @@ pub enum AppCommand {
     GenerateCode,
     ImportCollection,
     ImportGitFolder,
+    ImportCurl,
     CreateNewCollection,
     ToggleConsolePanel,
     CheckForUpdate,
@@ -61,6 +62,8 @@ pub fn commands(app: &Rustrest) -> Vec<Command<AppCommand>> {
             "Import Git Folder...",
             AppCommand::ImportGitFolder,
         ),
+        Command::new("import-curl", "Import cURL...", AppCommand::ImportCurl)
+            .with_subtitle("Open a pasted cURL command as a new request"),
         Command::new(
             "create-collection",
             "Create New Collection",
@@ -145,6 +148,7 @@ pub fn to_message(action: AppCommand) -> Message {
         AppCommand::GenerateCode => Message::ShowCodegenModal,
         AppCommand::ImportCollection => Message::ImportCollectionPressed,
         AppCommand::ImportGitFolder => Message::ImportGitCollectionPressed,
+        AppCommand::ImportCurl => Message::ShowCurlImportModal,
         AppCommand::CreateNewCollection => Message::CreateNewCollectionPressed,
         AppCommand::ToggleConsolePanel => Message::ToggleConsolePanel,
         AppCommand::CheckForUpdate => Message::CheckForUpdate,

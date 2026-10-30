@@ -23,6 +23,7 @@ use crate::ui::command_palette::view as view_command_palette;
 use crate::ui::commit_modal::view_commit_modal;
 use crate::ui::confirm_dialog::view_confirm_dialog;
 use crate::ui::console_panel::{render_console_clear_bar, render_console_panel};
+use crate::ui::curl_import_modal::{CurlImportMessage, view_curl_import_modal};
 use crate::ui::env_editor::render_env_editor;
 use crate::ui::export_plugin_picker::view_export_plugin_picker;
 use crate::ui::menu::menu::{
@@ -96,6 +97,7 @@ enum ActiveOverlay {
     ThemeSelector,
     ResponseTiming,
     Codegen,
+    CurlImport,
     About,
     Notifications,
 }
@@ -163,6 +165,8 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         Some(ActiveOverlay::ResponseTiming)
     } else if app.overlays.codegen_modal.is_some() {
         Some(ActiveOverlay::Codegen)
+    } else if app.overlays.curl_import_modal.is_some() {
+        Some(ActiveOverlay::CurlImport)
     } else if app.workbench.save_request_model.is_some() {
         Some(ActiveOverlay::SaveRequest)
     } else if app.env.editing_env_index.is_some() {
@@ -185,6 +189,9 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
             }
             Some(ActiveOverlay::Codegen) => {
                 outside_click_sub!(Message::Codegen(CodegenMessage::Close))
+            }
+            Some(ActiveOverlay::CurlImport) => {
+                outside_click_sub!(Message::CurlImport(CurlImportMessage::Close))
             }
             Some(ActiveOverlay::About) => outside_click_sub!(Message::CloseAboutModal),
             Some(ActiveOverlay::ConfirmDialog) => {
@@ -235,6 +242,9 @@ pub fn subscription(app: &Rustrest) -> Subscription<Message> {
         }
         Some(ActiveOverlay::Codegen) => {
             escape_close_sub!(Message::Codegen(CodegenMessage::Close))
+        }
+        Some(ActiveOverlay::CurlImport) => {
+            escape_close_sub!(Message::CurlImport(CurlImportMessage::Close))
         }
         Some(ActiveOverlay::About) => escape_close_sub!(Message::CloseAboutModal),
         Some(ActiveOverlay::ConfirmDialog) => {
@@ -590,6 +600,7 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
             let mut imports = vec![
                 DropdownItem::new("Collection...", MenuMessage::FileOpen),
                 DropdownItem::new("Git Folder...", MenuMessage::FileOpenGitFolder),
+                DropdownItem::new("cURL...", MenuMessage::FileImportCurl),
             ];
             for (plugin_id, format) in app.plugins.plugin_manager.import_formats() {
                 imports.push(DropdownItem::new(
@@ -813,6 +824,16 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
         .align_x(Alignment::Center)
         .align_y(Alignment::Center);
         main_interface_stack = main_interface_stack.push(codegen_overlay);
+    }
+
+    // "Import cURL" modal overlay
+    if let Some(curl_modal) = app.overlays.curl_import_modal.as_ref() {
+        let curl_overlay = container(view_curl_import_modal(curl_modal))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(Alignment::Center)
+            .align_y(Alignment::Center);
+        main_interface_stack = main_interface_stack.push(curl_overlay);
     }
 
     // about modal overlay

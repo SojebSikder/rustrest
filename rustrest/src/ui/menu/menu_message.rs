@@ -3,6 +3,7 @@ pub enum MenuMessage {
     FileNew,
     FileOpen,
     FileOpenGitFolder,
+    FileImportCurl,
     FileExit,
     CommandPalette,
     ThemeSelector,
