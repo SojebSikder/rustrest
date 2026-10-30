@@ -24,6 +24,7 @@ pub struct OverlaysState {
     pub about_modal: Option<crate::ui::about_modal::AboutModalState>,
     pub codegen_modal: Option<crate::ui::codegen_modal::CodegenModalState>,
     pub codegen_prefs: crate::ui::codegen_modal::CodegenPrefs,
+    pub curl_import_modal: Option<crate::ui::curl_import_modal::CurlImportModalState>,
     pub confirm_dialog: Option<ConfirmDialogState>,
     pub active_context_menu: Option<ContextMenu>,
     pub context_menu_position: iced::Point,
@@ -244,6 +245,9 @@ pub fn menu_interaction(
             }
             MenuMessage::FileOpenGitFolder => {
                 return super::update(app, Message::ImportGitCollectionPressed);
+            }
+            MenuMessage::FileImportCurl => {
+                return super::update(app, Message::ShowCurlImportModal);
             }
             MenuMessage::FileExit => {
                 return super::update(app, Message::AppExit);

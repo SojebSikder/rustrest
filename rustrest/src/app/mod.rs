@@ -4,6 +4,7 @@ mod cloud_notifications;
 mod codegen;
 mod collection_settings;
 mod collections;
+mod curl_import;
 mod docs;
 mod environment;
 pub mod file_watch;
@@ -1801,6 +1802,8 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         Message::CloseResponseTimingModal => overlays::close_response_timing_modal(app),
         Message::ShowCodegenModal => codegen::open(app),
         Message::Codegen(msg) => codegen::update(app, msg),
+        Message::ShowCurlImportModal => curl_import::open(app),
+        Message::CurlImport(msg) => curl_import::update(app, msg),
         Message::ShowAboutModal => overlays::show_about_modal(app),
         Message::CloseAboutModal => overlays::close_about_modal(app),
         Message::AboutModalAction(action) => overlays::about_modal_action(app, action),

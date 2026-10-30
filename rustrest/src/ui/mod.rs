@@ -9,6 +9,7 @@ pub mod commit_modal;
 pub mod confirm_dialog;
 pub mod console_panel;
 pub mod context_menu;
+pub mod curl_import_modal;
 pub mod docs_view;
 pub mod env_editor;
 pub mod export_plugin_picker;

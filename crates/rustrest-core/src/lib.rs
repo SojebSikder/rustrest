@@ -3,6 +3,7 @@ mod common;
 pub mod auth;
 pub mod codegen;
 pub mod collection;
+pub mod curl_import;
 pub mod docs;
 pub mod http;
 pub mod remote;
