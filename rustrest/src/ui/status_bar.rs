@@ -2,9 +2,9 @@
 
 use crate::app::Rustrest;
 use crate::message::Message;
-use crate::ui::tokens::{SPACE_SM, TEXT_BASE, TEXT_BODY, secondary_button};
-use iced::widget::{Space, button, container, row, text};
-use iced::{Alignment, Element, Length, Padding};
+use crate::ui::tokens::{RADIUS_CONTROL, SPACE_SM, SPACE_XS, TEXT_BODY};
+use iced::widget::{Space, button, column, container, row, text};
+use iced::{Alignment, Element, Length};
 
 struct StatusItem {
     id: String,
@@ -66,6 +66,50 @@ impl StatusBarState {
     }
 }
 
+/// fixed height of the bar
+const BAR_HEIGHT: f32 = 26.0;
+
+/// a flat status bar entry: muted text at rest, a soft wash on hover, and
+/// a persistent wash + full-strength text while `active`
+fn item_style(active: bool) -> impl Fn(&iced::Theme, button::Status) -> button::Style {
+    move |theme: &iced::Theme, status| {
+        let colors = crate::theme::colors();
+        let hovered = matches!(status, button::Status::Hovered | button::Status::Pressed);
+
+        button::Style {
+            background: if active {
+                Some(colors.element_selected.into())
+            } else if hovered {
+                Some(colors.element_hover.into())
+            } else {
+                None
+            },
+            text_color: if active || hovered {
+                colors.text
+            } else {
+                colors.text_muted
+            },
+            border: iced::Border {
+                radius: RADIUS_CONTROL.into(),
+                ..Default::default()
+            },
+            ..button::text(theme, status)
+        }
+    }
+}
+
+/// a clickable status bar entry with the shared flat styling
+fn item_button<'a>(
+    content: impl Into<Element<'a, Message>>,
+    active: bool,
+    on_press: Message,
+) -> iced::widget::Button<'a, Message> {
+    button(content)
+        .style(item_style(active))
+        .padding([2, 6])
+        .on_press(on_press)
+}
+
 /// a colored dot and label telling whether we're connected to Cloud.
 /// opens the cloud modal (sign in, teams, conflicts) when clicked.
 fn cloud_indicator(app: &Rustrest) -> Element<'_, Message> {
@@ -107,37 +151,39 @@ fn cloud_indicator(app: &Rustrest) -> Element<'_, Message> {
         ),
     };
 
-    let entry = button(
-        row![text("●").size(9).color(dot), text(label).size(TEXT_BODY)]
+    let entry = item_button(
+        row![text("●").size(8).color(dot), text(label).size(TEXT_BODY)]
             .spacing(5)
             .align_y(Alignment::Center),
-    )
-    .style(button::text)
-    .padding([3, 8])
-    .on_press(Message::OpenCloudModal);
+        false,
+        Message::OpenCloudModal,
+    );
     super::tooltip::with_tooltip(entry, hint, iced::widget::tooltip::Position::Top)
 }
 
-/// renders the full bottom status bar: dynamic status entries (loading
-/// spinners, prompts, etc. - see `StatusBarState`) on the left, and
-/// fixed panel-toggle buttons (Console, Terminal) on the right, Zed-style.
+/// renders the full bottom status bar
 pub fn render_status_bar(app: &Rustrest) -> Element<'_, Message> {
-    let mut left = row![].spacing(16).align_y(Alignment::Center);
+    let colors = crate::theme::colors();
+    let mut left = row![].spacing(SPACE_XS).align_y(Alignment::Center);
 
     for item in &app.status_bar.items {
         let entry: Element<'_, Message> = if item.spinner {
-            super::spinner::spinner_with_label(app.spinner_tick, item.label.as_str())
+            container(super::spinner::spinner_with_label(
+                app.spinner_tick,
+                item.label.as_str(),
+            ))
+            .padding([2, 6])
+            .into()
         } else if let Some(msg) = item.on_press.clone() {
-            button(text(item.label.as_str()).size(TEXT_BASE))
-                .style(button::text)
-                .padding(0)
-                .on_press(msg)
-                .into()
+            item_button(text(item.label.as_str()).size(TEXT_BODY), false, msg).into()
         } else {
-            text(item.label.as_str())
-                .size(TEXT_BASE)
-                .color(crate::theme::colors().text_muted)
-                .into()
+            container(
+                text(item.label.as_str())
+                    .size(TEXT_BODY)
+                    .color(colors.text_muted),
+            )
+            .padding([2, 6])
+            .into()
         };
         left = left.push(entry);
     }
@@ -148,73 +194,69 @@ pub fn render_status_bar(app: &Rustrest) -> Element<'_, Message> {
     // command-palette entries already use.
     for (plugin_id, item) in app.plugins.plugin_manager.status_bar_items() {
         let entry: Element<'_, Message> = match item.command_id {
-            Some(command_id) => button(text(item.label).size(TEXT_BASE))
-                .style(button::text)
-                .padding(0)
-                .on_press(Message::PluginCommand(plugin_id, command_id))
-                .into(),
-            None => text(item.label)
-                .size(TEXT_BASE)
-                .color(crate::theme::colors().text_muted)
+            Some(command_id) => item_button(
+                text(item.label).size(TEXT_BODY),
+                false,
+                Message::PluginCommand(plugin_id, command_id),
+            )
+            .into(),
+            None => container(text(item.label).size(TEXT_BODY).color(colors.text_muted))
+                .padding([2, 6])
                 .into(),
         };
         left = left.push(entry);
     }
 
-    let console_collapsed = app.layout.console_collapsed;
     let console_label = if app.layout.console_logs.is_empty() {
         "Console".to_string()
     } else {
         format!("Console ({})", app.layout.console_logs.len())
     };
-    let console_toggle = button(
+    let console_toggle = item_button(
         row![
             text("≡").size(TEXT_BODY),
-            text(console_label).size(TEXT_BODY),
+            text(console_label).size(TEXT_BODY)
         ]
         .spacing(4)
         .align_y(Alignment::Center),
-    )
-    .style(if !console_collapsed {
-        secondary_button
-    } else {
-        button::text
-    })
-    .padding([3, 8])
-    .on_press(Message::ToggleConsolePanel);
+        !app.layout.console_collapsed,
+        Message::ToggleConsolePanel,
+    );
 
-    let terminal_button = button(
-        row![text(">_").size(TEXT_BODY), text("Terminal").size(TEXT_BODY),]
+    let terminal_button = item_button(
+        row![text(">_").size(TEXT_BODY), text("Terminal").size(TEXT_BODY)]
             .spacing(4)
             .align_y(Alignment::Center),
-    )
-    .style(button::text)
-    .padding([3, 8])
-    .on_press(Message::NewTerminalTabPressed);
+        false,
+        Message::NewTerminalTabPressed,
+    );
 
     let right = row![cloud_indicator(app), console_toggle, terminal_button]
-        .spacing(SPACE_SM)
+        .spacing(SPACE_XS)
         .align_y(Alignment::Center);
 
-    container(row![left, Space::new().width(Length::Fill), right].align_y(Alignment::Center))
+    let bar = container(
+        row![left, Space::new().width(Length::Fill), right]
+            .height(Length::Fill)
+            .align_y(Alignment::Center),
+    )
+    .width(Length::Fill)
+    .height(Length::Fixed(BAR_HEIGHT))
+    .padding([0.0, SPACE_SM])
+    .style(|_theme: &iced::Theme| container::Style {
+        background: Some(crate::theme::colors().status_bar_background.into()),
+        ..Default::default()
+    });
+
+    // iced borders are all-or-nothing, so the top-only hairline is a 1px
+    // strip stacked above the bar.
+    let hairline = container(Space::new())
         .width(Length::Fill)
-        .padding(Padding {
-            top: 6.0,
-            bottom: 6.0,
-            left: 4.0,
-            right: 4.0,
-        })
-        .style(|_theme: &iced::Theme| {
-            let colors = crate::theme::colors();
-            container::Style {
-                background: Some(colors.status_bar_background.into()),
-                border: iced::Border {
-                    color: colors.border,
-                    width: 1.0,
-                    radius: 0.0.into(),
-                },
-                ..Default::default()
-            }
-        })
-        .into()
+        .height(Length::Fixed(1.0))
+        .style(|_theme: &iced::Theme| container::Style {
+            background: Some(crate::theme::colors().border.into()),
+            ..Default::default()
+        });
+
+    column![hairline, bar].into()
 }

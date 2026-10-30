@@ -751,14 +751,20 @@ fn view(app: &Rustrest, _window_id: window::Id) -> Element<'_, Message> {
 
     let status_bar = ui::status_bar::render_status_bar(app);
 
-    let base_layout = column![top_bar, content_row, status_bar]
+    // the status bar sits outside the padded body so it spans the full
+    // window width and hugs the bottom edge, Zed-style.
+    let body = column![top_bar, content_row]
         .spacing(SPACE_MD)
         .padding(Padding {
             top: TITLEBAR_HEIGHT + SPACE_MD,
             left: SPACE_LG,
-            bottom: SPACE_LG,
+            bottom: SPACE_MD,
             right: SPACE_LG,
         })
+        .width(Length::Fill)
+        .height(Length::Fill);
+
+    let base_layout = column![body, status_bar]
         .width(Length::Fill)
         .height(Length::Fill);
 
