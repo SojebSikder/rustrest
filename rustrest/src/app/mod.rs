@@ -516,6 +516,7 @@ pub fn init() -> (Rustrest, Task<Message>) {
 
     let persisted_settings = crate::app_settings::load();
     crate::http_client::set_proxy_config(persisted_settings.proxy.clone());
+    crate::http_client::set_ssl_verification(persisted_settings.ssl_verification);
 
     let mut app = Rustrest {
         collections: Vec::new(),
@@ -620,6 +621,7 @@ pub fn init() -> (Rustrest, Task<Message>) {
             show_form_data_content_type: persisted_settings.show_form_data_content_type,
             proxy_port_input: persisted_settings.proxy.port.to_string(),
             proxy: persisted_settings.proxy.clone(),
+            ssl_verification: persisted_settings.ssl_verification,
         },
         theme: theme::ThemeState::new(
             persisted_settings.theme.clone(),
@@ -2009,6 +2011,9 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             settings::close_on_outside_click_toggled(app, enabled)
         }
         Message::ProxySettingChanged(edit) => settings::proxy_changed(app, edit),
+        Message::SslVerificationToggled(enabled) => {
+            settings::ssl_verification_toggled(app, enabled)
+        }
         Message::TogglePluginEnabled(plugin_id, enabled) => {
             plugins::toggle_enabled(app, plugin_id, enabled)
         }
