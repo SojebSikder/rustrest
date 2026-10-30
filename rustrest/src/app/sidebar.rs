@@ -34,6 +34,9 @@ pub struct SidebarState {
     pub current_modifiers: iced::keyboard::Modifiers,
     /// the row currently under the cursor, so the view can highlight it on hover
     pub hovered_sidebar_item: Option<SidebarItemKey>,
+    /// text in the sidebar search box. while non-empty the tree only shows
+    /// matching requests/folders, fully expanded
+    pub search_query: String,
 }
 
 pub fn show_saved_response_context_menu(
@@ -368,6 +371,15 @@ pub fn item_range_select(app: &mut Rustrest, key: SidebarItemKey) -> Task<Messag
 pub fn item_hovered(app: &mut Rustrest, key: Option<SidebarItemKey>) -> Task<Message> {
     app.sidebar.hovered_sidebar_item = key;
     Task::none()
+}
+
+pub fn search_changed(app: &mut Rustrest, query: String) -> Task<Message> {
+    app.sidebar.search_query = query;
+    Task::none()
+}
+
+pub fn search_focus(_app: &mut Rustrest) -> Task<Message> {
+    iced::widget::operation::focus(crate::ui::sidebar::search_input_id())
 }
 
 pub fn clear_selection(app: &mut Rustrest) -> Task<Message> {

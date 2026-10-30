@@ -65,6 +65,7 @@ pub enum FieldTarget {
         folder_path: Vec<String>,
     },
     WorkspaceName(usize),
+    SidebarSearch,
     TabName(usize),
     EnvName(usize),
     EnvVarKey {
@@ -646,6 +647,9 @@ pub fn apply_field_paste(app: &mut Rustrest, target: FieldTarget, text: String) 
         }
         FieldTarget::WorkspaceName(id) => {
             let _ = crate::app::update(app, Message::WorkspaceNameChanged(id, text));
+        }
+        FieldTarget::SidebarSearch => {
+            let _ = crate::app::update(app, Message::SidebarSearchChanged(text));
         }
         FieldTarget::TabName(idx) => {
             let _ = crate::app::update(app, Message::TabNameChanged(idx, text));

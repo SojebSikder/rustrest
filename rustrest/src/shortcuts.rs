@@ -42,6 +42,13 @@ fn bindings() -> Vec<Shortcut> {
             alt: false,
             message: Message::ToggleCommandPalette,
         },
+        Shortcut {
+            key: "f",
+            command: true,
+            shift: false,
+            alt: false,
+            message: Message::SidebarSearchFocus,
+        },
         // first half of chords like Ctrl+K Ctrl+T (theme selector),
         // second key is handled by `chord_sub` in main.rs
         Shortcut {
