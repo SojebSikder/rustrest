@@ -119,7 +119,9 @@ pub fn active_grpc_message(app: &mut Rustrest, msg: GrpcTabMessage) -> Task<Mess
             state
                 .metadata
                 .push(crate::ui::tab::types::KeyValuePair::new("", ""));
-            iced::widget::operation::snap_to_end(crate::ui::tab::protocol_common::kv_rows_id(tab_id))
+            iced::widget::operation::snap_to_end(crate::ui::tab::protocol_common::kv_rows_id(
+                tab_id,
+            ))
         }
         GrpcTabMessage::RemoveMetadata(idx) => {
             if idx < state.metadata.len() {

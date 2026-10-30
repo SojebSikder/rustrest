@@ -1,5 +1,7 @@
 use crate::app::Rustrest;
-use crate::collection::collection::{CollectionItem, PostmanRequestNode, PostmanResponseExample};
+use crate::collection::collection::{
+    CollectionItem, PostmanCollection, PostmanRequestNode, PostmanResponseExample,
+};
 use crate::message::{Message, SidebarDropTarget, SidebarItemKey};
 use crate::ui::context_menu::{FieldTarget, with_context_menu};
 use crate::ui::modal::muted_text_color;
@@ -33,15 +35,21 @@ fn sidebar_click_message(app: &Rustrest, key: SidebarItemKey, default: Message) 
 /// collapsed collections/folders) so Shift-click range-selection can slice
 /// between an anchor row and the clicked row.
 pub fn flatten_visible_sidebar_items(app: &Rustrest) -> Vec<SidebarItemKey> {
+    let query = search_query(app);
+    let query = query.as_deref();
     let mut out = Vec::new();
+
     for col in &app.collections {
+        let Some(filter) = collection_filter(col, query) else {
+            continue;
+        };
         out.push(SidebarItemKey::Collection(col.id));
-        if app.sidebar.collapsed_collections.contains(&col.id) {
+        if query.is_none() && app.sidebar.collapsed_collections.contains(&col.id) {
             continue;
         }
         let mut path = Vec::new();
         for item in &col.item {
-            flatten_sidebar_item(app, item, col.id, &mut path, &mut out);
+            flatten_sidebar_item(app, item, col.id, &mut path, query, filter, &mut out);
         }
     }
     out
@@ -52,8 +60,13 @@ fn flatten_sidebar_item(
     item: &CollectionItem,
     collection_id: usize,
     current_path: &mut Vec<String>,
+    query: Option<&str>,
+    filter: Option<&str>,
     out: &mut Vec<SidebarItemKey>,
 ) {
+    if !item_visible(item, filter) {
+        return;
+    }
     match item {
         CollectionItem::Folder(folder) => {
             current_path.push(folder.name.clone());
@@ -61,13 +74,15 @@ fn flatten_sidebar_item(
                 collection_id,
                 path: current_path.clone(),
             });
-            let is_collapsed = app
-                .sidebar
-                .collapsed_folders
-                .contains(&(collection_id, current_path.clone()));
+            let is_collapsed = query.is_none()
+                && app
+                    .sidebar
+                    .collapsed_folders
+                    .contains(&(collection_id, current_path.clone()));
             if !is_collapsed {
+                let filter = child_filter(&folder.name, filter);
                 for sub in &folder.item {
-                    flatten_sidebar_item(app, sub, collection_id, current_path, out);
+                    flatten_sidebar_item(app, sub, collection_id, current_path, query, filter, out);
                 }
             }
             current_path.pop();
@@ -82,8 +97,100 @@ fn flatten_sidebar_item(
     }
 }
 
+pub fn search_input_id() -> iced::widget::Id {
+    iced::widget::Id::new("rustrest-sidebar-search")
+}
+
+/// the active search text, lowercased; `None` when the search box is empty
+fn search_query(app: &Rustrest) -> Option<String> {
+    let query = app.sidebar.search_query.trim();
+    (!query.is_empty()).then(|| query.to_lowercase())
+}
+
+fn matches_query(haystack: &str, query: &str) -> bool {
+    haystack.to_lowercase().contains(query)
+}
+
+/// a request matches on its name, method or URL
+fn request_matches(req: &PostmanRequestNode, query: &str) -> bool {
+    matches_query(&req.name, query)
+        || matches_query(&req.request.method, query)
+        || req
+            .request
+            .url
+            .as_ref()
+            .is_some_and(|url| matches_query(&url.to_string(), query))
+}
+
+/// whether an item shows up under `filter`: a request that matches, or a
+/// folder whose name matches or that contains a match. `None` shows everything
+fn item_visible(item: &CollectionItem, filter: Option<&str>) -> bool {
+    let Some(query) = filter else {
+        return true;
+    };
+    match item {
+        CollectionItem::Request(req) => request_matches(req, query),
+        CollectionItem::Folder(folder) => {
+            matches_query(&folder.name, query)
+                || folder.item.iter().any(|sub| item_visible(sub, filter))
+        }
+    }
+}
+
+/// a folder whose own name matches shows all of its contents
+fn child_filter<'q>(folder_name: &str, filter: Option<&'q str>) -> Option<&'q str> {
+    filter.filter(|query| !matches_query(folder_name, query))
+}
+
+fn collection_filter<'q>(
+    col: &PostmanCollection,
+    query: Option<&'q str>,
+) -> Option<Option<&'q str>> {
+    let Some(q) = query else {
+        return Some(None);
+    };
+    if matches_query(&col.info.name, q) {
+        Some(None)
+    } else if col.item.iter().any(|item| item_visible(item, query)) {
+        Some(query)
+    } else {
+        None
+    }
+}
+
+fn render_search_box(app: &Rustrest) -> Element<'_, Message> {
+    let mut search_row = row![with_context_menu(
+        text_input("Search collections", &app.sidebar.search_query)
+            .id(search_input_id())
+            .on_input(Message::SidebarSearchChanged)
+            .size(TEXT_BODY)
+            .style(input_style)
+            .padding([4, 8])
+            .width(Length::Fill),
+        Message::ShowTextFieldContextMenu(
+            FieldTarget::SidebarSearch,
+            app.sidebar.search_query.clone(),
+        ),
+    )]
+    .spacing(SPACE_XS)
+    .align_y(Alignment::Center);
+
+    if !app.sidebar.search_query.is_empty() {
+        search_row = search_row.push(
+            button(text("✕").size(TEXT_BODY))
+                .on_press(Message::SidebarSearchChanged(String::new()))
+                .style(icon_button)
+                .padding([2, 6]),
+        );
+    }
+
+    search_row.into()
+}
+
 pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
     let mut sidebar_contents = column![].spacing(SPACE_MD);
+    let query = search_query(app);
+    let query = query.as_deref();
 
     if app.status_bar.is_active("startup-workspace") {
         sidebar_contents =
@@ -96,10 +203,17 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
                 },
             ));
     } else {
+        let mut any_match = false;
         for col in &app.collections {
+            let Some(filter) = collection_filter(col, query) else {
+                continue;
+            };
+            any_match = true;
             let col_id = col.id;
             let is_editing_col = app.sidebar.editing_collection_id == Some(col_id);
-            let is_collapsed_col = app.sidebar.collapsed_collections.contains(&col_id);
+            // a search expands everything it shows
+            let is_collapsed_col =
+                query.is_none() && app.sidebar.collapsed_collections.contains(&col_id);
 
             let collection_header_title: Element<'_, Message> = if is_editing_col {
                 row![
@@ -225,16 +339,38 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
 
             if !is_collapsed_col {
                 for item in &col.item {
-                    col_tree = render_sidebar_item(app, col_tree, item, col_id, Vec::new());
+                    col_tree =
+                        render_sidebar_item(app, col_tree, item, col_id, Vec::new(), query, filter);
                 }
             }
             sidebar_contents = sidebar_contents.push(col_tree);
+        }
+
+        if !any_match {
+            sidebar_contents = sidebar_contents.push(
+                text(format!(
+                    "No results for \"{}\"",
+                    app.sidebar.search_query.trim()
+                ))
+                .size(11)
+                .style(|theme: &iced::Theme| text::Style {
+                    color: Some(muted_text_color(theme)),
+                }),
+            );
         }
     }
 
     sidebar_contents = sidebar_contents.push(render_plugins_section(app));
 
-    container(scrollable(sidebar_contents))
+    let content: Element<'_, Message> = if app.collections.is_empty() {
+        scrollable(sidebar_contents).into()
+    } else {
+        column![render_search_box(app), scrollable(sidebar_contents)]
+            .spacing(SPACE_SM)
+            .into()
+    };
+
+    container(content)
         .width(Length::Fixed(app.layout.sidebar_width))
         .height(Length::Fill)
         .padding(SPACE_MD)
@@ -492,7 +628,12 @@ fn render_sidebar_item<'a>(
     item: &'a CollectionItem,
     collection_id: usize,
     mut current_path: Vec<String>,
+    query: Option<&str>,
+    filter: Option<&str>,
 ) -> Column<'a, Message> {
+    if !item_visible(item, filter) {
+        return layout;
+    }
     match item {
         CollectionItem::Folder(folder) => {
             current_path.push(folder.name.clone());
@@ -506,10 +647,12 @@ fn render_sidebar_item<'a>(
 
             let is_editing_folder = app.sidebar.editing_folder_collection_id == Some(collection_id)
                 && app.sidebar.editing_folder_path == current_path;
-            let is_collapsed = app
-                .sidebar
-                .collapsed_folders
-                .contains(&(collection_id, current_path.clone()));
+            // a search expands everything it shows
+            let is_collapsed = query.is_none()
+                && app
+                    .sidebar
+                    .collapsed_folders
+                    .contains(&(collection_id, current_path.clone()));
 
             let folder_title: Element<'_, Message> = if is_editing_folder {
                 row![
@@ -605,6 +748,7 @@ fn render_sidebar_item<'a>(
             });
 
             if !is_collapsed {
+                let filter = child_filter(&folder.name, filter);
                 for sub in &folder.item {
                     folder_layout = render_sidebar_item(
                         app,
@@ -612,6 +756,8 @@ fn render_sidebar_item<'a>(
                         sub,
                         collection_id,
                         current_path.clone(),
+                        query,
+                        filter,
                     );
                 }
             }

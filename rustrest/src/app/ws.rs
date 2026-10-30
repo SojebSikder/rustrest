@@ -60,7 +60,9 @@ pub fn active_ws_message(app: &mut Rustrest, msg: WsTabMessage) -> Task<Message>
             state
                 .headers
                 .push(crate::ui::tab::types::KeyValuePair::new("", ""));
-            iced::widget::operation::snap_to_end(crate::ui::tab::protocol_common::kv_rows_id(tab_id))
+            iced::widget::operation::snap_to_end(crate::ui::tab::protocol_common::kv_rows_id(
+                tab_id,
+            ))
         }
         WsTabMessage::RemoveHeader(idx) => {
             if idx < state.headers.len() {
