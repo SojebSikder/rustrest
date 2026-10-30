@@ -59,7 +59,7 @@ rustrest
 You can pin a specific version or change the install directory via environment variables:
 
 ```bash
-VERSION=v0.2.0 INSTALL_DIR="$HOME/bin" curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/SojebSikder/rustrest/main/install.sh | sh
+VERSION=v0.2.1 INSTALL_DIR="$HOME/bin" curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/SojebSikder/rustrest/main/install.sh | sh
 ```
 
 ### Windows
