@@ -1375,11 +1375,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         }
 
         Message::SidebarCollectionRootClicked(col_id) => {
-            let key = SidebarItemKey::Collection(col_id);
-            if !app.sidebar.selected_sidebar_items.contains(&key) {
-                app.sidebar.selected_sidebar_items.clear();
-                app.sidebar.sidebar_selection_anchor = None;
-            }
+            sidebar::select_single(app, SidebarItemKey::Collection(col_id));
 
             let existing_tab_idx = app.tabs.iter().position(|t| {
                 if let WorkspaceContent::CollectionRoot { collection_id, .. } = t.content {
@@ -1420,15 +1416,14 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
             collection_id,
             parent_path,
         } => {
-            let key = SidebarItemKey::Request {
-                collection_id,
-                parent_path: parent_path.clone(),
-                request_id: req_node.id,
-            };
-            if !app.sidebar.selected_sidebar_items.contains(&key) {
-                app.sidebar.selected_sidebar_items.clear();
-                app.sidebar.sidebar_selection_anchor = None;
-            }
+            sidebar::select_single(
+                app,
+                SidebarItemKey::Request {
+                    collection_id,
+                    parent_path: parent_path.clone(),
+                    request_id: req_node.id,
+                },
+            );
 
             app.sidebar.sidebar_drag = Some(SidebarDragItem::Request {
                 collection_id,
@@ -1723,6 +1718,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         Message::SidebarItemRangeSelect(key) => sidebar::item_range_select(app, key),
         Message::SidebarItemHovered(key) => sidebar::item_hovered(app, key),
         Message::ClearSidebarSelection => sidebar::clear_selection(app),
+        Message::SidebarOutsidePress => sidebar::outside_press(app),
         Message::SidebarSearchChanged(query) => sidebar::search_changed(app, query),
         Message::SidebarSearchFocus => sidebar::search_focus(app),
         Message::BatchDeleteSelectedPressed => sidebar::batch_delete_selected_pressed(app),
