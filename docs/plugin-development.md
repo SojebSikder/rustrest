@@ -315,8 +315,6 @@ enum UiEvent {
 
 `on_panel_event` gets called with the `id` of whichever widget the user interacted with; return the updated tree from `Some(...)` (or `None` to leave the currently-rendered tree as-is).
 
-The host only auto-scrolls a panel's whole tree when it contains no explicit `Scrollable`/`AutoScroll` anywhere; once you use one, you're opting into controlling scrolling yourself - typically to keep a header/footer (a settings button, a send box) pinned while just the middle section scrolls. `TextInput.on_submit`, if set, fires `UiEvent::Clicked` with that id when the user presses Enter in the field - e.g. wiring a chat input to its Send button's id so Enter submits without reaching for the mouse. Every `Label`/`Muted`/`Markdown` node is automatically right-click "Copy"-able (a `Markdown` node copies its markdown source) - the host handles this itself, nothing to do on your end.
-
 ### Styling elements
 
 Wrap any node with `.styled(...)` to change how it looks - button color, text size, widths, and so on. Every `UiStyle` field is optional; anything left unset keeps the host's default:
@@ -616,7 +614,7 @@ let handle = download_archive(&url, Some(&format!("{url}.sha256")), "bin")?;
 
 ## Language servers
 
-Language support for the pre-request / post-response script editors works like Zed extensions: a plugin doesn't speak LSP itself, it declares a language server and tells the host how to launch it. The host runs the server and its built-in LSP client (`rustrest-lsp`) drives the editors: diagnostics under the editor, a completion popup (typing `.`, starting a word, or Ctrl+Space), and hover info for the symbol at the cursor. Without such a plugin the editors fall back to a built-in syntax check.
+Language support for the pre-request / post-response script editors: a plugin doesn't speak LSP itself, it declares a language server and tells the host how to launch it. The host runs the server and its built-in LSP client (`rustrest-lsp`) drives the editors: diagnostics under the editor, a completion popup (typing `.`, starting a word, or Ctrl+Space), and hover info for the symbol at the cursor. Without such a plugin the editors fall back to a built-in syntax check.
 
 ```toml
 [[capabilities.language_servers]]
