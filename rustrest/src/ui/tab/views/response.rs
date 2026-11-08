@@ -15,6 +15,48 @@ use iced::{Alignment, Element, Font, Length};
 use std::collections::HashMap;
 
 const RESPONSE_BODY_FONT_SIZE: f32 = 13.0;
+/// fixed so the fold gutter's rows line up with the editor's lines
+const RESPONSE_BODY_LINE_HEIGHT: f32 = 18.0;
+/// `text_editor`'s default padding
+const RESPONSE_BODY_PADDING: f32 = 5.0;
+const FOLD_GUTTER_WIDTH: f32 = 18.0;
+
+/// the ▾/▸ column beside the response body, one row per visible line.
+/// runs of lines without a toggle are merged into a single spacer so huge
+/// bodies don't create a widget per line.
+fn fold_gutter<'a, Message>(
+    tab: &'a Tab,
+    wrap_msg: impl Fn(TabMessage) -> Message + Copy + 'static,
+) -> Element<'a, Message>
+where
+    Message: Clone + 'static,
+{
+    let mut gutter = column![].width(Length::Fixed(FOLD_GUTTER_WIDTH));
+    let mut gap = RESPONSE_BODY_PADDING;
+    for dl in tab.response_fold.display_lines() {
+        if !dl.foldable {
+            gap += RESPONSE_BODY_LINE_HEIGHT;
+            continue;
+        }
+        if gap > 0.0 {
+            gutter = gutter.push(Space::new().height(Length::Fixed(gap)));
+            gap = 0.0;
+        }
+        let icon = if dl.collapsed { "▶" } else { "▼" };
+        gutter = gutter.push(
+            button(
+                container(text(icon).size(9).color(crate::theme::colors().text_muted))
+                    .center(Length::Fill),
+            )
+            .padding(0)
+            .width(Length::Fixed(FOLD_GUTTER_WIDTH))
+            .height(Length::Fixed(RESPONSE_BODY_LINE_HEIGHT))
+            .style(button::text)
+            .on_press(wrap_msg(TabMessage::ToggleResponseFold(dl.line))),
+        );
+    }
+    gutter.into()
+}
 
 /// estimated pixel width of the widest line in the response body; errs a bit
 /// wide since monospace advance varies by platform font (~0.55-0.6em)
@@ -447,31 +489,77 @@ where
                         })
                         .padding([4, 10]);
 
-                    let view_toggle_bar = row![view_dropdown]
+                    let foldable = tab.response_fold.has_regions();
+                    let mut view_toggle_bar = row![view_dropdown]
                         .spacing(SPACE_MD)
                         .align_y(Alignment::Center);
+                    if foldable {
+                        view_toggle_bar = view_toggle_bar
+                            .push(Space::new().width(Length::Fill))
+                            .push(
+                                button(text("Expand all").size(TEXT_BODY))
+                                    .padding([4, 10])
+                                    .style(secondary_button)
+                                    .on_press(wrap_msg(TabMessage::ExpandAllResponseFolds)),
+                            )
+                            .push(
+                                button(text("Collapse all").size(TEXT_BODY))
+                                    .padding([4, 10])
+                                    .style(secondary_button)
+                                    .on_press(wrap_msg(TabMessage::CollapseAllResponseFolds)),
+                            );
+                    }
 
+                    // with nothing selected, right-click copies the whole body,
+                    // including any collapsed regions
                     let context_menu_msg = wrap_msg(TabMessage::ShowFieldContextMenu(
                         TabFieldTarget::ResponseBodyEditor,
                         tab.response_body_editor
                             .selection()
-                            .unwrap_or_else(|| tab.response_body_editor.text()),
+                            .unwrap_or_else(|| tab.response_fold.full_text()),
                     ));
 
                     let content_width = response_body_content_width(&tab.response_body_editor);
                     let tab_id = tab.id;
+                    // JSON view gets Postman-style "Pretty" highlighting; Raw stays plain
+                    let highlight = tab.response_view == ResponseView::Json;
 
                     let response_editor = responsive(move |size| {
+                        let gutter_width = if foldable { FOLD_GUTTER_WIDTH } else { 0.0 };
                         let editor = text_editor(&tab.response_body_editor)
                             .font(Font::MONOSPACE)
                             .size(RESPONSE_BODY_FONT_SIZE)
+                            .line_height(iced::widget::text::LineHeight::Absolute(
+                                RESPONSE_BODY_LINE_HEIGHT.into(),
+                            ))
+                            .padding(RESPONSE_BODY_PADDING)
                             .wrapping(Wrapping::None)
-                            .width(content_width.max(size.width))
+                            .width(content_width.max(size.width - gutter_width))
                             .on_action(move |act| {
                                 wrap_msg(TabMessage::ResponseBodyEditorAction(act))
                             });
+                        let editor: Element<Message> = if highlight {
+                            editor
+                                .highlight_with::<crate::theme::syntax::JsonHighlighter>(
+                                    crate::theme::syntax::Settings {
+                                        theme: crate::theme::syntax(),
+                                        token: "json".to_string(),
+                                    },
+                                    crate::theme::syntax::Highlight::to_format,
+                                )
+                                .into()
+                        } else {
+                            editor.into()
+                        };
 
-                        scrollable(with_context_menu(editor, context_menu_msg.clone()))
+                        let editor = with_context_menu(editor, context_menu_msg.clone());
+                        let body: Element<Message> = if foldable {
+                            row![fold_gutter(tab, wrap_msg), editor].into()
+                        } else {
+                            editor
+                        };
+
+                        scrollable(body)
                             .direction(scrollable::Direction::Both {
                                 vertical: scrollable::Scrollbar::default(),
                                 horizontal: scrollable::Scrollbar::default(),

@@ -58,7 +58,10 @@ pub struct Tab {
     pub body_urlencoded_values: Vec<text_editor::Content>,
     pub binary_file_path: Option<String>,
     pub response: Option<Result<HttpResponse, String>>,
+    /// what the response body editor shows: `response_fold`'s text with collapsed regions shortened
     pub response_body_editor: text_editor::Content,
+    /// full formatted response body plus its JSON fold state
+    pub response_fold: super::json_fold::JsonFold,
     /// last scroll position of the response body, so switching tabs and
     /// coming back restores it instead of jumping to the top.
     pub response_scroll: iced::widget::operation::AbsoluteOffset,
@@ -81,6 +84,65 @@ pub struct Tab {
 }
 
 impl Tab {
+    /// replaces the response body text, resetting folds. `json` enables
+    /// folding (the JSON view of a body that parsed as JSON).
+    pub fn set_response_text(&mut self, text: &str, json: bool) {
+        let foldable = json && !text.starts_with("// Invalid JSON");
+        self.response_fold = super::json_fold::JsonFold::new(text, foldable);
+        self.response_body_editor = text_editor::Content::with_text(text);
+    }
+
+    /// applies a fold change by rewriting only the rows that differ, as one edit.
+    fn apply_fold_change(&mut self, change: impl FnOnce(&mut super::json_fold::JsonFold)) {
+        use text_editor::{Action, Cursor, Edit, Position};
+
+        let old = self.response_fold.display_lines();
+        change(&mut self.response_fold);
+        let new = self.response_fold.display_lines();
+
+        let prefix = old.iter().zip(&new).take_while(|(a, b)| a == b).count();
+        let max_suffix = old.len().min(new.len()) - prefix;
+        let suffix = old
+            .iter()
+            .rev()
+            .zip(new.iter().rev())
+            .take(max_suffix)
+            .take_while(|(a, b)| a == b)
+            .count();
+        let old_rows = &old[prefix..old.len() - suffix];
+        let new_rows = &new[prefix..new.len() - suffix];
+
+        let (Some(last_old), false) = (old_rows.last(), new_rows.is_empty()) else {
+            if old_rows.len() != new_rows.len() || !old_rows.is_empty() {
+                self.response_body_editor =
+                    text_editor::Content::with_text(&self.response_fold.display_text());
+            }
+            return;
+        };
+
+        // columns are byte offsets
+        self.response_body_editor.move_to(Cursor {
+            position: Position {
+                line: prefix + old_rows.len() - 1,
+                column: self.response_fold.row_text(last_old).len(),
+            },
+            selection: Some(Position {
+                line: prefix,
+                column: 0,
+            }),
+        });
+        let replacement = self.response_fold.rows_text(new_rows);
+        self.response_body_editor
+            .perform(Action::Edit(Edit::Paste(std::sync::Arc::new(replacement))));
+        self.response_body_editor.move_to(Cursor {
+            position: Position {
+                line: prefix,
+                column: 0,
+            },
+            selection: None,
+        });
+    }
+
     pub fn new(id: usize) -> Self {
         let request_params = vec![KeyValuePair::new("", "")];
         let request_headers = vec![
@@ -136,6 +198,7 @@ impl Tab {
             is_loading: false,
             cancel_token: CancellationToken::new(),
             response_body_editor: text_editor::Content::with_text(""),
+            response_fold: Default::default(),
             response_scroll: Default::default(),
             dirty: false,
             sse_active: false,
@@ -344,6 +407,14 @@ impl Tab {
             TabMessage::RawTypeChanged(raw_type) => self.raw_type = raw_type,
             TabMessage::ResponseViewChanged(view) => self.response_view = view,
             TabMessage::BodyChanged(action) => self.request_body.perform(action),
+            TabMessage::BeautifyBody => {
+                if let Some(pretty) = crate::utils::beautify_json(&self.request_body.text()) {
+                    use text_editor::{Action, Edit};
+                    self.request_body.perform(Action::SelectAll);
+                    self.request_body
+                        .perform(Action::Edit(Edit::Paste(std::sync::Arc::new(pretty))));
+                }
+            }
             TabMessage::GraphQlQueryAction(action) => self.graphql_query.perform(action),
             TabMessage::GraphQlVariablesAction(action) => self.graphql_variables.perform(action),
 
@@ -395,6 +466,15 @@ impl Tab {
                 }
             }
             TabMessage::ResponseBodyScrolled(offset) => self.response_scroll = offset,
+            TabMessage::ToggleResponseFold(line) => {
+                self.apply_fold_change(|fold| fold.toggle(line));
+            }
+            TabMessage::ExpandAllResponseFolds => {
+                self.apply_fold_change(|fold| fold.expand_all());
+            }
+            TabMessage::CollapseAllResponseFolds => {
+                self.apply_fold_change(|fold| fold.collapse_all());
+            }
             TabMessage::ResponseBodyEditorAction(action) => {
                 if let iced::widget::text_editor::Action::Edit(_) = action {
                 } else {

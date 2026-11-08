@@ -30,6 +30,35 @@ where
         on_context_menu,
         on_resize_start,
         true,
+        None,
+    )
+}
+
+/// a [`multiline_input`] that syntax-highlights its text.
+#[allow(clippy::too_many_arguments)]
+pub fn highlighted_multiline_input<'a, Message>(
+    placeholder: &'a str,
+    content: &'a text_editor::Content,
+    padding: u16,
+    height: f32,
+    syntax: Option<&str>,
+    on_action: impl Fn(text_editor::Action) -> Message + 'a,
+    on_context_menu: Message,
+    on_resize_start: Message,
+) -> Element<'a, Message>
+where
+    Message: Clone + 'a,
+{
+    build(
+        placeholder,
+        content,
+        padding,
+        height,
+        on_action,
+        on_context_menu,
+        on_resize_start,
+        true,
+        syntax,
     )
 }
 
@@ -56,6 +85,7 @@ where
         on_context_menu,
         on_resize_start,
         false,
+        None,
     )
 }
 
@@ -69,21 +99,42 @@ fn build<'a, Message>(
     on_context_menu: Message,
     on_resize_start: Message,
     var_assist: bool,
+    syntax: Option<&str>,
 ) -> Element<'a, Message>
 where
     Message: Clone + 'a,
 {
     let on_action: Rc<dyn Fn(text_editor::Action) -> Message + 'a> = Rc::new(on_action);
     let forward = on_action.clone();
-    let editor = with_context_menu(
-        text_editor(content)
-            .placeholder(placeholder)
-            .padding(padding)
-            .wrapping(text::Wrapping::None)
-            .height(iced::Length::Fixed(height))
-            .on_action(move |action| forward(action)),
-        on_context_menu,
-    );
+    let base = text_editor(content)
+        .placeholder(placeholder)
+        .padding(padding)
+        .wrapping(text::Wrapping::None)
+        .height(iced::Length::Fixed(height))
+        .on_action(move |action| forward(action));
+
+    let base: Element<'a, Message> = match syntax {
+        Some("json") => base
+            .highlight_with::<crate::theme::syntax::JsonHighlighter>(
+                crate::theme::syntax::Settings {
+                    theme: crate::theme::syntax(),
+                    token: "json".to_string(),
+                },
+                crate::theme::syntax::Highlight::to_format,
+            )
+            .into(),
+        Some(token) => base
+            .highlight_with::<crate::theme::syntax::Highlighter>(
+                crate::theme::syntax::Settings {
+                    theme: crate::theme::syntax(),
+                    token: token.to_string(),
+                },
+                crate::theme::syntax::Highlight::to_format,
+            )
+            .into(),
+        None => base.into(),
+    };
+    let editor = with_context_menu(base, on_context_menu);
     let editor = if var_assist {
         var_editor(editor, content, padding, on_action)
     } else {

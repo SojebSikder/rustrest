@@ -85,6 +85,17 @@ impl RawType {
         Self::Html,
         Self::Xml,
     ];
+
+    /// syntax-highlighting token for the raw body editor. `None` for plain text
+    pub fn syntax(&self) -> Option<&'static str> {
+        match self {
+            Self::Text => None,
+            Self::JavaScript => Some("js"),
+            Self::Json => Some("json"),
+            Self::Html => Some("html"),
+            Self::Xml => Some("xml"),
+        }
+    }
 }
 
 impl std::fmt::Display for RawType {

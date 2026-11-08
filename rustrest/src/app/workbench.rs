@@ -326,8 +326,9 @@ pub fn active_tab_message(app: &mut Rustrest, tab_msg: TabMessage) -> Task<Messa
                     ResponseView::Json => format_json_or_fallback(&resp.body),
                     ResponseView::Raw => resp.body.clone(),
                 };
-                tab_state.tab.response_body_editor =
-                    iced::widget::text_editor::Content::with_text(&body_text);
+                tab_state
+                    .tab
+                    .set_response_text(&body_text, view == ResponseView::Json);
             }
         } else {
             syncs_saved_responses = matches!(
@@ -713,12 +714,10 @@ pub fn response_received(
                     ResponseView::Json => format_json_or_fallback(&resp.body),
                     ResponseView::Raw => resp.body.clone(),
                 };
-                tab.response_body_editor =
-                    iced::widget::text_editor::Content::with_text(&initial_body);
+                let is_json = tab.response_view == ResponseView::Json;
+                tab.set_response_text(&initial_body, is_json);
             }
-            Err(err_msg) => {
-                tab.response_body_editor = iced::widget::text_editor::Content::with_text(err_msg);
-            }
+            Err(err_msg) => tab.set_response_text(err_msg, false),
         }
 
         let mut test_results = Vec::new();

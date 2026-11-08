@@ -1,5 +1,4 @@
 use crate::app::{Rustrest, WorkspaceContent};
-use rustrest_core::docs::DocsTarget;
 use crate::collection::collection::{
     CollectionItem, PostmanCollection, PostmanRequestNode, PostmanResponseExample,
 };
@@ -20,6 +19,7 @@ use iced::widget::{
     text_input,
 };
 use iced::{Alignment, Element, Font, Length};
+use rustrest_core::docs::DocsTarget;
 
 /// whether `key` is the item open in the active tab; that row stays
 /// highlighted for as long as its tab is the active one.
@@ -28,9 +28,10 @@ fn is_active_tab_item(app: &Rustrest, key: &SidebarItemKey) -> bool {
         return false;
     };
     match (&tab_state.content, key) {
-        (WorkspaceContent::CollectionRoot { collection_id, .. }, SidebarItemKey::Collection(id)) => {
-            collection_id == id
-        }
+        (
+            WorkspaceContent::CollectionRoot { collection_id, .. },
+            SidebarItemKey::Collection(id),
+        ) => collection_id == id,
         (
             WorkspaceContent::Folder(state),
             SidebarItemKey::Folder {

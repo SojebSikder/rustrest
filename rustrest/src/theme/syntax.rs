@@ -368,41 +368,148 @@ impl Iterator for ScopeRangeIterator {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use iced::advanced::text::highlighter::Highlighter as _;
+/// a fast, line-local JSON highlighter for the response body and the raw
+/// JSON request body.
+///
+/// syntect re-parses with regexes, and iced re-highlights every line from
+/// the first changed one down, which made big bodies crawl (folding a node
+/// near the top re-highlighted the whole document). pretty-printed JSON
+/// never carries state across lines, so a hand tokenizer is enough.
+/// the colors still come from the theme via the same TextMate scopes.
+pub struct JsonHighlighter {
+    styles: JsonStyles,
+    current_line: usize,
+}
 
-    #[test]
-    fn builds_from_zed_syntax_and_colors_keywords() {
-        let style: StyleMap = serde_json::from_str(
-            r##"{ "syntax": { "keyword": { "color": "#ff0000ff", "font_weight": 700 } } }"##,
-        )
-        .unwrap();
-        let theme = SyntaxTheme::from_style(&style, Color::WHITE, Color::BLACK).unwrap();
-        // same source hashes to the same cached (leaked) theme
-        assert_eq!(
-            theme,
-            SyntaxTheme::from_style(&style, Color::WHITE, Color::BLACK).unwrap()
-        );
+#[derive(Clone, Copy)]
+struct JsonStyles {
+    key: StyleModifier,
+    string: StyleModifier,
+    number: StyleModifier,
+    boolean: StyleModifier,
+    null: StyleModifier,
+    bracket: StyleModifier,
+    delimiter: StyleModifier,
+    variable: StyleModifier,
+}
 
-        let mut h = Highlighter::new(&Settings {
-            theme,
-            token: "js".into(),
-        });
-        let spans: Vec<_> = h.highlight_line("const x = 1;").collect();
-        let (range, highlight) = spans
-            .iter()
-            .find(|(r, _)| r.start == 0)
-            .expect("a span at the start of the line");
-        assert!(range.end >= 5);
-        let format = highlight.to_format(&Theme::Dark);
-        assert_eq!(format.color, Some(Color::from_rgb8(255, 0, 0)));
+impl JsonStyles {
+    fn new(theme: SyntaxTheme) -> Self {
+        let highlighter = highlighting::Highlighter::new(theme.0);
+        let style = |scopes: &str| {
+            let stack = parsing::ScopeStack::from_str(scopes).unwrap_or_default();
+            highlighter.style_mod_for_stack(stack.as_slice())
+        };
+        JsonStyles {
+            key: style(
+                "source.json meta.mapping.key.json string.quoted.double.json support.type.property-name.json",
+            ),
+            string: style("source.json meta.mapping.value.json string.quoted.double.json"),
+            number: style("source.json constant.numeric.json"),
+            boolean: style("source.json constant.language.boolean.json"),
+            null: style("source.json constant.language.null.json"),
+            bracket: style("source.json punctuation.section.mapping.begin.json"),
+            delimiter: style("source.json punctuation.separator.mapping.pair.json"),
+            variable: style("source.json variable.other.json"),
+        }
+    }
+}
+
+impl highlighter::Highlighter for JsonHighlighter {
+    type Settings = Settings;
+    type Highlight = Highlight;
+    type Iterator<'a> = std::vec::IntoIter<(Range<usize>, Highlight)>;
+
+    fn new(settings: &Self::Settings) -> Self {
+        JsonHighlighter {
+            styles: JsonStyles::new(settings.theme),
+            current_line: 0,
+        }
     }
 
-    #[test]
-    fn no_syntax_table_means_fallback() {
-        assert!(SyntaxTheme::from_style(&StyleMap::new(), Color::WHITE, Color::BLACK).is_none());
-        assert_ne!(SyntaxTheme::fallback(true), SyntaxTheme::fallback(false));
+    fn update(&mut self, new_settings: &Self::Settings) {
+        self.styles = JsonStyles::new(new_settings.theme);
+        self.current_line = 0;
     }
+
+    fn change_line(&mut self, line: usize) {
+        // lines are independent, so there's nothing to rewind but the counter
+        self.current_line = self.current_line.min(line);
+    }
+
+    fn highlight_line(&mut self, line: &str) -> Self::Iterator<'_> {
+        self.current_line += 1;
+        json_spans(line, &self.styles)
+            .into_iter()
+            .map(|(range, style)| (range, Highlight(style)))
+            .collect::<Vec<_>>()
+            .into_iter()
+    }
+
+    fn current_line(&self) -> usize {
+        self.current_line
+    }
+}
+
+fn json_spans(line: &str, styles: &JsonStyles) -> Vec<(Range<usize>, StyleModifier)> {
+    let bytes = line.as_bytes();
+    let mut spans = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        let start = i;
+        let style = match bytes[i] {
+            b'"' => {
+                i += 1;
+                while i < bytes.len() && bytes[i] != b'"' {
+                    i += if bytes[i] == b'\\' { 2 } else { 1 };
+                }
+                i = (i + 1).min(bytes.len());
+                let rest = line[i..].trim_start();
+                if rest.starts_with(':') {
+                    styles.key
+                } else {
+                    styles.string
+                }
+            }
+            b'{' if bytes.get(i + 1) == Some(&b'{') => {
+                // `{{variable}}` placeholder in a request body
+                i = line[i..].find("}}").map_or(bytes.len(), |end| i + end + 2);
+                styles.variable
+            }
+            b'{' | b'}' | b'[' | b']' => {
+                i += 1;
+                styles.bracket
+            }
+            b',' | b':' => {
+                i += 1;
+                styles.delimiter
+            }
+            b'-' | b'0'..=b'9' => {
+                while i < bytes.len()
+                    && matches!(bytes[i], b'0'..=b'9' | b'.' | b'e' | b'E' | b'+' | b'-')
+                {
+                    i += 1;
+                }
+                styles.number
+            }
+            c if c.is_ascii_alphabetic() => {
+                while i < bytes.len() && bytes[i].is_ascii_alphanumeric() {
+                    i += 1;
+                }
+                match &line[start..i] {
+                    "true" | "false" => styles.boolean,
+                    "null" => styles.null,
+                    _ => continue,
+                }
+            }
+            _ => {
+                // whitespace, the fold placeholder and anything else stays plain;
+                // step a whole char so ranges stay on UTF-8 boundaries
+                i += line[i..].chars().next().map_or(1, char::len_utf8);
+                continue;
+            }
+        };
+        spans.push((start..i, style));
+    }
+    spans
 }

@@ -85,6 +85,8 @@ pub enum TabMessage {
 
     BodyChanged(text_editor::Action),
     RawTypeChanged(RawType),
+    /// pretty-print the raw JSON body in place (Postman's "Beautify")
+    BeautifyBody,
     GraphQlQueryAction(text_editor::Action),
     GraphQlVariablesAction(text_editor::Action),
 
@@ -123,6 +125,10 @@ pub enum TabMessage {
     ResponseBodyEditorAction(iced::widget::text_editor::Action),
     /// response body scrollable moved. remembered per tab.
     ResponseBodyScrolled(iced::widget::operation::AbsoluteOffset),
+    /// collapse/expand the JSON region opening on this (full-text) line
+    ToggleResponseFold(usize),
+    ExpandAllResponseFolds,
+    CollapseAllResponseFolds,
 
     /// a keystroke/cursor action in a per-row "Value" multiline editor
     ValueEditorAction(ValueField, usize, text_editor::Action),
@@ -171,6 +177,7 @@ impl TabMessage {
             | TabMessage::MethodChanged(_)
             | TabMessage::BodyTypeChanged(_)
             | TabMessage::RawTypeChanged(_)
+            | TabMessage::BeautifyBody
             | TabMessage::SelectBinaryFile
             | TabMessage::BinaryFileSelected(_)
             | TabMessage::SelectFormDataFile(_)
@@ -221,6 +228,9 @@ impl TabMessage {
             | TabMessage::ResponseSubTabSelected(_)
             | TabMessage::ResponseBodyEditorAction(_)
             | TabMessage::ResponseBodyScrolled(_)
+            | TabMessage::ToggleResponseFold(_)
+            | TabMessage::ExpandAllResponseFolds
+            | TabMessage::CollapseAllResponseFolds
             | TabMessage::ScriptTabChanged(_)
             | TabMessage::CancelRequest
             | TabMessage::ViewSavedResponse(_)
