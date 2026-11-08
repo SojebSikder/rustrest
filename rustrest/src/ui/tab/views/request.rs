@@ -1,5 +1,5 @@
 use super::super::Tab;
-use super::super::components::kv_editor_pane;
+use super::super::components::{kv_editor_pane, kv_rows, kv_rows_scrollable, path_variables_pane};
 use super::super::messages::{TabMessage, ValueField};
 use super::super::types::{BodyType, RawType, RequestSubTab, ScriptTab};
 use crate::http_client::HttpMethod;
@@ -151,31 +151,64 @@ where
     }
 
     let inner_input_field: Element<Message> = match tab.active_sub_tab {
-        RequestSubTab::Params => kv_editor_pane(
-            &tab.request_params,
-            &tab.request_params_values,
-            "Add Param",
-            move |i, kv| wrap_msg(TabMessage::ParamRowChanged(i, kv)),
-            move |i, action| wrap_msg(TabMessage::ValueEditorAction(ValueField::Param, i, action)),
-            wrap_msg(TabMessage::AddParamRow),
-            move |i| wrap_msg(TabMessage::RemoveParamRow(i)),
-            move |i, v| {
-                wrap_msg(TabMessage::ShowFieldContextMenu(
-                    TabFieldTarget::ParamKey(i),
-                    v,
-                ))
-            },
-            move |i, v| {
-                wrap_msg(TabMessage::ShowFieldContextMenu(
-                    TabFieldTarget::ParamValue(i),
-                    v,
-                ))
-            },
-            tab_id,
-            KvValueField::Param,
-            multiline_height,
-            on_multiline_resize_start,
-        ),
+        RequestSubTab::Params => {
+            let query_params = kv_rows(
+                &tab.request_params,
+                &tab.request_params_values,
+                "Add Param",
+                move |i, kv| wrap_msg(TabMessage::ParamRowChanged(i, kv)),
+                move |i, action| {
+                    wrap_msg(TabMessage::ValueEditorAction(ValueField::Param, i, action))
+                },
+                wrap_msg(TabMessage::AddParamRow),
+                move |i| wrap_msg(TabMessage::RemoveParamRow(i)),
+                move |i, v| {
+                    wrap_msg(TabMessage::ShowFieldContextMenu(
+                        TabFieldTarget::ParamKey(i),
+                        v,
+                    ))
+                },
+                move |i, v| {
+                    wrap_msg(TabMessage::ShowFieldContextMenu(
+                        TabFieldTarget::ParamValue(i),
+                        v,
+                    ))
+                },
+                tab_id,
+                KvValueField::Param,
+                multiline_height,
+                on_multiline_resize_start,
+            );
+
+            let content: Element<Message> = if tab.path_variables.is_empty() {
+                query_params
+            } else {
+                column![
+                    text("Query Params").size(TEXT_BODY).font(semibold()),
+                    query_params,
+                    text("Path Variables").size(TEXT_BODY).font(semibold()),
+                    path_variables_pane(
+                        &tab.path_variables,
+                        &tab.path_variables_values,
+                        move |i, action| wrap_msg(TabMessage::ValueEditorAction(
+                            ValueField::PathVariable,
+                            i,
+                            action
+                        )),
+                        move |i, v| wrap_msg(TabMessage::ShowFieldContextMenu(
+                            TabFieldTarget::PathVariableValue(i),
+                            v,
+                        )),
+                        tab_id,
+                        multiline_height,
+                        on_multiline_resize_start,
+                    ),
+                ]
+                .spacing(SPACE_SM)
+                .into()
+            };
+            kv_rows_scrollable(content, tab_id)
+        }
         RequestSubTab::Headers => kv_editor_pane(
             &tab.request_headers,
             &tab.request_headers_values,

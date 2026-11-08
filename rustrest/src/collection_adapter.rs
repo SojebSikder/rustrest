@@ -3,7 +3,7 @@ use crate::collection::collection::{
     GraphQlRequestDetails, GrpcRequestDetails, PostmanBody, PostmanBodyFile, PostmanBodyRow,
     PostmanEvent, PostmanFileSrc, PostmanGraphQlBody, PostmanHeader, PostmanRequestDetails,
     PostmanRequestNode, PostmanResponseExample, PostmanScript, PostmanScriptExec, PostmanUrl,
-    ProtocolRequestDetails, WebSocketRequestDetails,
+    PostmanUrlVariable, ProtocolRequestDetails, WebSocketRequestDetails,
 };
 use crate::http_client::HttpMethod;
 use crate::ui::tab::Tab;
@@ -177,7 +177,17 @@ impl RequestNodeTabExt for PostmanRequestNode {
         self.name = tab.name.clone();
         self.request.description = tab.docs.description();
         self.request.method = tab.method.to_string();
-        self.request.url = Some(PostmanUrl::String(tab.url.clone()));
+        self.request.url = Some(PostmanUrl::with_variables(
+            tab.url.clone(),
+            tab.path_variables
+                .iter()
+                .map(|kv| PostmanUrlVariable {
+                    key: kv.key.clone(),
+                    value: Some(kv.value.clone()),
+                    description: None,
+                })
+                .collect(),
+        ));
 
         // update headers
         let headers: Vec<PostmanHeader> = tab
@@ -258,6 +268,13 @@ pub fn create_tab_from_request(
     tab.collection_id = collection_id;
     tab.request_id = Some(node.id);
     tab.sync_params_from_url();
+    tab.load_path_variables(
+        node.request
+            .url
+            .iter()
+            .flat_map(|u| u.variables())
+            .map(|v| (v.key.clone(), v.value.clone().unwrap_or_default())),
+    );
 
     tab.method = match node.request.method.to_uppercase().as_str() {
         "GET" => HttpMethod::GET,

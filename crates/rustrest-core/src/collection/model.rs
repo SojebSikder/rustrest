@@ -427,16 +427,119 @@ where
 #[serde(untagged)]
 pub enum PostmanUrl {
     String(String),
-    Object { raw: String },
+    Object {
+        raw: String,
+        /// values for `:name` path segments in `raw` (Postman's `url.variable`)
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        variable: Option<Vec<PostmanUrlVariable>>,
+    },
 }
 
 impl PostmanUrl {
+    /// builds a URL, using the object form only when there are path variables
+    /// so requests without any keep serializing as a plain string.
+    pub fn with_variables(raw: String, variables: Vec<PostmanUrlVariable>) -> Self {
+        if variables.is_empty() {
+            Self::String(raw)
+        } else {
+            Self::Object {
+                raw,
+                variable: Some(variables),
+            }
+        }
+    }
+
     pub fn to_string(&self) -> String {
         match self {
             Self::String(s) => s.clone(),
-            Self::Object { raw } => raw.clone(),
+            Self::Object { raw, .. } => raw.clone(),
         }
     }
+
+    /// the path variables saved alongside the URL, if any.
+    pub fn variables(&self) -> &[PostmanUrlVariable] {
+        match self {
+            Self::Object {
+                variable: Some(vars),
+                ..
+            } => vars,
+            _ => &[],
+        }
+    }
+}
+
+/// one path variable of a request URL, e.g. `id` for `/users/:id`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PostmanUrlVariable {
+    pub key: String,
+    #[serde(default, deserialize_with = "deserialize_optional_scalar_string")]
+    pub value: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+/// names of the `:name` path segments in `url`, in order and deduplicated
+/// (e.g. `["id"]` for `{{base}}/users/:id?x=1`). Only the path is scanned,
+/// so a port like `localhost:8080` is never mistaken for a variable.
+pub fn path_variable_names(url: &str) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+
+    for_each_path_variable(url, |name| {
+        if !names.iter().any(|n| n == name) {
+            names.push(name.to_string());
+        }
+        None
+    });
+    names
+}
+
+/// replaces each `:name` path segment of `url` with `lookup(name)`; segments
+/// whose lookup returns `None` are left as written.
+pub fn substitute_path_variables(url: &str, lookup: impl Fn(&str) -> Option<String>) -> String {
+    for_each_path_variable(url, |name| lookup(name))
+}
+
+/// walks the `:name` segment prefixes in `url`'s path, rebuilding the URL
+/// with whatever `f` returns for each (or the original `:name` on `None`).
+fn for_each_path_variable(url: &str, mut f: impl FnMut(&str) -> Option<String>) -> String {
+    // the path ends at the query or fragment
+    let path_end = url.find(['?', '#']).unwrap_or(url.len());
+    let (before_query, rest) = url.split_at(path_end);
+
+    // skip `scheme://authority`. without a scheme, the first `/` starts the
+    // path (`{{base_url}}/x`, `localhost:8080/x`)
+    let authority_start = before_query.find("://").map_or(0, |i| i + 3);
+    let path_start = before_query[authority_start..]
+        .find('/')
+        .map_or(before_query.len(), |i| authority_start + i);
+    let (head, path) = before_query.split_at(path_start);
+
+    let mut out = String::with_capacity(url.len());
+    out.push_str(head);
+    for (i, segment) in path.split('/').enumerate() {
+        if i > 0 {
+            out.push('/');
+        }
+        let name_len = segment
+            .strip_prefix(':')
+            .map(|s| {
+                s.find(|c: char| !(c.is_alphanumeric() || c == '_' || c == '-'))
+                    .unwrap_or(s.len())
+            })
+            .unwrap_or(0);
+        if name_len == 0 {
+            out.push_str(segment);
+            continue;
+        }
+        let name = &segment[1..1 + name_len];
+        match f(name) {
+            Some(value) => out.push_str(&value),
+            None => out.push_str(&segment[..1 + name_len]),
+        }
+        out.push_str(&segment[1 + name_len..]);
+    }
+    out.push_str(rest);
+    out
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

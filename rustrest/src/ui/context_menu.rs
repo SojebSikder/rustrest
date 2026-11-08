@@ -21,6 +21,7 @@ pub enum TabFieldTarget {
     HeaderValue(usize),
     ParamKey(usize),
     ParamValue(usize),
+    PathVariableValue(usize),
     CookieKey(usize),
     CookieValue(usize),
     UrlencodedKey(usize),
@@ -565,6 +566,13 @@ pub fn apply_field_paste(app: &mut Rustrest, target: FieldTarget, text: String) 
                     idx,
                     Action::Edit(Edit::Paste(Arc::new(text))),
                 )),
+                TabFieldTarget::PathVariableValue(idx) => {
+                    tab.update(TabMessage::ValueEditorAction(
+                        ValueField::PathVariable,
+                        idx,
+                        Action::Edit(Edit::Paste(Arc::new(text))),
+                    ))
+                }
                 TabFieldTarget::CookieKey(idx) => {
                     if let Some(updated) = kv_key_paste(&tab.request_cookies, idx, text) {
                         tab.update(TabMessage::CookieRowChanged(idx, updated));

@@ -50,6 +50,7 @@ pub enum MultilineFieldKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum KvValueField {
     Param,
+    PathVariable,
     Header,
     Cookie,
     Urlencoded,
