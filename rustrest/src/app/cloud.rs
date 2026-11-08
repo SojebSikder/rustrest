@@ -1354,12 +1354,29 @@ pub fn collection_deleted(
     update_status(app);
 
     Task::batch([
-        super::collections::delete_pressed(app, col_id),
+        super::collections::delete(app, col_id),
         Task::done(Message::ShowToast(
             format!("Deleted '{name}' from Rustrest Cloud"),
             ToastStatus::Success,
         )),
     ])
+}
+
+/// the collection is being removed from the app: stop syncing it and delete
+/// its local cache under the data directory. The cloud copy is untouched and
+/// can be opened again from the Cloud modal.
+pub(super) fn forget_local(app: &mut Rustrest, col_id: usize) {
+    let Some((dir, _)) = app.cloud.linked.remove(&col_id) else {
+        return;
+    };
+    // only ever delete folders inside our own cache
+    if cache_root().is_some_and(|root| dir.starts_with(&root) && dir != root) {
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+    app.cloud.runs.remove(&col_id);
+    app.cloud.waiting.remove(&col_id);
+    app.cloud.resync.remove(&col_id);
+    update_status(app);
 }
 
 /// the collection (or its whole team) was deleted in the cloud

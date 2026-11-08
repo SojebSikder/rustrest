@@ -87,16 +87,7 @@ pub fn apply(app: &mut Rustrest, op: CollectionOperation) -> Result<String, Stri
             if !existed {
                 return Err(format!("no collection with id {collection_id}"));
             }
-            app.collections.retain(|c| c.id != collection_id);
-            app.tabs.retain(|t| {
-                !matches!(
-                    t.content,
-                    super::WorkspaceContent::CollectionRoot { collection_id: cid, .. } if cid == collection_id
-                )
-            });
-            if app.active_tab_index >= app.tabs.len() && !app.tabs.is_empty() {
-                app.active_tab_index = app.tabs.len() - 1;
-            }
+            let _ = super::collections::delete(app, collection_id);
             Ok(format!("Deleted collection #{collection_id}"))
         }
 

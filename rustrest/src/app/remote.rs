@@ -851,7 +851,7 @@ pub fn collection_deleted(
         .map(|c| c.info.name.clone())
         .unwrap_or_default();
     Task::batch([
-        super::collections::delete_pressed(app, col_id),
+        super::collections::delete(app, col_id),
         Task::done(Message::ShowToast(
             format!("Deleted '{name}' from the remote host"),
             ToastStatus::Success,

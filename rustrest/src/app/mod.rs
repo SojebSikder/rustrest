@@ -1647,6 +1647,7 @@ fn update_inner(app: &mut Rustrest, message: Message) -> Task<Message> {
         }
         Message::CreateNewCollectionPressed => collections::create_new_pressed(app),
         Message::DeleteCollectionPressed(col_id) => collections::delete_pressed(app, col_id),
+        Message::DeleteCollectionConfirmed(col_id) => collections::delete(app, col_id),
         Message::DuplicateCollectionPressed(col_id) => collections::duplicate_pressed(app, col_id),
 
         Message::RenameCollectionPressed(col_id) => sidebar::rename_collection_pressed(app, col_id),

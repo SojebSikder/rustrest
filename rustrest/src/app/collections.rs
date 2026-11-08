@@ -471,7 +471,39 @@ pub fn create_new_pressed(app: &mut Rustrest) -> Task<Message> {
     iced::widget::operation::snap_to_end(crate::ui::workspace::tab_bar_scroll_id())
 }
 
+/// sidebar "Delete": cloud collections ask first since their local cache
+/// (and any edits not yet synced) is removed from the data directory
 pub fn delete_pressed(app: &mut Rustrest, col_id: usize) -> Task<Message> {
+    let Some(col) = app.collections.iter().find(|c| c.id == col_id) else {
+        return Task::none();
+    };
+    if !app.cloud.linked.contains_key(&col_id) {
+        return delete(app, col_id);
+    }
+    let unsaved = if crate::ui::unsaved::collection_is_unsaved(app, col) {
+        " It has unsaved edits that will be lost."
+    } else {
+        ""
+    };
+    Task::done(Message::ShowConfirmDialog(
+        crate::ui::confirm_dialog::ConfirmDialogState {
+            title: "Delete collection?".to_string(),
+            message: format!(
+                "\"{}\" will be closed and its local copy deleted.{unsaved} Changes that \
+                 haven't synced to the cloud yet will be lost. The cloud copy stays and can \
+                 be opened again.",
+                col.info.name
+            ),
+            confirm_label: "Delete".to_string(),
+            on_confirm: Box::new(Message::DeleteCollectionConfirmed(col_id)),
+        },
+    ))
+}
+
+/// removes the collection from the app, without asking
+pub fn delete(app: &mut Rustrest, col_id: usize) -> Task<Message> {
+    // cloud collections live in a cache inside the data directory, drop it too
+    super::cloud::forget_local(app, col_id);
     app.collections.retain(|c| c.id != col_id);
     app.tabs.retain(|t| match &t.content {
         WorkspaceContent::CollectionRoot { collection_id, .. } => *collection_id != col_id,
@@ -481,6 +513,9 @@ pub fn delete_pressed(app: &mut Rustrest, col_id: usize) -> Task<Message> {
     if app.active_tab_index >= app.tabs.len() && !app.tabs.is_empty() {
         app.active_tab_index = app.tabs.len() - 1;
     }
+    // persist right away so the collection doesn't come back on next launch
+    app.commit_active_workspace_snapshot();
+    crate::workspace::save(&app.build_workspace_manifest());
     Task::none()
 }
 

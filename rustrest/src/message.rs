@@ -335,6 +335,7 @@ pub enum Message {
     // collection CRUD actions
     CreateNewCollectionPressed,
     DeleteCollectionPressed(usize),
+    DeleteCollectionConfirmed(usize),
     DuplicateCollectionPressed(usize),
 
     // folder CRUD actions
