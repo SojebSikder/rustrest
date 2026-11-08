@@ -459,6 +459,7 @@ where
                     ));
 
                     let content_width = response_body_content_width(&tab.response_body_editor);
+                    let tab_id = tab.id;
 
                     let response_editor = responsive(move |size| {
                         let editor = text_editor(&tab.response_body_editor)
@@ -476,6 +477,12 @@ where
                                 horizontal: scrollable::Scrollbar::default(),
                             })
                             .height(Length::Fill)
+                            .id(crate::ui::tab::protocol_common::response_body_id(tab_id))
+                            .on_scroll(move |viewport| {
+                                wrap_msg(TabMessage::ResponseBodyScrolled(
+                                    viewport.absolute_offset(),
+                                ))
+                            })
                             .into()
                     });
 

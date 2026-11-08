@@ -211,6 +211,12 @@ pub fn sse_log_id(tab_id: usize) -> iced::widget::Id {
     iced::widget::Id::from(format!("sse-log-{tab_id}"))
 }
 
+/// response body scrollable of an HTTP tab. its offset is restored
+/// whenever the tab becomes active again.
+pub fn response_body_id(tab_id: usize) -> iced::widget::Id {
+    iced::widget::Id::from(format!("response-body-{tab_id}"))
+}
+
 /// the row list of a tab's key/value (or form-data) editor. A tab only ever
 /// shows one such editor at a time, so one id per tab is enough.
 pub fn kv_rows_id(tab_id: usize) -> iced::widget::Id {

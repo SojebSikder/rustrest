@@ -59,6 +59,9 @@ pub struct Tab {
     pub binary_file_path: Option<String>,
     pub response: Option<Result<HttpResponse, String>>,
     pub response_body_editor: text_editor::Content,
+    /// last scroll position of the response body, so switching tabs and
+    /// coming back restores it instead of jumping to the top.
+    pub response_scroll: iced::widget::operation::AbsoluteOffset,
     /// saved response snapshots for this request, in the order they were saved.
     pub saved_responses: Vec<SavedResponse>,
     /// which response the response pane is currently displaying: the live
@@ -133,6 +136,7 @@ impl Tab {
             is_loading: false,
             cancel_token: CancellationToken::new(),
             response_body_editor: text_editor::Content::with_text(""),
+            response_scroll: Default::default(),
             dirty: false,
             sse_active: false,
             sse_log: Vec::new(),
@@ -390,6 +394,7 @@ impl Tab {
                     self.request_cookies_values.remove(index);
                 }
             }
+            TabMessage::ResponseBodyScrolled(offset) => self.response_scroll = offset,
             TabMessage::ResponseBodyEditorAction(action) => {
                 if let iced::widget::text_editor::Action::Edit(_) = action {
                 } else {

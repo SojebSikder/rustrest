@@ -121,6 +121,8 @@ pub enum TabMessage {
     AddCookieRow,
     RemoveCookieRow(usize),
     ResponseBodyEditorAction(iced::widget::text_editor::Action),
+    /// response body scrollable moved. remembered per tab.
+    ResponseBodyScrolled(iced::widget::operation::AbsoluteOffset),
 
     /// a keystroke/cursor action in a per-row "Value" multiline editor
     ValueEditorAction(ValueField, usize, text_editor::Action),
@@ -218,6 +220,7 @@ impl TabMessage {
             | TabMessage::ResponseViewChanged(_)
             | TabMessage::ResponseSubTabSelected(_)
             | TabMessage::ResponseBodyEditorAction(_)
+            | TabMessage::ResponseBodyScrolled(_)
             | TabMessage::ScriptTabChanged(_)
             | TabMessage::CancelRequest
             | TabMessage::ViewSavedResponse(_)
