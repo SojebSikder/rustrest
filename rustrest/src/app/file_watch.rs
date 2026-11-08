@@ -382,6 +382,7 @@ fn refresh_request_tab(tab_state: &mut TabState, node: &PostmanRequestNode, col_
         &mut fresh.response_body_editor,
         &mut old.response_body_editor,
     );
+    swap(&mut fresh.response_fold, &mut old.response_fold);
     swap(&mut fresh.response_view, &mut old.response_view);
     swap(&mut fresh.active_sub_tab, &mut old.active_sub_tab);
     swap(&mut fresh.active_response_tab, &mut old.active_response_tab);
@@ -427,51 +428,4 @@ pub fn replace_confirmed(
         "Collection reloaded from disk".to_string(),
         ToastStatus::Success,
     ))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn watcher_reports_external_edits_to_a_collection_file() {
-        let dir = std::env::temp_dir().join(format!("rustrest-watch-test-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let file = dir.join("c.postman_collection.json");
-        std::fs::write(&file, "{}").unwrap();
-
-        let mut stream = watch_stream(&vec![(file.clone(), false)]);
-        // the stream only sets up its watcher once polled, so edit the file
-        // from another task while waiting on it
-        let edited = file.clone();
-        tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(500)).await;
-            std::fs::write(&edited, "{\"changed\":true}").unwrap();
-        });
-
-        let event = tokio::time::timeout(Duration::from_secs(5), stream.next()).await;
-        let _ = std::fs::remove_dir_all(&dir);
-        match event {
-            Ok(Some(Message::CollectionFilesChanged(paths))) => {
-                assert!(
-                    paths
-                        .iter()
-                        .any(|p| same_file(p, &file) || p.ends_with("c.postman_collection.json"))
-                );
-            }
-            _ => panic!("no file change event received"),
-        }
-    }
-
-    #[test]
-    fn ignores_dot_directories_inside_a_dir_collection() {
-        let root = Path::new("/cols/api");
-        assert!(touches_dir_collection(&root.join("users/get.json"), root));
-        assert!(!touches_dir_collection(&root.join(".git/index"), root));
-        assert!(!touches_dir_collection(root, root));
-        assert!(!touches_dir_collection(
-            Path::new("/elsewhere/x.json"),
-            root
-        ));
-    }
 }

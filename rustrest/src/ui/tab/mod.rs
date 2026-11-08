@@ -2,6 +2,7 @@ pub mod auth_form;
 pub mod components;
 pub mod graphql;
 pub mod grpc;
+pub mod json_fold;
 pub mod messages;
 pub mod protocol_common;
 mod state;

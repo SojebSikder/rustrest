@@ -71,11 +71,98 @@ pub fn move_sidebar_item(
 }
 
 pub fn format_json_or_fallback(raw_body: &str) -> String {
-    if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(raw_body) {
-        serde_json::to_string_pretty(&json_value).unwrap_or_else(|_| raw_body.to_string())
-    } else {
-        format!("// Invalid JSON:\n{}", raw_body)
+    let is_valid = serde_json::from_str::<serde::de::IgnoredAny>(raw_body).is_ok();
+    match is_valid.then(|| beautify_json(raw_body)).flatten() {
+        Some(pretty) => pretty,
+        None => format!("// Invalid JSON:\n{}", raw_body),
     }
+}
+
+/// pretty-prints JSON with 2-space indentation, Postman "Beautify" style.
+pub fn beautify_json(raw: &str) -> Option<String> {
+    const INDENT: &str = "  ";
+
+    fn newline(out: &mut String, depth: usize) {
+        out.push('\n');
+        for _ in 0..depth {
+            out.push_str(INDENT);
+        }
+    }
+
+    let chars: Vec<char> = raw.chars().collect();
+    let mut out = String::with_capacity(raw.len() * 2);
+    let mut stack: Vec<char> = Vec::new();
+    let mut i = 0;
+
+    while i < chars.len() {
+        let c = chars[i];
+        match c {
+            '"' => {
+                // copy the whole string literal verbatim, honouring escapes
+                out.push(c);
+                i += 1;
+                loop {
+                    let ch = *chars.get(i)?;
+                    out.push(ch);
+                    i += 1;
+                    match ch {
+                        '\\' => {
+                            out.push(*chars.get(i)?);
+                            i += 1;
+                        }
+                        '"' => break,
+                        _ => {}
+                    }
+                }
+                continue;
+            }
+            '{' if chars.get(i + 1) == Some(&'{') => {
+                // `{{variable}}` placeholder outside a string
+                let start = i;
+                i += 2;
+                while i + 1 < chars.len() && !(chars[i] == '}' && chars[i + 1] == '}') {
+                    i += 1;
+                }
+                if i + 1 >= chars.len() {
+                    return None;
+                }
+                i += 2;
+                out.extend(&chars[start..i]);
+                continue;
+            }
+            '{' | '[' => {
+                let close = if c == '{' { '}' } else { ']' };
+                let next = chars[i + 1..].iter().position(|ch| !ch.is_whitespace());
+                if let Some(offset) = next.filter(|&o| chars[i + 1 + o] == close) {
+                    // keep empty containers on one line: `{}` / `[]`
+                    out.push(c);
+                    out.push(close);
+                    i += offset + 2;
+                    continue;
+                }
+                out.push(c);
+                stack.push(close);
+                newline(&mut out, stack.len());
+            }
+            '}' | ']' => {
+                if stack.pop()? != c {
+                    return None;
+                }
+                newline(&mut out, stack.len());
+                out.push(c);
+            }
+            ',' => {
+                out.push(c);
+                newline(&mut out, stack.len());
+            }
+            ':' => out.push_str(": "),
+            c if c.is_whitespace() => {}
+            _ => out.push(c),
+        }
+        i += 1;
+    }
+
+    (stack.is_empty() && !out.is_empty()).then_some(out)
 }
 
 // recursively updates node in the collection by its ID, syncing tab state with the request

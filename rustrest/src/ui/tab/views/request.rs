@@ -5,14 +5,14 @@ use super::super::types::{BodyType, RawType, RequestSubTab, ScriptTab};
 use crate::http_client::HttpMethod;
 use crate::message::{KvValueField, MultilineFieldKind};
 use crate::ui::context_menu::{TabFieldTarget, with_context_menu};
-use crate::ui::multiline_input::multiline_input;
+use crate::ui::multiline_input::{highlighted_multiline_input, multiline_input};
 use crate::ui::script_editor::script_editor;
 use crate::ui::tokens::{
     SPACE_LG, SPACE_MD, SPACE_SM, SPACE_XL, TEXT_BASE, TEXT_BODY, danger_button, editor_surface,
     primary_button, secondary_button, semibold, subtab_style,
 };
 use crate::ui::var_assist::var_input;
-use iced::widget::{button, column, container, pick_list, radio, row, text, text_input};
+use iced::widget::{Space, button, column, container, pick_list, radio, row, text, text_input};
 use iced::{Alignment, Element, Font, Length};
 
 pub fn render_request_bar<'a, Message>(
@@ -353,11 +353,28 @@ where
                     })
                     .padding([4, 10]);
 
-                    let editor = multiline_input(
+                    let mut raw_toolbar = row![raw_dropdown]
+                        .spacing(SPACE_MD)
+                        .align_y(Alignment::Center);
+                    if tab.raw_type == RawType::Json {
+                        raw_toolbar = raw_toolbar.push(Space::new().width(Length::Fill)).push(
+                            crate::ui::tooltip::with_tooltip(
+                                button(text("Beautify").size(TEXT_BODY))
+                                    .padding([4, 10])
+                                    .style(secondary_button)
+                                    .on_press(wrap_msg(TabMessage::BeautifyBody)),
+                                "Format the JSON body",
+                                iced::widget::tooltip::Position::Bottom,
+                            ),
+                        );
+                    }
+
+                    let editor = highlighted_multiline_input(
                         "",
                         &tab.request_body,
                         10,
                         multiline_height(MultilineFieldKind::RawBody(tab_id)),
+                        tab.raw_type.syntax(),
                         move |action| wrap_msg(TabMessage::BodyChanged(action)),
                         wrap_msg(TabMessage::ShowFieldContextMenu(
                             TabFieldTarget::BodyEditor,
@@ -368,7 +385,7 @@ where
                         on_multiline_resize_start(MultilineFieldKind::RawBody(tab_id)),
                     );
 
-                    column![raw_dropdown, container(editor).style(editor_surface)]
+                    column![raw_toolbar, container(editor).style(editor_surface)]
                         .spacing(SPACE_MD)
                         .into()
                 }
