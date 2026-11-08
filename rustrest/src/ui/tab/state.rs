@@ -3,7 +3,10 @@ use super::types::{
     BodyType, FormDataRow, FormDataType, KeyValuePair, RawType, RequestSubTab, ResponseSubTab,
     ResponseView, SavedResponse,
 };
-use crate::collection::collection::{PostmanRequestDetails, PostmanRequestNode, PostmanUrl};
+use crate::collection::collection::{
+    PostmanRequestDetails, PostmanRequestNode, PostmanUrl, path_variable_names,
+    substitute_path_variables,
+};
 use crate::collection::env::{Environment, replace_vars_in};
 use crate::collection_adapter::{RequestNodeTabExt, sync_body_from_tab};
 use crate::http_client::{HttpMethod, HttpResponse};
@@ -36,6 +39,10 @@ pub struct Tab {
     pub response_view: ResponseView,
     pub request_params: Vec<KeyValuePair>,
     pub request_params_values: Vec<text_editor::Content>,
+    /// one row per `:name` segment in the URL's path, kept in URL order;
+    /// rebuilt whenever the URL changes, preserving values by key.
+    pub path_variables: Vec<KeyValuePair>,
+    pub path_variables_values: Vec<text_editor::Content>,
     pub request_headers: Vec<KeyValuePair>,
     pub request_headers_values: Vec<text_editor::Content>,
     pub request_cookies: Vec<KeyValuePair>,
@@ -100,6 +107,8 @@ impl Tab {
             response_view: ResponseView::Json,
             request_params_values: contents_for(&request_params),
             request_params,
+            path_variables: Vec::new(),
+            path_variables_values: Vec::new(),
             request_headers_values: contents_for(&request_headers),
             request_headers,
             request_cookies_values: contents_for(&request_cookies),
@@ -234,6 +243,48 @@ impl Tab {
         }
     }
 
+    /// rebuilds `path_variables` from the `:name` segments of `self.url`,
+    /// keeping the value of any variable that was already there.
+    pub fn sync_path_variables_from_url(&mut self) {
+        self.rebuild_path_variables(false);
+    }
+
+    /// sets path variable values by key (e.g. from a saved request), then
+    /// aligns the rows with the URL.
+    pub fn load_path_variables(&mut self, values: impl IntoIterator<Item = (String, String)>) {
+        self.path_variables = values
+            .into_iter()
+            .map(|(key, value)| KeyValuePair::new(&key, &value))
+            .collect();
+        self.rebuild_path_variables(true);
+    }
+
+    fn rebuild_path_variables(&mut self, force: bool) {
+        let names = path_variable_names(&self.url);
+        let unchanged = names.len() == self.path_variables.len()
+            && names
+                .iter()
+                .zip(&self.path_variables)
+                .all(|(name, kv)| *name == kv.key);
+        if unchanged && !force {
+            // keeps the value editors (and their cursors) intact while typing
+            return;
+        }
+        let previous = std::mem::take(&mut self.path_variables);
+
+        self.path_variables = names
+            .iter()
+            .map(|name| {
+                let value = previous
+                    .iter()
+                    .find(|kv| kv.key == *name)
+                    .map_or("", |kv| kv.value.as_str());
+                KeyValuePair::new(name, value)
+            })
+            .collect();
+        self.path_variables_values = contents_for(&self.path_variables);
+    }
+
     pub fn update(&mut self, message: TabMessage) {
         if message.is_content_edit() {
             self.dirty = true;
@@ -242,6 +293,7 @@ impl Tab {
             TabMessage::UrlChanged(new_url) => {
                 self.url = new_url;
                 self.sync_params_from_url();
+                self.sync_path_variables_from_url();
             }
 
             TabMessage::ParamRowChanged(index, kv) => {
@@ -397,6 +449,7 @@ impl Tab {
             TabMessage::ValueEditorAction(field, index, action) => {
                 let contents: &mut Vec<text_editor::Content> = match field {
                     ValueField::Param => &mut self.request_params_values,
+                    ValueField::PathVariable => &mut self.path_variables_values,
                     ValueField::Header => &mut self.request_headers_values,
                     ValueField::Cookie => &mut self.request_cookies_values,
                     ValueField::Urlencoded => &mut self.body_urlencoded_values,
@@ -411,6 +464,11 @@ impl Tab {
                                 row.value = text;
                             }
                             self.url = sync_params_to_url(&self.url, &self.request_params);
+                        }
+                        ValueField::PathVariable => {
+                            if let Some(row) = self.path_variables.get_mut(index) {
+                                row.value = text;
+                            }
                         }
                         ValueField::Header => {
                             if let Some(row) = self.request_headers.get_mut(index) {
@@ -534,7 +592,15 @@ impl Tab {
             }
         };
 
-        let mut resolved_url = resolve(&self.url);
+        // path variables first, so their values can use `{{vars}}` too.
+        // an empty value leaves `:name` in place
+        let url_with_path_vars = substitute_path_variables(&self.url, |name| {
+            self.path_variables
+                .iter()
+                .find(|kv| kv.key == name && !kv.value.is_empty())
+                .map(|kv| kv.value.clone())
+        });
+        let mut resolved_url = resolve(&url_with_path_vars);
         let mut resolved_body = resolve(&self.request_body.text());
 
         // strip out comment lines if the body is Raw JSON

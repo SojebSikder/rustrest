@@ -13,9 +13,63 @@ use iced::widget::{
 };
 use iced::{Alignment, Element, Length};
 
+/// a key/value table whose "Add" button sits right under the last row,
+/// scrolling as a whole once it outgrows the pane.
 // TODO: later will reduce arguments
 #[allow(clippy::too_many_arguments)]
 pub fn kv_editor_pane<'a, Message>(
+    pairs: &[KeyValuePair],
+    value_contents: &'a [text_editor::Content],
+    add_button_label: &'a str,
+    on_change: impl Fn(usize, KeyValuePair) -> Message + Copy + 'a,
+    on_value_action: impl Fn(usize, text_editor::Action) -> Message + Copy + 'a,
+    on_add: Message,
+    on_remove: impl Fn(usize) -> Message + Copy + 'a,
+    on_show_key_menu: impl Fn(usize, String) -> Message + Copy + 'a,
+    on_show_value_menu: impl Fn(usize, String) -> Message + Copy + 'a,
+    tab_id: usize,
+    field: KvValueField,
+    get_height: impl Fn(MultilineFieldKind) -> f32 + Copy + 'a,
+    on_resize_start: impl Fn(MultilineFieldKind) -> Message + Copy + 'a,
+) -> Element<'a, Message>
+where
+    Message: Clone + 'a,
+{
+    kv_rows_scrollable(
+        kv_rows(
+            pairs,
+            value_contents,
+            add_button_label,
+            on_change,
+            on_value_action,
+            on_add,
+            on_remove,
+            on_show_key_menu,
+            on_show_value_menu,
+            tab_id,
+            field,
+            get_height,
+            on_resize_start,
+        ),
+        tab_id,
+    )
+}
+
+/// wraps a tab's row editor in the scrollable that "Add row" snaps to the end of.
+pub fn kv_rows_scrollable<'a, Message: 'a>(
+    content: impl Into<Element<'a, Message>>,
+    tab_id: usize,
+) -> Element<'a, Message> {
+    scrollable(content)
+        .id(kv_rows_id(tab_id))
+        .height(Length::Fill)
+        .into()
+}
+
+/// the rows of [`kv_editor_pane`] followed by its "Add" button, unscrolled,
+/// for panes that stack several tables in one scrollable.
+#[allow(clippy::too_many_arguments)]
+pub fn kv_rows<'a, Message>(
     pairs: &[KeyValuePair],
     value_contents: &'a [text_editor::Content],
     add_button_label: &'a str,
@@ -102,9 +156,7 @@ where
     }
 
     column![
-        scrollable(content)
-            .id(kv_rows_id(tab_id))
-            .height(Length::Fixed(150.0)),
+        content,
         button(
             row![
                 text("+").size(TEXT_BASE),
@@ -323,21 +375,69 @@ where
                 .padding([2, 8])
                 .style(button::text),
         ],
-        scrollable(content)
-            .id(kv_rows_id(tab_id))
-            .height(Length::Fixed(150.0)),
-        button(
-            row![
-                text("+").size(TEXT_BASE),
-                text("Add Form Field").size(TEXT_BODY)
+        kv_rows_scrollable(
+            column![
+                content,
+                button(
+                    row![
+                        text("+").size(TEXT_BASE),
+                        text("Add Form Field").size(TEXT_BODY)
+                    ]
+                    .spacing(SPACE_SM)
+                    .align_y(Alignment::Center),
+                )
+                .on_press(on_add)
+                .padding([6, 12])
+                .style(secondary_button),
             ]
-            .spacing(SPACE_SM)
-            .align_y(Alignment::Center),
-        )
-        .on_press(on_add)
-        .padding([6, 12])
-        .style(secondary_button),
+            .spacing(SPACE_MD),
+            tab_id,
+        ),
     ]
     .spacing(SPACE_SM)
     .into()
+}
+
+/// the URL's `:name` path variables: the key comes from the URL (read-only),
+/// only the value is editable, and rows are added/removed by editing the URL.
+pub fn path_variables_pane<'a, Message>(
+    pairs: &[KeyValuePair],
+    value_contents: &'a [text_editor::Content],
+    on_value_action: impl Fn(usize, text_editor::Action) -> Message + Copy + 'a,
+    on_show_value_menu: impl Fn(usize, String) -> Message + Copy + 'a,
+    tab_id: usize,
+    get_height: impl Fn(MultilineFieldKind) -> f32 + Copy + 'a,
+    on_resize_start: impl Fn(MultilineFieldKind) -> Message + Copy + 'a,
+) -> Element<'a, Message>
+where
+    Message: Clone + 'a,
+{
+    let mut content = column![].spacing(SPACE_SM);
+
+    for (idx, (item, value_content)) in pairs.iter().zip(value_contents).enumerate() {
+        let key = MultilineFieldKind::KvValue {
+            tab_id,
+            field: KvValueField::PathVariable,
+            row: idx,
+        };
+        let row_element = row![
+            text_input("Key", &item.key)
+                .padding([6, 8])
+                .style(input_style),
+            multiline_input(
+                "Value",
+                value_content,
+                8,
+                get_height(key),
+                move |action| on_value_action(idx, action),
+                on_show_value_menu(idx, item.value.clone()),
+                on_resize_start(key),
+            ),
+        ]
+        .spacing(SPACE_MD)
+        .align_y(Alignment::Center);
+        content = content.push(row_element);
+    }
+
+    content.into()
 }

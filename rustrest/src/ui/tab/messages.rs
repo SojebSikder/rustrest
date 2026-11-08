@@ -62,6 +62,7 @@ pub enum AuthMessage {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ValueField {
     Param,
+    PathVariable,
     Header,
     Cookie,
     Urlencoded,
