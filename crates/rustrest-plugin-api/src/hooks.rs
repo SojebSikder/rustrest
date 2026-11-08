@@ -40,9 +40,74 @@ pub struct RequestSummary {
     pub name: String,
     pub folder_path: Vec<String>,
     pub method: String,
-    /// the request's saved URL
+    /// the request's saved URL (a gRPC request's endpoint)
     #[serde(default)]
     pub url: String,
+    /// "http", "websocket", "graphql" or "grpc"
+    #[serde(default = "default_protocol")]
+    pub protocol: String,
+}
+
+fn default_protocol() -> String {
+    "http".to_string()
+}
+
+/// one line of a WebSocket/GraphQL-subscription/gRPC tab's message log.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ProtocolLogEntry {
+    /// "out" (sent by the user) or "in" (received)
+    pub direction: String,
+    pub label: String,
+    pub body: String,
+}
+
+/// a gRPC method the active gRPC tab's target exposes, once discovered.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct GrpcMethodSummary {
+    pub service: String,
+    pub method: String,
+    /// "unary", "server_streaming", "client_streaming" or "bidi_streaming"
+    pub kind: String,
+}
+
+/// the active tab when it's a WebSocket, GraphQL or gRPC request rather
+/// than a plain HTTP one - handed to a `RightPanel` plugin as
+/// `RightPanelContext::active_protocol_request`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ProtocolRequestContext {
+    WebSocket {
+        url: String,
+        headers: Vec<(String, String)>,
+        /// the message currently typed in the compose box
+        message: String,
+        connected: bool,
+        /// most recent log lines, oldest first
+        log: Vec<ProtocolLogEntry>,
+    },
+    GraphQl {
+        url: String,
+        headers: Vec<(String, String)>,
+        query: String,
+        variables: String,
+        operation_name: String,
+        /// the last response body (or error text)
+        response: Option<String>,
+        /// most recent subscription events, oldest first
+        log: Vec<ProtocolLogEntry>,
+    },
+    Grpc {
+        endpoint: String,
+        use_tls: bool,
+        metadata: Vec<(String, String)>,
+        service: Option<String>,
+        method: Option<String>,
+        request_json: String,
+        /// every method the target exposes, empty until discovered
+        methods: Vec<GrpcMethodSummary>,
+        /// most recent log lines, oldest first
+        log: Vec<ProtocolLogEntry>,
+    },
 }
 
 /// a read-only snapshot of one loaded collection's tree, handed to a
@@ -86,11 +151,20 @@ pub struct RightPanelContext {
     /// every environment currently defined.
     #[serde(default)]
     pub environments: Vec<EnvSummary>,
+    /// set instead of `active_request` when the active tab is a WebSocket,
+    /// GraphQL or gRPC request.
+    #[serde(default)]
+    pub active_protocol_request: Option<ProtocolRequestContext>,
 }
 
 /// a set of edits a `RightPanel` plugin wants applied to the active request
 /// tab. Every field is optional - only the fields a plugin actually wants to
 /// change need be `Some`; everything else is left as-is.
+///
+/// On a WebSocket/GraphQL/gRPC request, `url` is its URL (a gRPC request's
+/// endpoint), `headers` its headers (gRPC metadata), and `body` the
+/// WebSocket message to send or the gRPC request JSON. Fields that don't
+/// apply to the request's protocol are ignored.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RequestPatch {
     pub method: Option<String>,
@@ -99,6 +173,24 @@ pub struct RequestPatch {
     pub body: Option<String>,
     pub pre_request_script: Option<String>,
     pub post_response_script: Option<String>,
+    /// GraphQL query document
+    #[serde(default)]
+    pub query: Option<String>,
+    /// GraphQL variables, as a JSON string
+    #[serde(default)]
+    pub variables: Option<String>,
+    /// GraphQL operation name
+    #[serde(default)]
+    pub operation_name: Option<String>,
+    /// gRPC service name, e.g. "package.Greeter"
+    #[serde(default)]
+    pub grpc_service: Option<String>,
+    /// gRPC method name, e.g. "SayHello"
+    #[serde(default)]
+    pub grpc_method: Option<String>,
+    /// gRPC: connect over TLS
+    #[serde(default)]
+    pub use_tls: Option<bool>,
 }
 
 impl RequestPatch {
@@ -111,6 +203,12 @@ impl RequestPatch {
             ("body", self.body.is_some()),
             ("pre-request script", self.pre_request_script.is_some()),
             ("post-response script", self.post_response_script.is_some()),
+            ("query", self.query.is_some()),
+            ("variables", self.variables.is_some()),
+            ("operation name", self.operation_name.is_some()),
+            ("gRPC service", self.grpc_service.is_some()),
+            ("gRPC method", self.grpc_method.is_some()),
+            ("TLS", self.use_tls.is_some()),
         ]
         .into_iter()
         .filter_map(|(name, set)| set.then_some(name))
@@ -181,8 +279,14 @@ pub enum CollectionOperation {
         collection_id: usize,
         parent_path: Vec<String>,
         name: String,
+        /// HTTP method; ignored for non-HTTP protocols
+        #[serde(default)]
         method: String,
+        /// URL, or a gRPC request's endpoint
         url: String,
+        /// "http" (default), "websocket", "graphql" or "grpc"
+        #[serde(default)]
+        protocol: Option<String>,
     },
     RenameRequest {
         collection_id: usize,
@@ -259,13 +363,18 @@ impl CollectionOperation {
                 name,
                 method,
                 url,
+                protocol,
                 ..
             } => {
+                let kind = match protocol.as_deref().map(str::to_ascii_lowercase).as_deref() {
+                    None | Some("" | "http") => method.to_string(),
+                    Some(other) => other.to_ascii_uppercase(),
+                };
                 if parent_path.is_empty() {
-                    format!("Create request \"{name}\" ({method} {url})")
+                    format!("Create request \"{name}\" ({kind} {url})")
                 } else {
                     format!(
-                        "Create request \"{name}\" ({method} {url}) in {}",
+                        "Create request \"{name}\" ({kind} {url}) in {}",
                         parent_path.join("/")
                     )
                 }

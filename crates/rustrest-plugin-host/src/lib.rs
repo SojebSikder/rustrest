@@ -23,8 +23,10 @@ pub use wasmtime::{Engine, Module};
 pub use rustrest_plugin_api::{
     API_VERSION as PLUGIN_API_VERSION, ButtonVariant,
     CURRENT_SCHEMA_VERSION as PLUGIN_SCHEMA_VERSION, Capability, CollectionOperation,
-    CollectionSummary, CommandDef, DropdownItem, EnvSummary, FormatDef, HttpResponseData, LanguageServerCommand,
-    LanguageServerDef, MenuItemDef, PanelDef, PickFilesResult, PickedFile, PluginManifest,
-    ProcessStream, RequestContext, RequestPatch, RequestSummary, ResponseContext, RightPanelAction,
-    RightPanelContext, StatusBarItemDef, TextTone, UiEvent, UiLength, UiNode, UiStyle,
+    CollectionSummary, CommandDef, DropdownItem, EnvSummary, FormatDef, GrpcMethodSummary,
+    HttpResponseData, LanguageServerCommand, LanguageServerDef, MenuItemDef, PanelDef,
+    PickFilesResult, PickedFile, PluginManifest, ProcessStream, ProtocolLogEntry,
+    ProtocolRequestContext, RequestContext, RequestPatch, RequestSummary, ResponseContext,
+    RightPanelAction, RightPanelContext, StatusBarItemDef, TextTone, UiEvent, UiLength, UiNode,
+    UiStyle,
 };

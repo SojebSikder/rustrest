@@ -3,9 +3,10 @@
 //! request/response tab.
 
 use rustrest_plugin_api::{
-    ButtonVariant, CollectionOperation, DropdownItem, HttpRequestSpec, HttpResponseData,
-    PickFilesResult, PickedFile, Plugin, RequestPatch, RightPanelAction, RightPanelContext,
-    TextTone, UiEvent, UiNode, UiStyle,
+    ButtonVariant, CollectionOperation, CollectionSummary, DropdownItem, HttpRequestSpec,
+    HttpResponseData, PickFilesResult, PickedFile, Plugin, ProtocolLogEntry,
+    ProtocolRequestContext, RequestPatch, RightPanelAction, RightPanelContext, TextTone, UiEvent,
+    UiLength, UiNode, UiStyle,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -24,6 +25,9 @@ const MAX_HISTORY_MESSAGES: usize = 20;
 /// reply token budget. large enough for a full test script plus its
 /// explanation, so the trailing action block isn't cut off mid-JSON.
 const MAX_TOKENS: u32 = 8192;
+/// most request lines listed in the system prompt's collection overview -
+/// focused collections are listed first, so they're the last to be cut.
+const MAX_PROMPT_REQUESTS: usize = 400;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct AgentConfig {
@@ -386,8 +390,8 @@ impl AiAgentPlugin {
                     UiNode::Column(vec![
                         UiNode::Label(session.title.clone()),
                         UiNode::Muted(details),
-                    ]),
-                    UiNode::HorizontalSpacer,
+                    ])
+                    .styled(UiStyle::new().width(UiLength::Fill).spacing(2.0)),
                     UiNode::Row(vec![
                         UiNode::Button {
                             id: format!("resume-session-{}", session.id),
@@ -401,7 +405,12 @@ impl AiAgentPlugin {
                         }
                         .styled(UiStyle::new().variant(ButtonVariant::Danger)),
                     ])
-                    .styled(UiStyle::new().text_size(12.0).spacing(4.0)),
+                    .styled(
+                        UiStyle::new()
+                            .text_size(12.0)
+                            .spacing(4.0)
+                            .width(UiLength::Shrink),
+                    ),
                 ])
             })
             .collect();
@@ -420,7 +429,11 @@ impl AiAgentPlugin {
     /// into the system prompt as extra context, plus the file-attachment
     /// controls - rendered above the conversation.
     fn render_context_picker(&self, ctx: &RightPanelContext) -> UiNode {
-        let mut rows = vec![UiNode::Muted("Context".to_string())];
+        let mut rows = vec![UiNode::Muted(if ctx.collections.is_empty() {
+            "Context".to_string()
+        } else {
+            "Context - the agent sees every collection; tick one to focus on it".to_string()
+        })];
 
         for col in &ctx.collections {
             rows.push(UiNode::Checkbox {
@@ -455,8 +468,7 @@ impl AiAgentPlugin {
         );
         for (idx, file) in self.attached_files.iter().enumerate() {
             rows.push(UiNode::Row(vec![
-                UiNode::Muted(file.name.clone()),
-                UiNode::HorizontalSpacer,
+                UiNode::Muted(file.name.clone()).styled(UiStyle::new().width(UiLength::Fill)),
                 UiNode::Button {
                     id: format!("remove-file-{idx}"),
                     label: "Remove".to_string(),
@@ -506,7 +518,10 @@ impl AiAgentPlugin {
 
         match (&ctx.active_request, &ctx.active_response) {
             (None, _) => conversation.push(UiNode::Muted(
-                "No active request - open one for context.".to_string(),
+                ctx.active_protocol_request
+                    .as_ref()
+                    .map(protocol_summary)
+                    .unwrap_or_else(|| "No active request - open one for context.".to_string()),
             )),
             (Some(req), resp) => {
                 let mut summary = format!("{} {}", req.method, req.url);
@@ -860,10 +875,12 @@ fn build_system_prompt(
     attached_files: &[PickedFile],
 ) -> String {
     let mut prompt = String::from(
-        "You are an AI assistant embedded in Rustrest, a REST API client, docked next to \
-         whatever request the user has open. You can: answer questions, explain responses \
-         and errors in plain language, edit the active request, and write post-response test \
-         scripts. Decide what's needed from the user's message - don't ask them to pick a mode.",
+        "You are an AI assistant embedded in Rustrest, an API client for HTTP/REST, WebSocket, \
+         GraphQL and gRPC, docked next to whatever request the user has open. You can: answer \
+         questions, explain responses and errors in plain language, edit the active request \
+         (of any protocol), write post-response test scripts for HTTP requests, and create or \
+         change collections, folders and requests. Decide what's needed from the user's message \
+         - don't ask them to pick a mode.",
     );
 
     if let Some(req) = &ctx.active_request {
@@ -879,36 +896,11 @@ fn build_system_prompt(
         ));
     }
 
-    let selected: Vec<_> = ctx
-        .collections
-        .iter()
-        .filter(|c| selected_collections.contains(&c.id))
-        .collect();
-    if !selected.is_empty() {
-        prompt.push_str(
-            "\n\nSelected collections (reference these by id, not by guessing; anything not \
-             listed here wasn't selected as context and its ids/paths must not be guessed at):",
-        );
-
-        for col in selected {
-            prompt.push_str(&format!("\n- collection #{} \"{}\"", col.id, col.name));
-            for folder in &col.folders {
-                prompt.push_str(&format!("\n    folder: {}", folder.join("/")));
-            }
-
-            for req in &col.requests {
-                let location = if req.folder_path.is_empty() {
-                    "collection root".to_string()
-                } else {
-                    req.folder_path.join("/")
-                };
-                prompt.push_str(&format!(
-                    "\n    request #{} \"{}\" ({} {}) in {}",
-                    req.id, req.name, req.method, req.url, location
-                ));
-            }
-        }
+    if let Some(protocol) = &ctx.active_protocol_request {
+        push_protocol_context(&mut prompt, protocol);
     }
+
+    push_collections_overview(&mut prompt, &ctx.collections, selected_collections);
 
     let selected_env_list: Vec<_> = ctx
         .environments
@@ -941,12 +933,23 @@ fn build_system_prompt(
          explanation with exactly one fenced ```request-patch code block containing ONLY the \
          fields that should change, matching this shape: {\"method\":string|null,\
          \"url\":string|null,\"headers\":[[string,string]]|null,\"body\":string|null,\
-         \"pre_request_script\":string|null,\"post_response_script\":string|null}. Omit fields \
-         you don't want to change (or set them to null); `headers` replaces the whole header \
-         list. Scripts are JavaScript using the pm.* scripting API this app exposes \
-         (pm.test(name, fn), pm.expect(...), pm.response.status/json(), \
-         pm.variables.get/set(...)). Use a ```request-patch fence only for this - format any \
-         other example JSON with a plain ```json fence.\n\n\
+         \"pre_request_script\":string|null,\"post_response_script\":string|null,\
+         \"query\":string|null,\"variables\":string|null,\"operation_name\":string|null,\
+         \"grpc_service\":string|null,\"grpc_method\":string|null,\"use_tls\":bool|null}. \
+         Omit fields you don't want to change (or set them to null); `headers` replaces the \
+         whole header list. Which fields apply depends on the active request's protocol:\n\
+         - HTTP: method, url, headers, body, pre_request_script, post_response_script. Scripts \
+         are JavaScript using the pm.* scripting API this app exposes (pm.test(name, fn), \
+         pm.expect(...), pm.response.status/json(), pm.variables.get/set(...)).\n\
+         - WebSocket: url, headers, and body = the message to send (it's put in the compose \
+         box; the user sends it).\n\
+         - GraphQL: url, headers, query (the GraphQL document), variables (a JSON object as a \
+         string), operation_name.\n\
+         - gRPC: url = the endpoint (host:port), use_tls, headers = metadata, grpc_service \
+         (fully-qualified, e.g. \"helloworld.Greeter\"), grpc_method, and body = the request \
+         message as JSON. Prefer services/methods from the discovered list when there is one.\n\
+         Use a ```request-patch fence only for this - format any other example JSON with a \
+         plain ```json fence.\n\n\
          CHANGING COLLECTIONS: if, and only if, the user's message asks you to create, rename, \
          update, delete, duplicate, or move a collection, folder, or request, follow your \
          explanation with exactly one fenced ```collection-action code block (instead of the \
@@ -958,24 +961,196 @@ fn build_system_prompt(
          {\"op\":\"create_folder\",\"collection_id\":number,\"parent_path\":[string],\"name\":string}\n\
          {\"op\":\"rename_folder\",\"collection_id\":number,\"path\":[string],\"new_name\":string}\n\
          {\"op\":\"delete_folder\",\"collection_id\":number,\"path\":[string]}\n\
-         {\"op\":\"create_request\",\"collection_id\":number,\"parent_path\":[string],\"name\":string,\"method\":string,\"url\":string}\n\
-         {\"op\":\"update_request\",\"collection_id\":number,\"request_id\":number,\"method\":string|null,\"url\":string|null,\"headers\":[[string,string]]|null,\"body\":string|null,\"pre_request_script\":string|null,\"post_response_script\":string|null}\n\
+         {\"op\":\"create_request\",\"collection_id\":number,\"parent_path\":[string],\"name\":string,\"protocol\":\"http\"|\"websocket\"|\"graphql\"|\"grpc\",\"method\":string,\"url\":string}\n\
+         {\"op\":\"update_request\",\"collection_id\":number,\"request_id\":number, ...any request-patch fields...}\n\
          {\"op\":\"rename_request\",\"collection_id\":number,\"request_id\":number,\"new_name\":string}\n\
          {\"op\":\"delete_request\",\"collection_id\":number,\"parent_path\":[string],\"request_id\":number}\n\
          {\"op\":\"duplicate_request\",\"collection_id\":number,\"parent_path\":[string],\"request_id\":number}\n\
          {\"op\":\"move_request\",\"collection_id\":number,\"from_path\":[string],\"request_id\":number,\"to_path\":[string]}\n\
          `parent_path`/`path`/`from_path`/`to_path` are folder-name arrays (e.g. [] for the \
-         collection root, [\"Auth\"] for a top-level folder named Auth). Within one batch, a \
-         folder created earlier can be used as a later parent_path, but a request's id is only \
-         known once it exists - so update_request can only target requests listed below/above, \
-         not ones created in the same batch. Use only the collection and request ids/paths \
-         listed above under \"Selected collections\" - never invent one; if the collection the \
-         user means isn't listed, ask them to tick it under Context. Deleting, moving, or \
-         updating something will ask the user to confirm before it's applied; say so in your \
-         explanation. Otherwise, don't include this block at all.",
+         collection root, [\"Auth\"] for a top-level folder named Auth). `protocol` defaults to \
+         \"http\"; `method` only matters for HTTP, and for gRPC `url` is the endpoint. \
+         update_request takes the same fields as a request-patch, mapped by the target \
+         request's protocol as described above. Within one batch, a folder created earlier can \
+         be used as a later parent_path, but a request's id is only known once it exists - so \
+         update_request can only target requests listed above, not ones created in the same \
+         batch.\n\
+         RESOLVING IDS: you already know every collection - they're listed above under \
+         \"Collections\". When the user names a collection, folder or request, match it to \
+         that list yourself (case-insensitively, by the closest name) and use its id/path. \
+         Never ask the user for an id - they don't see ids. If the user doesn't say which \
+         collection and there is exactly one, use it; if it's genuinely ambiguous, ask by \
+         name (\"which collection - Foo or Bar?\"). Never invent an id that isn't listed. \
+         Deleting, moving, or updating something will ask the user to confirm before it's \
+         applied; say so in your explanation. Otherwise, don't include this block at all.",
     );
 
     prompt
+}
+
+/// one-line description of a WebSocket/GraphQL/gRPC tab shown above the chat.
+fn protocol_summary(protocol: &ProtocolRequestContext) -> String {
+    match protocol {
+        ProtocolRequestContext::WebSocket { url, connected, .. } => format!(
+            "WebSocket {url} \u{00b7} {}",
+            if *connected {
+                "connected"
+            } else {
+                "disconnected"
+            }
+        ),
+        ProtocolRequestContext::GraphQl { url, .. } => format!("GraphQL {url}"),
+        ProtocolRequestContext::Grpc {
+            endpoint,
+            service,
+            method,
+            ..
+        } => match (service, method) {
+            (Some(service), Some(method)) => format!("gRPC {endpoint} \u{2192} {service}/{method}"),
+            _ => format!("gRPC {endpoint}"),
+        },
+    }
+}
+
+fn push_protocol_log(prompt: &mut String, title: &str, log: &[ProtocolLogEntry]) {
+    if log.is_empty() {
+        return;
+    }
+    prompt.push_str(&format!("\n{title} (oldest first):"));
+    for entry in log {
+        prompt.push_str(&format!(
+            "\n  [{} {}] {}",
+            entry.direction, entry.label, entry.body
+        ));
+    }
+}
+
+/// active WebSocket/GraphQL/gRPC request, for the system prompt.
+fn push_protocol_context(prompt: &mut String, protocol: &ProtocolRequestContext) {
+    match protocol {
+        ProtocolRequestContext::WebSocket {
+            url,
+            headers,
+            message,
+            connected,
+            log,
+        } => {
+            prompt.push_str(&format!(
+                "\n\nActive request (WebSocket):\nurl: {url}\nheaders: {headers:?}\n\
+                 connected: {connected}\nmessage being composed: {message}"
+            ));
+            push_protocol_log(prompt, "Message log", log);
+        }
+        ProtocolRequestContext::GraphQl {
+            url,
+            headers,
+            query,
+            variables,
+            operation_name,
+            response,
+            log,
+        } => {
+            prompt.push_str(&format!(
+                "\n\nActive request (GraphQL):\nurl: {url}\nheaders: {headers:?}\n\
+                 operation name: {operation_name}\nquery:\n{query}\nvariables: {variables}"
+            ));
+            if let Some(response) = response {
+                prompt.push_str(&format!("\n\nLast response:\n{response}"));
+            }
+            push_protocol_log(prompt, "Subscription events", log);
+        }
+        ProtocolRequestContext::Grpc {
+            endpoint,
+            use_tls,
+            metadata,
+            service,
+            method,
+            request_json,
+            methods,
+            log,
+        } => {
+            prompt.push_str(&format!(
+                "\n\nActive request (gRPC):\nendpoint: {endpoint}\ntls: {use_tls}\n\
+                 metadata: {metadata:?}\nservice: {}\nmethod: {}\nrequest JSON: {request_json}",
+                service.as_deref().unwrap_or("(none selected)"),
+                method.as_deref().unwrap_or("(none selected)"),
+            ));
+            if methods.is_empty() {
+                prompt.push_str("\nservices: not discovered yet");
+            } else {
+                prompt.push_str("\ndiscovered methods:");
+                for m in methods {
+                    prompt.push_str(&format!("\n  {}/{} ({})", m.service, m.method, m.kind));
+                }
+            }
+            push_protocol_log(prompt, "Call log", log);
+        }
+    }
+}
+
+/// every loaded collection's tree, for the system prompt - so the model can
+/// resolve "the Users collection" to an id itself instead of asking.
+/// Collections the user ticked are listed first and marked as the focus;
+/// request lines are capped at `MAX_PROMPT_REQUESTS`.
+fn push_collections_overview(
+    prompt: &mut String,
+    collections: &[CollectionSummary],
+    focused: &HashSet<usize>,
+) {
+    if collections.is_empty() {
+        prompt.push_str("\n\nCollections: none yet.");
+        return;
+    }
+
+    let mut ordered: Vec<&CollectionSummary> = collections.iter().collect();
+    // stable: keeps the sidebar order within each group
+    ordered.sort_by_key(|c| !focused.contains(&c.id));
+
+    prompt.push_str(
+        "\n\nCollections (every collection currently loaded, with its ids - use these, \
+         never guess):",
+    );
+    let mut budget = MAX_PROMPT_REQUESTS;
+    for col in ordered {
+        let focus = if focused.contains(&col.id) {
+            " [focused by the user]"
+        } else {
+            ""
+        };
+        prompt.push_str(&format!(
+            "\n- collection #{} \"{}\"{focus}",
+            col.id, col.name
+        ));
+        for folder in &col.folders {
+            prompt.push_str(&format!("\n    folder: {}", folder.join("/")));
+        }
+
+        let shown = col.requests.len().min(budget);
+        budget -= shown;
+        for req in &col.requests[..shown] {
+            let location = if req.folder_path.is_empty() {
+                "collection root".to_string()
+            } else {
+                req.folder_path.join("/")
+            };
+            let kind = if req.protocol.is_empty() || req.protocol == "http" {
+                req.method.clone()
+            } else {
+                req.protocol.to_uppercase()
+            };
+            prompt.push_str(&format!(
+                "\n    request #{} \"{}\" ({kind} {}) in {location}",
+                req.id, req.name, req.url
+            ));
+        }
+        if shown < col.requests.len() {
+            prompt.push_str(&format!(
+                "\n    ... {} more requests not listed (ask the user to tick this collection \
+                 under Context if you need them)",
+                col.requests.len() - shown
+            ));
+        }
+    }
 }
 
 /// one turn of the conversation as sent to the provider.

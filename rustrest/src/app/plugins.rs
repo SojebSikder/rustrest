@@ -14,8 +14,9 @@ use crate::ui::plugin_panel::{MarkdownCache, autoscroll_id, contains_autoscroll}
 use crate::ui::toast::toast::ToastStatus;
 use iced::Task;
 use rustrest_plugin_host::{
-    CollectionOperation, CollectionSummary, FormatDef, PluginManager, RequestSummary,
-    RightPanelAction, RightPanelContext, UiEvent, UiNode,
+    CollectionOperation, CollectionSummary, FormatDef, GrpcMethodSummary, PluginManager,
+    ProtocolLogEntry, ProtocolRequestContext, RequestPatch, RequestSummary, RightPanelAction,
+    RightPanelContext, UiEvent, UiNode,
 };
 use std::collections::HashMap;
 
@@ -47,6 +48,11 @@ pub struct PluginsState {
     pub right_panel_open: Option<(String, String)>,
     /// last-rendered declarative UI tree for the open right panel.
     pub right_panel_tree: Option<UiNode>,
+    /// `right_panel_context_fingerprint` of the context the open right panel
+    /// was last rendered against - when it changes (a collection or
+    /// environment added/renamed/removed, a different tab activated, a
+    /// response arriving) the panel is re-rendered so it never shows stale context.
+    pub right_panel_context_fingerprint: u64,
     /// parsed `UiNode::Markdown` content of every tree above - refresh with
     /// `refresh_markdown` after replacing any of them.
     pub markdown_cache: MarkdownCache,
@@ -132,6 +138,173 @@ pub fn build_right_panel_context(app: &Rustrest) -> RightPanelContext {
         active_response,
         collections: app.collections.iter().map(summarize_collection).collect(),
         environments,
+        active_protocol_request: app
+            .tabs
+            .get(app.active_tab_index)
+            .and_then(|tab_state| protocol_request_context(&tab_state.content)),
+    }
+}
+
+/// a cheap hash of the parts of `build_right_panel_context` a right panel
+/// shows outside its own events: the collection tree, environment names,
+/// and which tab is active (plus whether it has a response). Deliberately
+/// leaves out what changes per keystroke (URL, body, ...) - that's picked up
+/// on the panel's next event anyway.
+fn right_panel_context_fingerprint(app: &Rustrest) -> u64 {
+    use std::hash::{Hash, Hasher};
+
+    fn hash_items(items: &[crate::collection::collection::CollectionItem], h: &mut impl Hasher) {
+        for item in items {
+            match item {
+                crate::collection::collection::CollectionItem::Folder(folder) => {
+                    0u8.hash(h);
+                    folder.name.hash(h);
+                    hash_items(&folder.item, h);
+                    1u8.hash(h);
+                }
+                crate::collection::collection::CollectionItem::Request(req) => {
+                    2u8.hash(h);
+                    req.id.hash(h);
+                    req.name.hash(h);
+                    req.request.method.hash(h);
+                    req.protocol_request.is_some().hash(h);
+                }
+            }
+        }
+    }
+
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    for col in &app.collections {
+        col.id.hash(&mut h);
+        col.info.name.hash(&mut h);
+        hash_items(&col.item, &mut h);
+    }
+    for env in &app.env.environments {
+        env.name.hash(&mut h);
+    }
+    if let Some(tab_state) = app.tabs.get(app.active_tab_index) {
+        tab_state.tab.id.hash(&mut h);
+        std::mem::discriminant(&tab_state.content).hash(&mut h);
+        tab_state
+            .tab
+            .response
+            .as_ref()
+            .map(|r| r.as_ref().map(|resp| resp.status).ok())
+            .hash(&mut h);
+    }
+    h.finish()
+}
+
+/// re-renders the open right panel if the context it was last rendered
+/// against has changed since - so e.g. a collection created or loaded while
+/// the panel is open shows up in it right away, without closing and
+/// reopening the panel.
+pub fn refresh_right_panel_if_context_changed(app: &mut Rustrest) -> Task<Message> {
+    let Some((plugin_id, panel_id)) = app.plugins.right_panel_open.clone() else {
+        return Task::none();
+    };
+    let fingerprint = right_panel_context_fingerprint(app);
+    if fingerprint == app.plugins.right_panel_context_fingerprint {
+        return Task::none();
+    }
+    app.plugins.right_panel_context_fingerprint = fingerprint;
+    let ctx = build_right_panel_context(app);
+    let task = match app
+        .plugins
+        .plugin_manager
+        .render_right_panel(&plugin_id, &panel_id, ctx)
+    {
+        Ok(action) => handle_right_panel_action(app, action),
+        Err(_) => Task::none(),
+    };
+    drain_plugin_logs(app);
+    task
+}
+
+/// most recent protocol log lines handed to a right panel plugin.
+const MAX_PROTOCOL_LOG_ENTRIES: usize = 20;
+/// longest single protocol log line body handed to a right panel plugin, in chars.
+const MAX_PROTOCOL_LOG_BODY_CHARS: usize = 2000;
+
+fn protocol_log(log: &[crate::ui::tab::protocol_common::LogEntry]) -> Vec<ProtocolLogEntry> {
+    use crate::ui::tab::protocol_common::LogDirection;
+    let skip = log.len().saturating_sub(MAX_PROTOCOL_LOG_ENTRIES);
+    log.iter()
+        .skip(skip)
+        .map(|entry| {
+            let mut body: String = entry
+                .body
+                .chars()
+                .take(MAX_PROTOCOL_LOG_BODY_CHARS)
+                .collect();
+            if body.len() < entry.body.len() {
+                body.push('\u{2026}');
+            }
+            ProtocolLogEntry {
+                direction: match entry.direction {
+                    LogDirection::Out => "out",
+                    LogDirection::In => "in",
+                    LogDirection::Info => "info",
+                    LogDirection::Error => "error",
+                }
+                .to_string(),
+                label: entry.label.clone(),
+                body,
+            }
+        })
+        .collect()
+}
+
+/// snapshots a WebSocket/GraphQL/gRPC tab for a right panel plugin; `None`
+/// for any other kind of tab.
+fn protocol_request_context(content: &WorkspaceContent) -> Option<ProtocolRequestContext> {
+    match content {
+        WorkspaceContent::WebSocket(state) => Some(ProtocolRequestContext::WebSocket {
+            url: state.url.clone(),
+            headers: state.active_headers(),
+            message: state.compose.clone(),
+            connected: state.connected,
+            log: protocol_log(&state.log),
+        }),
+        WorkspaceContent::GraphQl(state) => Some(ProtocolRequestContext::GraphQl {
+            url: state.url.clone(),
+            headers: state.active_headers(),
+            query: state.query.text(),
+            variables: state.variables.text(),
+            operation_name: state.operation_name.clone(),
+            response: state.response.as_ref().map(|r| match r {
+                Ok(body) | Err(body) => body.clone(),
+            }),
+            log: protocol_log(&state.subscription_log),
+        }),
+        WorkspaceContent::Grpc(state) => Some(ProtocolRequestContext::Grpc {
+            endpoint: state.endpoint.clone(),
+            use_tls: state.use_tls,
+            metadata: crate::ui::tab::protocol_common::active_pairs(&state.metadata),
+            service: state.selected_service.clone(),
+            method: state.selected_method.clone(),
+            request_json: state.request_json.text(),
+            methods: state
+                .target
+                .iter()
+                .flat_map(|target| &target.services)
+                .flat_map(|service| {
+                    service.methods.iter().map(|m| GrpcMethodSummary {
+                        service: service.name.clone(),
+                        method: m.name.clone(),
+                        kind: match m.kind {
+                            rustrest_grpc::MethodKind::Unary => "unary",
+                            rustrest_grpc::MethodKind::ServerStreaming => "server_streaming",
+                            rustrest_grpc::MethodKind::ClientStreaming => "client_streaming",
+                            rustrest_grpc::MethodKind::Bidi => "bidi_streaming",
+                        }
+                        .to_string(),
+                    })
+                })
+                .collect(),
+            log: protocol_log(&state.log),
+        }),
+        _ => None,
     }
 }
 
@@ -157,6 +330,13 @@ fn summarize_collection(
                     walk(&folder.item, &folder_path, folders, requests);
                 }
                 crate::collection::collection::CollectionItem::Request(req) => {
+                    use crate::collection::collection::ProtocolRequestDetails;
+                    let protocol = match &req.protocol_request {
+                        Some(ProtocolRequestDetails::WebSocket(_)) => "websocket",
+                        Some(ProtocolRequestDetails::GraphQl(_)) => "graphql",
+                        Some(ProtocolRequestDetails::Grpc(_)) => "grpc",
+                        None => "http",
+                    };
                     requests.push(RequestSummary {
                         id: req.id,
                         name: req.name.clone(),
@@ -168,6 +348,7 @@ fn summarize_collection(
                             .as_ref()
                             .map(|u| u.to_string())
                             .unwrap_or_default(),
+                        protocol: protocol.to_string(),
                     });
                 }
             }
@@ -323,17 +504,88 @@ pub fn apply_collection_op(app: &mut Rustrest, op: CollectionOperation) -> Task<
 
 /// applies a `RequestPatch` a `RightPanel` plugin handed back onto the
 /// active tab. A no-op if the active tab isn't an HTTP request tab.
-fn apply_request_patch_to_active_tab(
-    app: &mut Rustrest,
-    patch: rustrest_plugin_host::RequestPatch,
-) {
+fn apply_request_patch_to_active_tab(app: &mut Rustrest, patch: RequestPatch) {
     let Some(tab_state) = app.tabs.get_mut(app.active_tab_index) else {
         return;
     };
-    if !matches!(tab_state.content, WorkspaceContent::HttpRequest) {
-        return;
+    if matches!(tab_state.content, WorkspaceContent::HttpRequest) {
+        apply_request_patch_to_tab(&mut tab_state.tab, patch);
+    } else if apply_patch_to_protocol_content(&mut tab_state.content, &patch) {
+        tab_state.tab.dirty = true;
     }
-    apply_request_patch_to_tab(&mut tab_state.tab, patch);
+}
+
+fn key_value_rows(pairs: &[(String, String)]) -> Vec<crate::ui::tab::types::KeyValuePair> {
+    let mut rows: Vec<_> = pairs
+        .iter()
+        .map(|(k, v)| crate::ui::tab::types::KeyValuePair::new(k, v))
+        .collect();
+    if rows.is_empty() {
+        rows.push(crate::ui::tab::types::KeyValuePair::new("", ""));
+    }
+    rows
+}
+
+/// applies `patch` onto a WebSocket/GraphQL/gRPC request's state - see
+/// `RequestPatch` for how its fields map onto each protocol. Returns
+/// `false` (and changes nothing) for any other kind of content.
+pub(super) fn apply_patch_to_protocol_content(
+    content: &mut WorkspaceContent,
+    patch: &RequestPatch,
+) -> bool {
+    use iced::widget::text_editor::Content;
+    match content {
+        WorkspaceContent::WebSocket(state) => {
+            if let Some(url) = &patch.url {
+                state.url = url.clone();
+            }
+            if let Some(headers) = &patch.headers {
+                state.headers = key_value_rows(headers);
+            }
+            if let Some(message) = &patch.body {
+                state.compose = message.clone();
+            }
+        }
+        WorkspaceContent::GraphQl(state) => {
+            if let Some(url) = &patch.url {
+                state.url = url.clone();
+            }
+            if let Some(headers) = &patch.headers {
+                state.headers = key_value_rows(headers);
+            }
+            if let Some(query) = patch.query.as_ref().or(patch.body.as_ref()) {
+                state.query = Content::with_text(query);
+            }
+            if let Some(variables) = &patch.variables {
+                state.variables = Content::with_text(variables);
+            }
+            if let Some(name) = &patch.operation_name {
+                state.operation_name = name.clone();
+            }
+        }
+        WorkspaceContent::Grpc(state) => {
+            if let Some(endpoint) = &patch.url {
+                state.endpoint = endpoint.clone();
+            }
+            if let Some(use_tls) = patch.use_tls {
+                state.use_tls = use_tls;
+            }
+            if let Some(metadata) = &patch.headers {
+                state.metadata = key_value_rows(metadata);
+            }
+            if let Some(service) = &patch.grpc_service {
+                state.selected_service = (!service.is_empty()).then(|| service.clone());
+            }
+            if let Some(method) = &patch.grpc_method {
+                state.selected_method = (!method.is_empty()).then(|| method.clone());
+            }
+            if let Some(json) = &patch.body {
+                state.request_json = Content::with_text(json);
+            }
+        }
+        _ => return false,
+    }
+    true
 }
 
 /// applies `patch` onto an open request tab

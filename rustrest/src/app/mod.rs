@@ -614,6 +614,7 @@ pub fn init() -> (Rustrest, Task<Message>) {
             right_panel_width: 380.0,
             right_panel_open: None,
             right_panel_tree: None,
+            right_panel_context_fingerprint: 0,
             markdown_cache: Default::default(),
         },
         settings: settings::SettingsState {
@@ -896,6 +897,7 @@ pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
         )
     );
     let task = update_inner(app, message);
+    let task = Task::batch([task, plugins::refresh_right_panel_if_context_changed(app)]);
     if reselects_body || active_tab_id(app) != tab_before {
         Task::batch([task, restore_response_scroll(app)])
     } else {

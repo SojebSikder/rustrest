@@ -50,8 +50,9 @@ pub mod _internal {
 mod runtime;
 
 pub use hooks::{
-    CollectionOperation, CollectionSummary, EnvSummary, RequestContext, RequestPatch,
-    RequestSummary, ResponseContext, RightPanelAction, RightPanelContext, TestResult,
+    CollectionOperation, CollectionSummary, EnvSummary, GrpcMethodSummary, ProtocolLogEntry,
+    ProtocolRequestContext, RequestContext, RequestPatch, RequestSummary, ResponseContext,
+    RightPanelAction, RightPanelContext, TestResult,
 };
 #[cfg(target_arch = "wasm32")]
 pub use host::log;

@@ -3,12 +3,19 @@
 //! reusing the same primitives the sidebar's own create/rename/delete/move
 //! actions use (`crate::utils`, `rustrest_core::collection::tree_ops`).
 
-use super::Rustrest;
+use super::plugins::apply_patch_to_protocol_content;
+use super::{Rustrest, WorkspaceContent};
 use crate::collection::collection::{
     CollectionInfo, CollectionItem, PostmanBody, PostmanCollection, PostmanHeader,
     PostmanRequestDetails, PostmanRequestNode, PostmanUrl, set_event_script,
 };
+use crate::collection_adapter::{
+    protocol_request_details, update_protocol_node_from_content, workspace_content_for_request,
+};
 use crate::message::SidebarDragItem;
+use crate::ui::tab::graphql::GraphQlTabState;
+use crate::ui::tab::grpc::GrpcTabState;
+use crate::ui::tab::ws::WsTabState;
 use crate::utils::{
     find_request_mut, insert_nested_named, insert_nested_request, move_sidebar_item, remove_nested,
     remove_nested_request, rename_nested_folder,
@@ -142,7 +149,51 @@ pub fn apply(app: &mut Rustrest, op: CollectionOperation) -> Result<String, Stri
             name,
             method,
             url,
+            protocol,
         } => {
+            // a WebSocket/GraphQL/gRPC request is built from its tab state's
+            // defaults, the same shape saving a fresh tab of that kind produces
+            let content = match protocol
+                .as_deref()
+                .map(|p| p.trim().to_ascii_lowercase())
+                .as_deref()
+            {
+                None | Some("" | "http" | "https" | "rest") => None,
+                Some("websocket" | "ws") => Some(WorkspaceContent::WebSocket(WsTabState {
+                    url: url.clone(),
+                    ..WsTabState::default()
+                })),
+                Some("graphql") => Some(WorkspaceContent::GraphQl(GraphQlTabState {
+                    url: url.clone(),
+                    ..GraphQlTabState::default()
+                })),
+                Some("grpc") => Some(WorkspaceContent::Grpc(GrpcTabState {
+                    endpoint: url.clone(),
+                    ..GrpcTabState::default()
+                })),
+                Some(other) => return Err(format!("unknown request protocol \"{other}\"")),
+            };
+
+            let (request, protocol_request) =
+                match content.as_ref().and_then(protocol_request_details) {
+                    Some((request, details)) => (request, Some(details)),
+                    None => (
+                        PostmanRequestDetails {
+                            method: if method.trim().is_empty() {
+                                "GET".to_string()
+                            } else {
+                                method.trim().to_uppercase()
+                            },
+                            url: Some(PostmanUrl::String(url)),
+                            header: None,
+                            body: None,
+                            auth: None,
+                            description: None,
+                        },
+                        None,
+                    ),
+                };
+
             let req_id = app.next_request_id;
             app.next_request_id += 1;
 
@@ -154,18 +205,11 @@ pub fn apply(app: &mut Rustrest, op: CollectionOperation) -> Result<String, Stri
                     id: req_id,
                     uid: None,
                     name: name.clone(),
-                    request: PostmanRequestDetails {
-                        method,
-                        url: Some(PostmanUrl::String(url)),
-                        header: None,
-                        body: None,
-                        auth: None,
-                        description: None,
-                    },
+                    request,
                     event: None,
                     unsaved: true,
                     response: None,
-                    protocol_request: None,
+                    protocol_request,
                 }),
             );
             reveal_in_sidebar(app, collection_id, &parent_path);
@@ -275,6 +319,24 @@ pub fn apply(app: &mut Rustrest, op: CollectionOperation) -> Result<String, Stri
             let Some(req) = find_request_mut(&mut col.item, request_id) else {
                 return Err(format!("no request with id {request_id}"));
             };
+
+            // WebSocket/GraphQL/gRPC: patch the request's tab state and
+            // write it back, so field mapping matches the open-tab case
+            if req.protocol_request.is_some() {
+                let mut content = workspace_content_for_request(req);
+                apply_patch_to_protocol_content(&mut content, &patch);
+                let name = req.name.clone();
+                update_protocol_node_from_content(req, &name, &content);
+                req.unsaved = true;
+
+                for tab_state in app.tabs.iter_mut() {
+                    if tab_state.tab.request_id == Some(request_id) {
+                        apply_patch_to_protocol_content(&mut tab_state.content, &patch);
+                    }
+                }
+                return Ok(format!("Updated request #{request_id} ({fields})"));
+            }
+
             let details = &mut req.request;
             if let Some(method) = &patch.method {
                 details.method = method.trim().to_uppercase();

@@ -9,7 +9,7 @@ use std::collections::HashMap;
 pub const SIDEBAR_WIDTH_RANGE: (f32, f32) = (180.0, 520.0);
 pub const REQUEST_PANE_HEIGHT_RANGE: (f32, f32) = (120.0, 700.0);
 pub const CONSOLE_PANEL_HEIGHT_RANGE: (f32, f32) = (120.0, 500.0);
-pub const RIGHT_PANEL_WIDTH_RANGE: (f32, f32) = (260.0, 560.0);
+pub const RIGHT_PANEL_WIDTH_RANGE: (f32, f32) = (260.0, 1100.0);
 pub const MULTILINE_FIELD_HEIGHT_RANGE: (f32, f32) = (40.0, 600.0);
 
 /// the height a `multiline_input` of a given kind opens at before the user
