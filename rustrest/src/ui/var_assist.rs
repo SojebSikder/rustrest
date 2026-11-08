@@ -4,7 +4,7 @@
 
 use crate::collection::env::replace_vars_in;
 use crate::ui::tab::types::KeyValuePair;
-use crate::ui::tokens::{RADIUS_MD, RADIUS_SM, tint};
+use crate::ui::tokens::{EditorText, RADIUS_MD, RADIUS_SM, tint};
 use iced::advanced::layout::{self, Layout};
 use iced::advanced::text::{self as adv_text, Paragraph as _, Renderer as _};
 use iced::advanced::widget::{Operation, Tree, tree};
@@ -237,6 +237,7 @@ impl<'a, Message: Clone + 'a> From<VarInput<'a, Message>> for Element<'a, Messag
                 secure: input.secure,
             },
             padding: input.padding,
+            text: None,
             scope: scope(),
         })
     }
@@ -244,10 +245,12 @@ impl<'a, Message: Clone + 'a> From<VarInput<'a, Message>> for Element<'a, Messag
 
 /// wraps `editor` (a plain `text_editor` showing `content`, possibly behind a
 /// context-menu wrapper) with `{{variable}}` completion and hover values.
+/// `text` must match the editor's font metrics; `None` means the renderer defaults.
 pub fn var_editor<'a, Message: 'a>(
     editor: impl Into<Element<'a, Message>>,
     content: &text_editor::Content,
     padding: impl Into<Padding>,
+    text: Option<EditorText>,
     on_action: Rc<dyn Fn(Action) -> Message + 'a>,
 ) -> Element<'a, Message> {
     let cursor = content.cursor();
@@ -261,6 +264,7 @@ pub fn var_editor<'a, Message: 'a>(
         lines: content.lines().map(|l| l.text.into_owned()).collect(),
         target: Target::Editor { on_action, caret },
         padding: padding.into(),
+        text,
         scope: scope(),
     })
 }
@@ -282,6 +286,8 @@ struct VarAssist<'a, Message> {
     lines: Vec<String>,
     target: Target<'a, Message>,
     padding: Padding,
+    /// the field's font metrics, `None` for the renderer defaults
+    text: Option<EditorText>,
     scope: Arc<Vec<Variable>>,
 }
 
@@ -326,19 +332,29 @@ fn find_state_mut<T: 'static>(tree: &mut Tree) -> Option<&mut T> {
     tree.children.iter_mut().find_map(find_state_mut::<T>)
 }
 
+fn text_size(renderer: &Renderer, spec: Option<EditorText>) -> Pixels {
+    spec.map_or(renderer.default_size(), |s| Pixels(s.size))
+}
+
+fn text_line_height(spec: Option<EditorText>) -> adv_text::LineHeight {
+    spec.map_or(adv_text::LineHeight::default(), |s| {
+        adv_text::LineHeight::Absolute(Pixels(s.line_height))
+    })
+}
+
 fn char_to_byte(text: &str, index: usize) -> usize {
     text.char_indices()
         .nth(index)
         .map_or(text.len(), |(byte, _)| byte)
 }
 
-fn paragraph(renderer: &Renderer, content: &str) -> Paragraph {
+fn paragraph(renderer: &Renderer, spec: Option<EditorText>, content: &str) -> Paragraph {
     Paragraph::with_text(adv_text::Text {
         content,
         bounds: Size::INFINITE,
-        size: renderer.default_size(),
-        line_height: adv_text::LineHeight::default(),
-        font: renderer.default_font(),
+        size: text_size(renderer, spec),
+        line_height: text_line_height(spec),
+        font: spec.map_or(renderer.default_font(), |s| s.font),
         align_x: adv_text::Alignment::Default,
         align_y: alignment::Vertical::Top,
         shaping: adv_text::Shaping::Advanced,
@@ -417,7 +433,7 @@ impl<Message> VarAssist<'_, Message> {
         };
         let shown = self.shown(line);
         let caret_x = x_at(
-            &paragraph(renderer, &shown),
+            &paragraph(renderer, self.text, &shown),
             &shown,
             char_to_byte(&shown, index),
         );
@@ -425,9 +441,9 @@ impl<Message> VarAssist<'_, Message> {
         (caret_x + 5.0 - text_width).max(0.0)
     }
 
-    fn line_height(renderer: &Renderer) -> f32 {
-        adv_text::LineHeight::default()
-            .to_absolute(renderer.default_size())
+    fn line_height(&self, renderer: &Renderer) -> f32 {
+        text_line_height(self.text)
+            .to_absolute(text_size(renderer, self.text))
             .0
     }
 
@@ -441,7 +457,7 @@ impl<Message> VarAssist<'_, Message> {
         match self.target {
             Target::Input { .. } => Some((0, bounds.y, bounds.height)),
             Target::Editor { .. } => {
-                let line_height = Self::line_height(renderer);
+                let line_height = self.line_height(renderer);
                 let y = point.y - bounds.y - self.padding.top;
                 if y < 0.0 {
                     return None;
@@ -483,7 +499,7 @@ impl<Message> VarAssist<'_, Message> {
             Target::Input { .. } => self.input_offset(tree, renderer, bounds),
             Target::Editor { .. } => 0.0,
         };
-        let line_height = Self::line_height(renderer);
+        let line_height = self.line_height(renderer);
         let colors = crate::theme::colors();
 
         // a layer of its own, so it lands over the field's text
@@ -511,7 +527,7 @@ impl<Message> VarAssist<'_, Message> {
                 if spans.is_empty() {
                     continue;
                 }
-                let paragraph = paragraph(renderer, line);
+                let paragraph = paragraph(renderer, self.text, line);
                 let origin = text_bounds.x - offset;
                 for (start, end, name) in spans {
                     let color = if self.scope.iter().any(|v| v.name == name) {
@@ -540,10 +556,10 @@ impl<Message> VarAssist<'_, Message> {
                     renderer.fill_text(
                         adv_text::Text {
                             content: line[start..end].to_string(),
-                            bounds: line_bounds(renderer.default_size().0),
-                            size: renderer.default_size(),
-                            line_height: adv_text::LineHeight::default(),
-                            font: renderer.default_font(),
+                            bounds: Size::new(LINE_BOUNDS_WIDTH, line_height),
+                            size: text_size(renderer, self.text),
+                            line_height: text_line_height(self.text),
+                            font: self.text.map_or(renderer.default_font(), |s| s.font),
                             align_x: adv_text::Alignment::Left,
                             align_y,
                             shaping: adv_text::Shaping::Advanced,
@@ -577,8 +593,9 @@ impl<Message> VarAssist<'_, Message> {
             Target::Editor { .. } => 0.0,
         };
         let shown = self.shown(line);
-        let paragraph = paragraph(renderer, &shown);
+        let paragraph = paragraph(renderer, self.text, &shown);
         let origin = bounds.x + self.padding.left - offset;
+
         spans.into_iter().find_map(|(start, end, name)| {
             let to_shown = |byte: usize| char_to_byte(&shown, line[..byte].chars().count());
             let x0 = origin + x_at(&paragraph, &shown, to_shown(start));
@@ -609,7 +626,8 @@ impl<Message> VarAssist<'_, Message> {
         let line = self.lines.get(line_idx).map(String::as_str).unwrap_or("");
         let shown = self.shown(line);
         let start = char_to_byte(&shown, line[..completion.start].chars().count());
-        let x = x_at(&paragraph(renderer, &shown), &shown, start);
+        let x = x_at(&paragraph(renderer, self.text, &shown), &shown, start);
+
         match self.target {
             Target::Input { .. } => {
                 let offset = self.input_offset(tree, renderer, bounds);
@@ -621,7 +639,7 @@ impl<Message> VarAssist<'_, Message> {
                 }
             }
             Target::Editor { .. } => {
-                let line_height = Self::line_height(renderer);
+                let line_height = self.line_height(renderer);
                 Rectangle {
                     x: bounds.x + self.padding.left + x,
                     y: bounds.y + self.padding.top + line_idx as f32 * line_height,

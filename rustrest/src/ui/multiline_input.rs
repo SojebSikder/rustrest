@@ -1,6 +1,7 @@
 use crate::ui::context_menu::with_context_menu;
 use crate::ui::resize_handle::{DividerOrientation, resize_handle};
 use crate::ui::scroll_editor::scroll_editor;
+use crate::ui::tokens::{CODE_TEXT, EditorText};
 use crate::ui::var_assist::var_editor;
 use iced::Element;
 use iced::widget::{column, text, text_editor};
@@ -31,10 +32,11 @@ where
         on_resize_start,
         true,
         None,
+        None,
     )
 }
 
-/// a [`multiline_input`] that syntax-highlights its text.
+/// a [`multiline_input`] for code: syntax-highlighted, in the same font as the response body.
 #[allow(clippy::too_many_arguments)]
 pub fn highlighted_multiline_input<'a, Message>(
     placeholder: &'a str,
@@ -59,6 +61,7 @@ where
         on_resize_start,
         true,
         syntax,
+        Some(CODE_TEXT),
     )
 }
 
@@ -86,6 +89,7 @@ where
         on_resize_start,
         false,
         None,
+        None,
     )
 }
 
@@ -100,18 +104,25 @@ fn build<'a, Message>(
     on_resize_start: Message,
     var_assist: bool,
     syntax: Option<&str>,
+    text_spec: Option<EditorText>,
 ) -> Element<'a, Message>
 where
     Message: Clone + 'a,
 {
     let on_action: Rc<dyn Fn(text_editor::Action) -> Message + 'a> = Rc::new(on_action);
     let forward = on_action.clone();
-    let base = text_editor(content)
+    let mut base = text_editor(content)
         .placeholder(placeholder)
         .padding(padding)
         .wrapping(text::Wrapping::None)
         .height(iced::Length::Fixed(height))
         .on_action(move |action| forward(action));
+    if let Some(spec) = text_spec {
+        base = base
+            .font(spec.font)
+            .size(spec.size)
+            .line_height(text::LineHeight::Absolute(spec.line_height.into()));
+    }
 
     let base: Element<'a, Message> = match syntax {
         Some("json") => base
@@ -136,13 +147,13 @@ where
     };
     let editor = with_context_menu(base, on_context_menu);
     let editor = if var_assist {
-        var_editor(editor, content, padding, on_action)
+        var_editor(editor, content, padding, text_spec, on_action)
     } else {
         editor
     };
 
     column![
-        scroll_editor(editor, content, f32::from(padding)),
+        scroll_editor(editor, content, f32::from(padding), text_spec),
         resize_handle(DividerOrientation::Horizontal, on_resize_start),
     ]
     .into()

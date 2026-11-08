@@ -56,6 +56,21 @@ pub const RADIUS_MD: f32 = 6.0;
 /// Corner radius for large floating surfaces: modals and popovers.
 pub const RADIUS_LG: f32 = 10.0;
 
+/// Font metrics for code editors.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EditorText {
+    pub font: iced::Font,
+    pub size: f32,
+    /// absolute line height in pixels
+    pub line_height: f32,
+}
+
+pub const CODE_TEXT: EditorText = EditorText {
+    font: iced::Font::MONOSPACE,
+    size: 13.0,
+    line_height: 18.0,
+};
+
 /// The UI's single semibold weight, used wherever a label needs emphasis
 /// (the open menu group, section headings) instead of ad-hoc `Weight::Bold`.
 pub fn semibold() -> iced::Font {

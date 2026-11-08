@@ -21,6 +21,35 @@ use iced::widget::{
 use iced::{Alignment, Element, Font, Length};
 use rustrest_core::docs::DocsTarget;
 
+/// width of the collapse chevron; leaf rows reserve the same slot so labels
+/// at one depth line up.
+const CHEVRON_WIDTH: f32 = 16.0;
+/// extra left offset per nesting level in the collection tree.
+const TREE_INDENT: f32 = 14.0;
+/// left padding inside every tree row.
+const ROW_PAD_X: f32 = 6.0;
+
+fn chevron<'a>(collapsed: bool, on_press: Message) -> button::Button<'a, Message> {
+    button(
+        text(if collapsed { "▶" } else { "▼" })
+            .size(TEXT_CAPTION)
+            .width(Length::Fill)
+            .align_x(Alignment::Center),
+    )
+    .on_press(on_press)
+    .style(button::text)
+    .padding(Padding::from([2, 0]))
+    .width(Length::Fixed(CHEVRON_WIDTH))
+}
+
+/// a column whose rows sit one nesting level deeper than their parent row.
+fn nested_column<'a>() -> Column<'a, Message> {
+    Column::new().spacing(SPACE_XS).padding(Padding {
+        left: TREE_INDENT,
+        ..Padding::ZERO
+    })
+}
+
 /// whether `key` is the item open in the active tab; that row stays
 /// highlighted for as long as its tab is the active one.
 fn is_active_tab_item(app: &Rustrest, key: &SidebarItemKey) -> bool {
@@ -285,10 +314,8 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
                     .unwrap_or(true);
 
                 let collapse_arrow =
-                    button(text(if is_collapsed_col { "▶" } else { "▼" }).size(TEXT_CAPTION))
-                        .on_press(Message::ToggleCollectionCollapsed(col_id))
-                        .style(icon_button)
-                        .padding(2);
+                    chevron(is_collapsed_col, Message::ToggleCollectionCollapsed(col_id))
+                        .style(icon_button);
 
                 let name_color = if is_online {
                     None
@@ -379,10 +406,12 @@ pub fn render_sidebar(app: &Rustrest) -> Element<'_, Message> {
             let mut col_tree = column![collection_header_title].spacing(SPACE_XS);
 
             if !is_collapsed_col {
+                let mut children = nested_column();
                 for item in &col.item {
-                    col_tree =
-                        render_sidebar_item(app, col_tree, item, col_id, Vec::new(), query, filter);
+                    children =
+                        render_sidebar_item(app, children, item, col_id, Vec::new(), query, filter);
                 }
+                col_tree = col_tree.push(children);
             }
             sidebar_contents = sidebar_contents.push(col_tree);
         }
@@ -731,14 +760,13 @@ fn render_sidebar_item<'a>(
                 .align_y(Alignment::Center)
                 .into()
             } else {
-                let collapse_arrow =
-                    button(text(if is_collapsed { "▶" } else { "▼" }).size(TEXT_CAPTION))
-                        .on_press(Message::ToggleFolderCollapsed {
-                            collection_id,
-                            folder_path: path_for_toggle,
-                        })
-                        .style(button::text)
-                        .padding(2);
+                let collapse_arrow = chevron(
+                    is_collapsed,
+                    Message::ToggleFolderCollapsed {
+                        collection_id,
+                        folder_path: path_for_toggle,
+                    },
+                );
 
                 let mut title_row = row![collapse_arrow, text(&folder.name).size(TEXT_BASE)]
                     .spacing(SPACE_XS)
@@ -757,7 +785,7 @@ fn render_sidebar_item<'a>(
 
                 mouse_area(
                     container(title_row)
-                        .padding([3, 6])
+                        .padding(Padding::from([3.0, ROW_PAD_X]))
                         .style(list_row(is_row_selected, is_row_hovered)),
                 )
                 .on_enter(Message::SidebarItemHovered(Some(folder_key.clone())))
@@ -781,19 +809,15 @@ fn render_sidebar_item<'a>(
                 .into()
             };
 
-            let mut folder_layout = column![folder_title].spacing(3).padding(Padding {
-                top: 0.0,
-                right: 0.0,
-                bottom: 0.0,
-                left: 10.0,
-            });
+            let mut folder_layout = column![folder_title].spacing(SPACE_XS);
 
             if !is_collapsed {
                 let filter = child_filter(&folder.name, filter);
+                let mut children = nested_column();
                 for sub in &folder.item {
-                    folder_layout = render_sidebar_item(
+                    children = render_sidebar_item(
                         app,
-                        folder_layout,
+                        children,
                         sub,
                         collection_id,
                         current_path.clone(),
@@ -801,6 +825,7 @@ fn render_sidebar_item<'a>(
                         filter,
                     );
                 }
+                folder_layout = folder_layout.push(children);
             }
             layout.push(folder_layout)
         }
@@ -850,21 +875,19 @@ fn render_sidebar_item<'a>(
                     top: 2.0,
                     right: 0.0,
                     bottom: 2.0,
-                    left: 15.0,
+                    left: ROW_PAD_X + CHEVRON_WIDTH + SPACE_XS,
                 })
                 .into()
             } else {
                 let mut label_row = row![].spacing(SPACE_XS).align_y(Alignment::Center);
-                if has_saved_responses {
-                    label_row = label_row.push(
-                        button(
-                            text(if is_responses_collapsed { "▶" } else { "▼" }).size(TEXT_CAPTION),
-                        )
-                        .on_press(Message::ToggleSavedResponsesCollapsed(req_id))
-                        .style(button::text)
-                        .padding(1),
-                    );
-                }
+                label_row = if has_saved_responses {
+                    label_row.push(chevron(
+                        is_responses_collapsed,
+                        Message::ToggleSavedResponsesCollapsed(req_id),
+                    ))
+                } else {
+                    label_row.push(Space::new().width(Length::Fixed(CHEVRON_WIDTH)))
+                };
                 label_row = label_row.push(crate::ui::badge::method_badge(
                     &req_node.request.method,
                     Some(36.0),
@@ -889,7 +912,7 @@ fn render_sidebar_item<'a>(
                             top: 3.0,
                             right: 6.0,
                             bottom: 3.0,
-                            left: if has_saved_responses { 8.0 } else { 15.0 },
+                            left: ROW_PAD_X,
                         })
                         .style(list_row(is_row_selected, is_row_hovered)),
                 )
@@ -919,18 +942,18 @@ fn render_sidebar_item<'a>(
 
             let mut req_layout = column![request_title].spacing(2);
 
-            if !is_responses_collapsed {
-                if let Some(examples) = &req_node.response {
-                    for (index, example) in examples.iter().enumerate() {
-                        req_layout = req_layout.push(render_saved_response_row(
-                            app,
-                            req_node,
-                            collection_id,
-                            index,
-                            example,
-                        ));
-                    }
+            if !is_responses_collapsed && has_saved_responses {
+                let mut responses = nested_column().spacing(2);
+                for (index, example) in req_node.response.iter().flatten().enumerate() {
+                    responses = responses.push(render_saved_response_row(
+                        app,
+                        req_node,
+                        collection_id,
+                        index,
+                        example,
+                    ));
                 }
+                req_layout = req_layout.push(responses);
             }
 
             layout.push(req_layout)
@@ -973,7 +996,7 @@ fn render_saved_response_row<'a>(
             top: 2.0,
             right: 0.0,
             bottom: 2.0,
-            left: 30.0,
+            left: ROW_PAD_X + CHEVRON_WIDTH + SPACE_XS,
         })
         .into()
     } else {
@@ -992,7 +1015,7 @@ fn render_saved_response_row<'a>(
             top: 3.0,
             right: 6.0,
             bottom: 3.0,
-            left: 30.0,
+            left: ROW_PAD_X + CHEVRON_WIDTH + SPACE_XS,
         }))
         .on_press(Message::SidebarSavedResponseClicked {
             req_node: req_node.clone(),
