@@ -14,9 +14,9 @@ use iced::widget::{
 use iced::{Alignment, Element, Font, Length};
 use std::collections::HashMap;
 
-const RESPONSE_BODY_FONT_SIZE: f32 = 13.0;
+const RESPONSE_BODY_FONT_SIZE: f32 = crate::ui::tokens::CODE_TEXT.size;
 /// fixed so the fold gutter's rows line up with the editor's lines
-const RESPONSE_BODY_LINE_HEIGHT: f32 = 18.0;
+const RESPONSE_BODY_LINE_HEIGHT: f32 = crate::ui::tokens::CODE_TEXT.line_height;
 /// `text_editor`'s default padding
 const RESPONSE_BODY_PADDING: f32 = 5.0;
 const FOLD_GUTTER_WIDTH: f32 = 18.0;
@@ -527,7 +527,7 @@ where
                     let response_editor = responsive(move |size| {
                         let gutter_width = if foldable { FOLD_GUTTER_WIDTH } else { 0.0 };
                         let editor = text_editor(&tab.response_body_editor)
-                            .font(Font::MONOSPACE)
+                            .font(crate::ui::tokens::CODE_TEXT.font)
                             .size(RESPONSE_BODY_FONT_SIZE)
                             .line_height(iced::widget::text::LineHeight::Absolute(
                                 RESPONSE_BODY_LINE_HEIGHT.into(),

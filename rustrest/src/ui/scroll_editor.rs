@@ -4,6 +4,7 @@
 //! viewport, so it never scrolls internally and where each line is drawn
 //! follows from the layout alone.
 
+use crate::ui::tokens::EditorText;
 use iced::advanced::layout::{self, Layout};
 use iced::advanced::text::{self as adv_text, Paragraph as _, Renderer as _};
 use iced::advanced::widget::{Operation, Tree, operation, tree};
@@ -25,11 +26,13 @@ const SCROLLBAR_THICKNESS: f32 = 4.0;
 const SCROLLBAR_HIT_THICKNESS: f32 = 10.0;
 
 /// wraps `editor` (a `text_editor`, possibly behind wrappers) built with
-/// `Wrapping::None` and `editor_padding` padding on every side.
+/// `Wrapping::None` and `editor_padding` padding on every side. `text` must
+/// match the editor's font metrics. `None` means the renderer defaults.
 pub fn scroll_editor<'a, Message: 'a>(
     editor: impl Into<Element<'a, Message>>,
     content: &text_editor::Content,
     editor_padding: f32,
+    text: Option<EditorText>,
 ) -> Element<'a, Message> {
     // widest line by char count; exact for monospace, close enough otherwise
     let longest_line = content
@@ -54,6 +57,7 @@ pub fn scroll_editor<'a, Message: 'a>(
         caret: (position.line, position.column),
         caret_prefix,
         padding: editor_padding,
+        text,
     })
 }
 
@@ -64,6 +68,7 @@ struct ScrollEditor<'a, Message> {
     caret: (usize, usize),
     caret_prefix: String,
     padding: f32,
+    text: Option<EditorText>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -112,16 +117,18 @@ struct State {
     focused: bool,
 }
 
-fn measure(renderer: &Renderer, text: &str) -> f32 {
+fn measure(renderer: &Renderer, spec: Option<EditorText>, text: &str) -> f32 {
     if text.is_empty() {
         return 0.0;
     }
     let paragraph = <Renderer as adv_text::Renderer>::Paragraph::with_text(adv_text::Text {
         content: text,
         bounds: Size::INFINITE,
-        size: renderer.default_size(),
-        line_height: adv_text::LineHeight::default(),
-        font: renderer.default_font(),
+        size: spec.map_or(renderer.default_size(), |s| s.size.into()),
+        line_height: spec.map_or(adv_text::LineHeight::default(), |s| {
+            adv_text::LineHeight::Absolute(s.line_height.into())
+        }),
+        font: spec.map_or(renderer.default_font(), |s| s.font),
         align_x: adv_text::Alignment::Default,
         align_y: alignment::Vertical::Top,
         shaping: adv_text::Shaping::Advanced,
@@ -265,16 +272,21 @@ impl<'a, Message> iced::advanced::Widget<Message, Theme, Renderer> for ScrollEdi
         let line_width = match &state.measured_line {
             Some((line, width)) if *line == self.longest_line => *width,
             _ => {
-                let width = measure(renderer, &self.longest_line);
+                let width = measure(renderer, self.text, &self.longest_line);
                 state.measured_line = Some((self.longest_line.clone(), width));
                 width
             }
         };
         // +2 leaves room for the caret after the last glyph
         let text_width = line_width + self.padding * 2.0 + 2.0;
-        let line_height = adv_text::LineHeight::default()
-            .to_absolute(renderer.default_size())
-            .0;
+        let line_height = self.text.map_or_else(
+            || {
+                adv_text::LineHeight::default()
+                    .to_absolute(renderer.default_size())
+                    .0
+            },
+            |s| s.line_height,
+        );
         state.line_height = line_height;
         let text_height = self.line_count as f32 * line_height + self.padding * 2.0;
 
@@ -304,7 +316,7 @@ impl<'a, Message> iced::advanced::Widget<Message, Theme, Renderer> for ScrollEdi
         if state.followed_caret != Some(self.caret) {
             state.followed_caret = Some(self.caret);
 
-            let caret_x = self.padding + measure(renderer, &self.caret_prefix);
+            let caret_x = self.padding + measure(renderer, self.text, &self.caret_prefix);
             let visible_start = state.x.offset + self.padding;
             let visible_end = state.x.offset + viewport_width - self.padding;
             if caret_x < visible_start {
