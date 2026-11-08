@@ -869,9 +869,41 @@ fn restore_session_into_app(app: &mut Rustrest, saved: &SavedSession) {
     app.next_request_id = saved.next_request_id.max(app.next_request_id);
 }
 
+fn active_tab_id(app: &Rustrest) -> Option<usize> {
+    app.tabs.get(app.active_tab_index).map(|t| t.tab.id)
+}
+
+/// re-applies the active tab's remembered response-body scroll offset.
+fn restore_response_scroll(app: &Rustrest) -> Task<Message> {
+    match app.tabs.get(app.active_tab_index) {
+        Some(t) => iced::widget::operation::scroll_to(
+            crate::ui::tab::protocol_common::response_body_id(t.tab.id),
+            t.tab.response_scroll,
+        ),
+        None => Task::none(),
+    }
+}
+
 /// where SSH host keys seen by the remote-development feature are recorded
 /// (trust-on-first-use), separate from any system-wide `~/.ssh/known_hosts`.
 pub fn update(app: &mut Rustrest, message: Message) -> Task<Message> {
+    let tab_before = active_tab_id(app);
+    let reselects_body = matches!(
+        &message,
+        Message::ActiveTabMessage(
+            crate::ui::tab::TabMessage::ResponseSubTabSelected(ResponseSubTab::Body)
+                | crate::ui::tab::TabMessage::ViewSavedResponse(None)
+        )
+    );
+    let task = update_inner(app, message);
+    if reselects_body || active_tab_id(app) != tab_before {
+        Task::batch([task, restore_response_scroll(app)])
+    } else {
+        task
+    }
+}
+
+fn update_inner(app: &mut Rustrest, message: Message) -> Task<Message> {
     match message {
         Message::ContextMenuAction(inner) => {
             app.overlays.active_context_menu = None;
