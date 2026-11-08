@@ -464,14 +464,12 @@ pub fn protocol_request_details(
     match content {
         WorkspaceContent::WebSocket(state) => {
             let details = ws_state_to_details(state);
-            let request =
-                placeholder_request_details("WEBSOCKET", &details.url, details.headers.clone());
+            let request = placeholder_request_details("WS", &details.url, details.headers.clone());
             Some((request, ProtocolRequestDetails::WebSocket(details)))
         }
         WorkspaceContent::GraphQl(state) => {
             let details = graphql_state_to_details(state);
-            let request =
-                placeholder_request_details("GRAPHQL", &details.url, details.headers.clone());
+            let request = placeholder_request_details("GQL", &details.url, details.headers.clone());
             Some((request, ProtocolRequestDetails::GraphQl(details)))
         }
         WorkspaceContent::Grpc(state) => {
