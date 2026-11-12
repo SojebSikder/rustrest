@@ -499,12 +499,13 @@ pub fn substitute_path_variables(url: &str, lookup: impl Fn(&str) -> Option<Stri
     for_each_path_variable(url, |name| lookup(name))
 }
 
-/// walks the `:name` segment prefixes in `url`'s path, rebuilding the URL
-/// with whatever `f` returns for each (or the original `:name` on `None`).
-fn for_each_path_variable(url: &str, mut f: impl FnMut(&str) -> Option<String>) -> String {
+/// byte range of every `:name` path segment prefix in `url` (the range
+/// covers the leading `:`), in order. Matches exactly what
+/// [`substitute_path_variables`] replaces, so editors can highlight them.
+pub fn path_variable_spans(url: &str) -> Vec<std::ops::Range<usize>> {
     // the path ends at the query or fragment
     let path_end = url.find(['?', '#']).unwrap_or(url.len());
-    let (before_query, rest) = url.split_at(path_end);
+    let before_query = &url[..path_end];
 
     // skip `scheme://authority`. without a scheme, the first `/` starts the
     // path (`{{base_url}}/x`, `localhost:8080/x`)
@@ -512,14 +513,10 @@ fn for_each_path_variable(url: &str, mut f: impl FnMut(&str) -> Option<String>) 
     let path_start = before_query[authority_start..]
         .find('/')
         .map_or(before_query.len(), |i| authority_start + i);
-    let (head, path) = before_query.split_at(path_start);
 
-    let mut out = String::with_capacity(url.len());
-    out.push_str(head);
-    for (i, segment) in path.split('/').enumerate() {
-        if i > 0 {
-            out.push('/');
-        }
+    let mut spans = Vec::new();
+    let mut offset = path_start;
+    for segment in before_query[path_start..].split('/') {
         let name_len = segment
             .strip_prefix(':')
             .map(|s| {
@@ -527,18 +524,28 @@ fn for_each_path_variable(url: &str, mut f: impl FnMut(&str) -> Option<String>) 
                     .unwrap_or(s.len())
             })
             .unwrap_or(0);
-        if name_len == 0 {
-            out.push_str(segment);
-            continue;
+        if name_len > 0 {
+            spans.push(offset..offset + 1 + name_len);
         }
-        let name = &segment[1..1 + name_len];
-        match f(name) {
-            Some(value) => out.push_str(&value),
-            None => out.push_str(&segment[..1 + name_len]),
-        }
-        out.push_str(&segment[1 + name_len..]);
+        offset += segment.len() + 1;
     }
-    out.push_str(rest);
+    spans
+}
+
+/// rebuilds `url` with whatever `f` returns for each `:name` path segment
+/// (or the original `:name` on `None`).
+fn for_each_path_variable(url: &str, mut f: impl FnMut(&str) -> Option<String>) -> String {
+    let mut out = String::with_capacity(url.len());
+    let mut last = 0;
+    for span in path_variable_spans(url) {
+        out.push_str(&url[last..span.start]);
+        match f(&url[span.start + 1..span.end]) {
+            Some(value) => out.push_str(&value),
+            None => out.push_str(&url[span.clone()]),
+        }
+        last = span.end;
+    }
+    out.push_str(&url[last..]);
     out
 }
 

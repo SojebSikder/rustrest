@@ -1,7 +1,9 @@
 //! `{{variable}}` assistance for request fields: typing inside
 //! `{{` pops up the matching variables, and hovering a `{{variable}}` shows
-//! the value it resolves to and where it's defined.
+//! the value it resolves to and where it's defined. URL fields can also
+//! highlight their `:name` path variables the same way.
 
+use crate::collection::collection::path_variable_spans;
 use crate::collection::env::replace_vars_in;
 use crate::ui::tab::types::KeyValuePair;
 use crate::ui::tokens::{EditorText, RADIUS_MD, RADIUS_SM, tint};
@@ -164,6 +166,36 @@ fn var_spans(line: &str) -> Vec<(usize, usize, &str)> {
     spans
 }
 
+/// what a highlighted span of a field refers to.
+#[derive(Debug, Clone, PartialEq)]
+enum Hovered {
+    /// a `{{name}}` variable
+    Var(String),
+    /// a `:name` path variable
+    Path(String),
+}
+
+/// `{{variable}}` spans of `line`, plus its `:name` path variable spans when
+/// `path_vars`, sorted by start. A path span inside a `{{...}}` is dropped.
+fn field_spans(line: &str, path_vars: bool) -> Vec<(usize, usize, Hovered)> {
+    let vars = var_spans(line);
+    let mut spans: Vec<(usize, usize, Hovered)> = Vec::with_capacity(vars.len());
+    if path_vars {
+        for span in path_variable_spans(line) {
+            if !vars.iter().any(|&(s, e, _)| span.start < e && s < span.end) {
+                let name = line[span.start + 1..span.end].to_string();
+                spans.push((span.start, span.end, Hovered::Path(name)));
+            }
+        }
+    }
+    spans.extend(
+        vars.into_iter()
+            .map(|(s, e, name)| (s, e, Hovered::Var(name.to_string()))),
+    );
+    spans.sort_by_key(|&(s, _, _)| s);
+    spans
+}
+
 /// indices into `scope` matching `query`, prefix matches first.
 fn suggestions(scope: &[Variable], query: &str) -> Vec<usize> {
     let query = query.to_lowercase();
@@ -183,6 +215,7 @@ pub fn var_input<'a, Message>(placeholder: &str, value: &str) -> VarInput<'a, Me
         padding: text_input::DEFAULT_PADDING,
         width: Length::Fill,
         secure: false,
+        path_vars: None,
     }
 }
 
@@ -193,9 +226,21 @@ pub struct VarInput<'a, Message> {
     padding: Padding,
     width: Length,
     secure: bool,
+    path_vars: Option<Vec<(String, String)>>,
 }
 
 impl<'a, Message> VarInput<'a, Message> {
+    /// highlights the field's `:name` path variables (for URL fields), with
+    /// `vars` (key, value) shown on hover.
+    pub fn path_variables(mut self, vars: &[KeyValuePair]) -> Self {
+        self.path_vars = Some(
+            vars.iter()
+                .map(|kv| (kv.key.clone(), kv.value.clone()))
+                .collect(),
+        );
+        self
+    }
+
     pub fn on_input(mut self, on_input: impl Fn(String) -> Message + 'a) -> Self {
         self.on_input = Some(Rc::new(on_input));
         self
@@ -239,6 +284,7 @@ impl<'a, Message: Clone + 'a> From<VarInput<'a, Message>> for Element<'a, Messag
             padding: input.padding,
             text: None,
             scope: scope(),
+            path_vars: input.path_vars,
         })
     }
 }
@@ -266,6 +312,7 @@ pub fn var_editor<'a, Message: 'a>(
         padding: padding.into(),
         text,
         scope: scope(),
+        path_vars: None,
     })
 }
 
@@ -289,6 +336,8 @@ struct VarAssist<'a, Message> {
     /// the field's font metrics, `None` for the renderer defaults
     text: Option<EditorText>,
     scope: Arc<Vec<Variable>>,
+    /// (key, value) of the request's path variables; `Some` highlights `:name` segments
+    path_vars: Option<Vec<(String, String)>>,
 }
 
 #[derive(Default)]
@@ -303,8 +352,8 @@ struct State {
     scroll: usize,
     /// text_input caret to restore once an accepted suggestion lands
     pending_caret: Option<usize>,
-    /// the hovered `{{variable}}`'s name and absolute bounds
-    hovered: Option<(String, Rectangle)>,
+    /// the hovered `{{variable}}` or `:path` variable and its absolute bounds
+    hovered: Option<(Hovered, Rectangle)>,
 }
 
 impl State {
@@ -470,7 +519,8 @@ impl<Message> VarAssist<'_, Message> {
     }
 
     /// colors every `{{variable}}` over the field's own text: the accent
-    /// color when it resolves, the error color when it doesn't.
+    /// color when it resolves, the error color when it doesn't. `:path`
+    /// variables get the info color, or the error color while they have no value.
     fn draw_variables(
         &self,
         tree: &Tree,
@@ -482,7 +532,10 @@ impl<Message> VarAssist<'_, Message> {
 
         // a secure input only shows bullets
         if matches!(self.target, Target::Input { secure: true, .. })
-            || !self.lines.iter().any(|line| line.contains("{{"))
+            || !self
+                .lines
+                .iter()
+                .any(|line| line.contains("{{") || (self.path_vars.is_some() && line.contains(':')))
         {
             return;
         }
@@ -523,20 +576,25 @@ impl<Message> VarAssist<'_, Message> {
                 if chip_top > clip.y + clip.height || chip_top + line_height < clip.y {
                     continue;
                 }
-                let spans = var_spans(line);
+                let spans = field_spans(line, self.path_vars.is_some());
                 if spans.is_empty() {
                     continue;
                 }
+
                 let paragraph = paragraph(renderer, self.text, line);
                 let origin = text_bounds.x - offset;
-                for (start, end, name) in spans {
-                    let color = if self.scope.iter().any(|v| v.name == name) {
-                        colors.text_accent
-                    } else {
-                        colors.error
+                for (start, end, hovered) in spans {
+                    let color = match &hovered {
+                        Hovered::Var(name) if self.scope.iter().any(|v| &v.name == name) => {
+                            colors.text_accent
+                        }
+                        Hovered::Var(_) => colors.error,
+                        Hovered::Path(name) if self.path_value(name).is_some() => colors.info,
+                        Hovered::Path(_) => colors.error,
                     };
                     let x0 = origin + x_at(&paragraph, line, start);
                     let x1 = origin + x_at(&paragraph, line, end);
+
                     renderer.fill_quad(
                         renderer::Quad {
                             bounds: Rectangle {
@@ -553,6 +611,7 @@ impl<Message> VarAssist<'_, Message> {
                         },
                         tint(color, 0.14),
                     );
+
                     renderer.fill_text(
                         adv_text::Text {
                             content: line[start..end].to_string(),
@@ -574,17 +633,22 @@ impl<Message> VarAssist<'_, Message> {
         });
     }
 
-    /// the `{{variable}}` under `point`, with its absolute bounds.
+    /// the non-empty value of path variable `name`, if the request defines one.
+    fn path_value(&self, name: &str) -> Option<&str> {
+        path_value(self.path_vars.as_deref().unwrap_or_default(), name)
+    }
+
+    /// the `{{variable}}` or `:path` variable under `point`, with its absolute bounds.
     fn var_under(
         &self,
         tree: &Tree,
         bounds: Rectangle,
         point: Point,
         renderer: &Renderer,
-    ) -> Option<(String, Rectangle)> {
+    ) -> Option<(Hovered, Rectangle)> {
         let (line_idx, top, height) = self.line_at(bounds, point, renderer)?;
         let line = self.lines.get(line_idx)?;
-        let spans = var_spans(line);
+        let spans = field_spans(line, self.path_vars.is_some());
         if spans.is_empty() {
             return None;
         }
@@ -596,21 +660,19 @@ impl<Message> VarAssist<'_, Message> {
         let paragraph = paragraph(renderer, self.text, &shown);
         let origin = bounds.x + self.padding.left - offset;
 
-        spans.into_iter().find_map(|(start, end, name)| {
+        spans.into_iter().find_map(|(start, end, hovered)| {
             let to_shown = |byte: usize| char_to_byte(&shown, line[..byte].chars().count());
             let x0 = origin + x_at(&paragraph, &shown, to_shown(start));
             let x1 = origin + x_at(&paragraph, &shown, to_shown(end));
-            (point.x >= x0 && point.x < x1).then(|| {
-                (
-                    name.to_string(),
-                    Rectangle {
-                        x: x0,
-                        y: top,
-                        width: x1 - x0,
-                        height,
-                    },
-                )
-            })
+            (point.x >= x0 && point.x < x1).then_some((
+                hovered,
+                Rectangle {
+                    x: x0,
+                    y: top,
+                    width: x1 - x0,
+                    height,
+                },
+            ))
         })
     }
 
@@ -933,7 +995,7 @@ impl<'a, Message> iced::advanced::Widget<Message, Theme, Renderer> for VarAssist
                 .downcast_ref::<State>()
                 .hovered
                 .clone()
-                .map(|(name, anchor)| (anchor, Popup::Value { name })),
+                .map(|(hovered, anchor)| (anchor, Popup::Value { hovered })),
         };
 
         let Self {
@@ -941,6 +1003,7 @@ impl<'a, Message> iced::advanced::Widget<Message, Theme, Renderer> for VarAssist
             lines,
             target,
             scope,
+            path_vars,
             ..
         } = self;
         let Tree {
@@ -962,6 +1025,7 @@ impl<'a, Message> iced::advanced::Widget<Message, Theme, Renderer> for VarAssist
                 lines,
                 target,
                 scope,
+                path_vars: path_vars.as_deref().unwrap_or_default(),
                 state: state.downcast_mut::<State>(),
                 popup,
                 anchor: anchor + translation,
@@ -1003,14 +1067,23 @@ enum Popup {
         matches: Vec<usize>,
     },
     Value {
-        name: String,
+        hovered: Hovered,
     },
+}
+
+/// the non-empty value of path variable `name` among `vars`.
+fn path_value<'v>(vars: &'v [(String, String)], name: &str) -> Option<&'v str> {
+    vars.iter()
+        .find(|(key, _)| key == name)
+        .map(|(_, value)| value.as_str())
+        .filter(|value| !value.is_empty())
 }
 
 struct AssistOverlay<'b, 'a, Message> {
     lines: &'b [String],
     target: &'b Target<'a, Message>,
     scope: &'b [Variable],
+    path_vars: &'b [(String, String)],
     state: &'b mut State,
     popup: Popup,
     /// absolute bounds of what the popup belongs to
@@ -1066,9 +1139,28 @@ fn text_width(content: &str, size: f32, renderer: &Renderer) -> f32 {
 
 impl<Message> AssistOverlay<'_, '_, Message> {
     /// the hovered variable's tooltip lines: (header, header color, value, value color)
-    fn value_lines(&self, name: &str) -> (String, Color, String, Color) {
+    fn value_lines(&self, hovered: &Hovered) -> (String, Color, String, Color) {
         let colors = crate::theme::colors();
-        match self.scope.iter().find(|v| v.name == name) {
+        let name = match hovered {
+            Hovered::Var(name) => name,
+            Hovered::Path(name) => {
+                return match path_value(self.path_vars, name) {
+                    Some(value) => (
+                        "PATH VARIABLE".to_string(),
+                        colors.info,
+                        truncate(value, MAX_VALUE_CHARS),
+                        colors.text,
+                    ),
+                    None => (
+                        "PATH VARIABLE".to_string(),
+                        colors.error,
+                        "No value set - fill it in under Params".to_string(),
+                        colors.text_muted,
+                    ),
+                };
+            }
+        };
+        match self.scope.iter().find(|v| &v.name == name) {
             Some(var) if var.value.is_empty() => (
                 var.source.label().to_string(),
                 var.source.color(),
@@ -1133,8 +1225,8 @@ impl<Message> overlay::Overlay<Message, Theme, Renderer> for AssistOverlay<'_, '
                 LIST_WIDTH,
                 matches.len().min(MAX_ROWS) as f32 * ROW_HEIGHT + POPUP_PADDING * 2.0,
             ),
-            Popup::Value { name } => {
-                let (header, _, value, _) = self.value_lines(name);
+            Popup::Value { hovered } => {
+                let (header, _, value, _) = self.value_lines(hovered);
                 let content_width = text_width(&header, SMALL_TEXT_SIZE, renderer)
                     .max(text_width(&value, TEXT_SIZE, renderer));
                 Size::new(
@@ -1258,8 +1350,8 @@ impl<Message> overlay::Overlay<Message, Theme, Renderer> for AssistOverlay<'_, '
                     );
                 }
             }
-            Popup::Value { name } => {
-                let (header, header_color, value, value_color) = self.value_lines(name);
+            Popup::Value { hovered } => {
+                let (header, header_color, value, value_color) = self.value_lines(hovered);
                 let x = bounds.x + 10.0;
                 let top = bounds.y + 6.0;
                 renderer.fill_text(

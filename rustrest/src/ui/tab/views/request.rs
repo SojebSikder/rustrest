@@ -84,6 +84,7 @@ where
     let url_input = with_context_menu(
         var_input("https://api.example.com/v1/resource", &tab.url)
             .on_input(move |u| wrap_msg(TabMessage::UrlChanged(u)))
+            .path_variables(&tab.path_variables)
             .padding([8, 12])
             .width(Length::Fill),
         wrap_msg(TabMessage::ShowFieldContextMenu(
