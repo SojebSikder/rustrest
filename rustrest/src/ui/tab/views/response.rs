@@ -9,31 +9,41 @@ use crate::ui::tokens::{
 };
 use iced::widget::text::Wrapping;
 use iced::widget::{
-    Space, button, column, container, pick_list, responsive, row, scrollable, text, text_editor,
+    Space, button, column, container, pick_list, responsive, row, scrollable, stack, text,
+    text_editor,
 };
 use iced::{Alignment, Element, Font, Length};
 use std::collections::HashMap;
 
 const RESPONSE_BODY_FONT_SIZE: f32 = crate::ui::tokens::CODE_TEXT.size;
-/// fixed so the fold gutter's rows line up with the editor's lines
-const RESPONSE_BODY_LINE_HEIGHT: f32 = crate::ui::tokens::CODE_TEXT.line_height;
-/// `text_editor`'s default padding
-const RESPONSE_BODY_PADDING: f32 = 5.0;
+const RESPONSE_BODY_LINE_HEIGHT: f32 = crate::ui::tab::response_scroll::LINE_HEIGHT;
+const RESPONSE_BODY_PADDING: f32 = crate::ui::tab::response_scroll::PADDING;
 const FOLD_GUTTER_WIDTH: f32 = 18.0;
 
-/// the ▾/▸ column beside the response body, one row per visible line.
-/// runs of lines without a toggle are merged into a single spacer so huge
-/// bodies don't create a widget per line.
+/// '▾/▸' column beside the response body, for the rows currently in view.
 fn fold_gutter<'a, Message>(
     tab: &'a Tab,
+    viewport_height: f32,
+    offset: f32,
     wrap_msg: impl Fn(TabMessage) -> Message + Copy + 'static,
 ) -> Element<'a, Message>
 where
     Message: Clone + 'static,
 {
+    // first row whose top edge is inside the viewport, and the last row that
+    // starts before its bottom edge
+    let first = ((offset - RESPONSE_BODY_PADDING) / RESPONSE_BODY_LINE_HEIGHT)
+        .ceil()
+        .max(0.0) as usize;
+    let last = ((offset - RESPONSE_BODY_PADDING + viewport_height) / RESPONSE_BODY_LINE_HEIGHT)
+        .floor()
+        .max(0.0) as usize;
+
     let mut gutter = column![].width(Length::Fixed(FOLD_GUTTER_WIDTH));
-    let mut gap = RESPONSE_BODY_PADDING;
-    for dl in tab.response_fold.display_lines() {
+    let mut gap = RESPONSE_BODY_PADDING + first as f32 * RESPONSE_BODY_LINE_HEIGHT - offset;
+    let rows = tab.response_fold.display_lines();
+
+    for dl in rows.iter().take(last + 1).skip(first) {
         if !dl.foldable {
             gap += RESPONSE_BODY_LINE_HEIGHT;
             continue;
@@ -55,28 +65,64 @@ where
             .on_press(wrap_msg(TabMessage::ToggleResponseFold(dl.line))),
         );
     }
-    gutter.into()
+    // the last row may hang off the bottom
+    container(gutter)
+        .width(Length::Fixed(FOLD_GUTTER_WIDTH))
+        .height(Length::Fill)
+        .clip(true)
+        .into()
 }
 
 /// estimated pixel width of the widest line in the response body; errs a bit
 /// wide since monospace advance varies by platform font (~0.55-0.6em)
-fn response_body_content_width(content: &text_editor::Content) -> f32 {
-    let longest = content
-        .lines()
-        .map(|line| {
-            line.text
-                .chars()
-                .map(|c| if c == '\t' { 4 } else { 1 })
-                .sum::<usize>()
-        })
-        .max()
-        .unwrap_or(0);
+fn response_body_content_width(tab: &Tab) -> f32 {
+    // cached on the fold state. scanning the editor's lines here walked the
+    // whole body on every frame
+    let longest = tab.response_fold.max_line_chars();
 
     // extra space for the editor's padding and the trailing cursor
     (longest + 4) as f32 * RESPONSE_BODY_FONT_SIZE * 0.62
 }
 
 pub fn render_response_pane<'a, Message>(
+    tab: &'a Tab,
+    wrap_msg: impl Fn(TabMessage) -> Message + Copy + 'static,
+) -> Element<'a, Message>
+where
+    Message: Clone + 'static,
+{
+    stack![response_pane(tab, wrap_msg), priming_editor(tab)].into()
+}
+
+/// an invisible editor over `tab.response_editor_spare`, so that empty
+/// content gets its first layout (font size and height) now, while that's
+/// free. the next response body is pasted into it, and then only the lines in
+/// view are ever laid out.
+fn priming_editor<'a, Message>(tab: &'a Tab) -> Element<'a, Message>
+where
+    Message: Clone + 'static,
+{
+    text_editor(&tab.response_editor_spare)
+        .font(crate::ui::tokens::CODE_TEXT.font)
+        .size(RESPONSE_BODY_FONT_SIZE)
+        .line_height(iced::widget::text::LineHeight::Absolute(
+            RESPONSE_BODY_LINE_HEIGHT.into(),
+        ))
+        .padding(RESPONSE_BODY_PADDING)
+        .wrapping(Wrapping::None)
+        .width(1.0)
+        .height(Length::Fixed(1.0))
+        .style(|_, _| text_editor::Style {
+            background: iced::Color::TRANSPARENT.into(),
+            border: iced::Border::default(),
+            placeholder: iced::Color::TRANSPARENT,
+            value: iced::Color::TRANSPARENT,
+            selection: iced::Color::TRANSPARENT,
+        })
+        .into()
+}
+
+fn response_pane<'a, Message>(
     tab: &'a Tab,
     wrap_msg: impl Fn(TabMessage) -> Message + Copy + 'static,
 ) -> Element<'a, Message>
@@ -510,23 +556,25 @@ where
                             );
                     }
 
-                    // with nothing selected, right-click copies the whole body,
-                    // including any collapsed regions
                     let context_menu_msg = wrap_msg(TabMessage::ShowFieldContextMenu(
                         TabFieldTarget::ResponseBodyEditor,
-                        tab.response_body_editor
-                            .selection()
-                            .unwrap_or_else(|| tab.response_fold.full_text()),
+                        tab.response_body_editor.selection().unwrap_or_default(),
                     ));
 
-                    let content_width = response_body_content_width(&tab.response_body_editor);
+                    let content_width = response_body_content_width(tab);
                     let tab_id = tab.id;
                     // JSON view gets Postman-style "Pretty" highlighting; Raw stays plain
                     let highlight = tab.response_view == ResponseView::Json;
 
                     let response_editor = responsive(move |size| {
                         let gutter_width = if foldable { FOLD_GUTTER_WIDTH } else { 0.0 };
+                        // the editor fills the viewport and scrolls itself, so
+                        // iced only lays out (and highlights) the lines in view
+                        let scroll = &tab.response_editor_scroll;
+                        scroll.set_editor_height(size.height);
+                        let offset = scroll.offset(tab.response_body_editor.line_count());
                         let editor = text_editor(&tab.response_body_editor)
+                            .height(Length::Fill)
                             .font(crate::ui::tokens::CODE_TEXT.font)
                             .size(RESPONSE_BODY_FONT_SIZE)
                             .line_height(iced::widget::text::LineHeight::Absolute(
@@ -538,6 +586,7 @@ where
                             .on_action(move |act| {
                                 wrap_msg(TabMessage::ResponseBodyEditorAction(act))
                             });
+
                         let editor: Element<Message> = if highlight {
                             editor
                                 .highlight_with::<crate::theme::syntax::JsonHighlighter>(
@@ -553,17 +602,14 @@ where
                         };
 
                         let editor = with_context_menu(editor, context_menu_msg.clone());
-                        let body: Element<Message> = if foldable {
-                            row![fold_gutter(tab, wrap_msg), editor].into()
-                        } else {
-                            editor
-                        };
 
-                        scrollable(body)
-                            .direction(scrollable::Direction::Both {
-                                vertical: scrollable::Scrollbar::default(),
-                                horizontal: scrollable::Scrollbar::default(),
-                            })
+                        // long lines don't wrap, so the editor is as wide as the
+                        // widest line and scrolls sideways in here
+                        let editor: Element<Message> = scrollable(editor)
+                            .direction(scrollable::Direction::Horizontal(
+                                scrollable::Scrollbar::default(),
+                            ))
+                            .width(Length::Fill)
                             .height(Length::Fill)
                             .id(crate::ui::tab::protocol_common::response_body_id(tab_id))
                             .on_scroll(move |viewport| {
@@ -571,7 +617,15 @@ where
                                     viewport.absolute_offset(),
                                 ))
                             })
-                            .into()
+                            .into();
+
+                        if foldable {
+                            row![fold_gutter(tab, size.height, offset, wrap_msg), editor]
+                                .height(Length::Fill)
+                                .into()
+                        } else {
+                            editor
+                        }
                     });
 
                     column![

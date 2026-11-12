@@ -5,6 +5,7 @@ pub mod grpc;
 pub mod json_fold;
 pub mod messages;
 pub mod protocol_common;
+pub mod response_scroll;
 mod state;
 pub mod streaming;
 pub mod types;

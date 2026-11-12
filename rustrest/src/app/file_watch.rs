@@ -383,6 +383,10 @@ fn refresh_request_tab(tab_state: &mut TabState, node: &PostmanRequestNode, col_
         &mut old.response_body_editor,
     );
     swap(&mut fresh.response_fold, &mut old.response_fold);
+    swap(
+        &mut fresh.response_editor_scroll,
+        &mut old.response_editor_scroll,
+    );
     swap(&mut fresh.response_view, &mut old.response_view);
     swap(&mut fresh.active_sub_tab, &mut old.active_sub_tab);
     swap(&mut fresh.active_response_tab, &mut old.active_response_tab);

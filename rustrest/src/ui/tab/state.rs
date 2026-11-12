@@ -62,9 +62,15 @@ pub struct Tab {
     pub response_body_editor: text_editor::Content,
     /// full formatted response body plus its JSON fold state
     pub response_fold: super::json_fold::JsonFold,
-    /// last scroll position of the response body, so switching tabs and
-    /// coming back restores it instead of jumping to the top.
+    /// last scroll position of the response body's horizontal scrollable,
+    /// so switching tabs and coming back restores it instead of jumping back.
     pub response_scroll: iced::widget::operation::AbsoluteOffset,
+    /// the response editor scrolls itself vertically. this mirrors where it
+    /// is so the fold gutter can line up with the text
+    pub response_editor_scroll: super::response_scroll::EditorScroll,
+    /// an empty editor content that the response pane keeps laid out, ready
+    /// to take the next response body (see `replace_response_editor`)
+    pub response_editor_spare: text_editor::Content,
     /// saved response snapshots for this request, in the order they were saved.
     pub saved_responses: Vec<SavedResponse>,
     /// which response the response pane is currently displaying: the live
@@ -83,24 +89,62 @@ pub struct Tab {
     pub docs: crate::ui::docs_view::MarkdownDoc,
 }
 
+/// lines per paste in `fill_content`. cosmic-text inserts a paste's lines
+/// one `Vec::insert` at a time, so a single paste is quadratic in its line count.
+/// small chunks keep it close to linear.
+const FILL_CHUNK_LINES: usize = 64;
+
+/// puts `text` into an empty `content` without laying any of it out, and
+/// leaves the cursor (and so the scroll position) at the top.
+fn fill_content(content: &mut text_editor::Content, text: &str) {
+    use text_editor::{Action, Cursor, Edit, Position};
+
+    let mut rest = text;
+    while !rest.is_empty() {
+        // cut after a '\n' so a "\r\n" pair never straddles two pastes
+        let cut = rest
+            .match_indices('\n')
+            .nth(FILL_CHUNK_LINES - 1)
+            .map_or(rest.len(), |(i, _)| i + 1);
+        let (chunk, tail) = rest.split_at(cut);
+        content.perform(Action::Edit(Edit::Paste(std::sync::Arc::new(
+            chunk.to_string(),
+        ))));
+        rest = tail;
+    }
+    content.move_to(Cursor {
+        position: Position { line: 0, column: 0 },
+        selection: None,
+    });
+}
+
 impl Tab {
     /// replaces the response body text, resetting folds. `json` enables
     /// folding (the JSON view of a body that parsed as JSON).
     pub fn set_response_text(&mut self, text: &str, json: bool) {
         let foldable = json && !text.starts_with("// Invalid JSON");
         self.response_fold = super::json_fold::JsonFold::new(text, foldable);
-        self.response_body_editor = text_editor::Content::with_text(text);
+        self.replace_response_editor(text);
+    }
+
+    /// swaps in a response editor showing `text`.
+    fn replace_response_editor(&mut self, text: &str) {
+        let mut content =
+            std::mem::replace(&mut self.response_editor_spare, text_editor::Content::new());
+        fill_content(&mut content, text);
+        self.response_body_editor = content;
+        self.response_editor_scroll.reset();
     }
 
     /// applies a fold change by rewriting only the rows that differ, as one edit.
     fn apply_fold_change(&mut self, change: impl FnOnce(&mut super::json_fold::JsonFold)) {
         use text_editor::{Action, Cursor, Edit, Position};
 
-        let old = self.response_fold.display_lines();
+        let old = self.response_fold.display_lines().to_vec();
         change(&mut self.response_fold);
         let new = self.response_fold.display_lines();
 
-        let prefix = old.iter().zip(&new).take_while(|(a, b)| a == b).count();
+        let prefix = old.iter().zip(new).take_while(|(a, b)| a == b).count();
         let max_suffix = old.len().min(new.len()) - prefix;
         let suffix = old
             .iter()
@@ -114,8 +158,7 @@ impl Tab {
 
         let (Some(last_old), false) = (old_rows.last(), new_rows.is_empty()) else {
             if old_rows.len() != new_rows.len() || !old_rows.is_empty() {
-                self.response_body_editor =
-                    text_editor::Content::with_text(&self.response_fold.display_text());
+                self.replace_response_editor(&self.response_fold.display_text());
             }
             return;
         };
@@ -141,6 +184,8 @@ impl Tab {
             },
             selection: None,
         });
+        self.response_editor_scroll
+            .follow_cursor(prefix, self.response_body_editor.line_count());
     }
 
     pub fn new(id: usize) -> Self {
@@ -200,6 +245,8 @@ impl Tab {
             response_body_editor: text_editor::Content::with_text(""),
             response_fold: Default::default(),
             response_scroll: Default::default(),
+            response_editor_scroll: Default::default(),
+            response_editor_spare: text_editor::Content::new(),
             dirty: false,
             sse_active: false,
             sse_log: Vec::new(),
@@ -476,9 +523,23 @@ impl Tab {
                 self.apply_fold_change(|fold| fold.collapse_all());
             }
             TabMessage::ResponseBodyEditorAction(action) => {
-                if let iced::widget::text_editor::Action::Edit(_) = action {
-                } else {
-                    self.response_body_editor.perform(action);
+                if action.is_edit() {
+                    return;
+                }
+                let scrolled_lines = match action {
+                    text_editor::Action::Scroll { lines } => Some(lines),
+                    _ => None,
+                };
+                let cursor_before = self.response_body_editor.cursor().position;
+                self.response_body_editor.perform(action);
+
+                let total_lines = self.response_body_editor.line_count();
+                let cursor = self.response_body_editor.cursor().position;
+                if let Some(lines) = scrolled_lines {
+                    self.response_editor_scroll.scroll_lines(lines, total_lines);
+                } else if cursor != cursor_before {
+                    self.response_editor_scroll
+                        .follow_cursor(cursor.line, total_lines);
                 }
             }
 
