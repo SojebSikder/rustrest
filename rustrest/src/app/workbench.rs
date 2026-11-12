@@ -269,7 +269,17 @@ pub fn active_tab_message(app: &mut Rustrest, tab_msg: TabMessage) -> Task<Messa
             )),
         };
     }
-    if let TabMessage::ShowFieldContextMenu(target, value) = tab_msg {
+    if let TabMessage::ShowFieldContextMenu(target, mut value) = tab_msg {
+        // response view sends an empty value for "no selection" instead
+        // of materialising the whole body every frame; resolve it here
+        if matches!(
+            target,
+            crate::ui::context_menu::TabFieldTarget::ResponseBodyEditor
+        ) && value.is_empty()
+            && let Some(tab_state) = app.tabs.get(app.active_tab_index)
+        {
+            value = tab_state.tab.response_fold.full_text();
+        }
         app.overlays.active_context_menu = Some(ContextMenu::TextField {
             target: FieldTarget::Tab(target),
             current_value: value,

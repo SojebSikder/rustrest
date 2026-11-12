@@ -12,6 +12,11 @@ pub struct JsonFold {
     regions: BTreeMap<usize, usize>,
     /// opening lines of the collapsed regions
     collapsed: BTreeSet<usize>,
+    /// cached `compute_display_lines()`, rebuilt whenever folds change. the
+    /// view reads it every frame, so it mustn't walk the whole body each time
+    display: Vec<DisplayLine>,
+    /// widest line in chars (tabs count as 4), cached for the same reason
+    max_line_chars: usize,
 }
 
 /// one line of the folded view
@@ -34,11 +39,27 @@ impl JsonFold {
         } else {
             BTreeMap::new()
         };
-        Self {
+
+        let max_line_chars = lines
+            .iter()
+            .map(|line| line.chars().map(|c| if c == '\t' { 4 } else { 1 }).sum())
+            .max()
+            .unwrap_or(0);
+        let mut fold = Self {
             lines,
             regions,
             collapsed: BTreeSet::new(),
-        }
+            display: Vec::new(),
+            max_line_chars,
+        };
+        fold.display = fold.compute_display_lines();
+        fold
+    }
+
+    /// widest line of the full text, in chars. a collapsed row can only add
+    /// the ellipsis and a closing bracket or two on top of this
+    pub fn max_line_chars(&self) -> usize {
+        self.max_line_chars + ELLIPSIS.chars().count() + 2
     }
 
     pub fn has_regions(&self) -> bool {
@@ -53,10 +74,12 @@ impl JsonFold {
         if self.regions.contains_key(&line) && !self.collapsed.remove(&line) {
             self.collapsed.insert(line);
         }
+        self.display = self.compute_display_lines();
     }
 
     pub fn expand_all(&mut self) {
         self.collapsed.clear();
+        self.display = self.compute_display_lines();
     }
 
     /// collapses every region except the outermost ones, so the top-level
@@ -72,10 +95,15 @@ impl JsonFold {
                 _ => outer_end = Some(end),
             }
         }
+        self.display = self.compute_display_lines();
     }
 
     /// the visible lines, top to bottom, with their full-text line numbers
-    pub fn display_lines(&self) -> Vec<DisplayLine> {
+    pub fn display_lines(&self) -> &[DisplayLine] {
+        &self.display
+    }
+
+    fn compute_display_lines(&self) -> Vec<DisplayLine> {
         let mut out = Vec::with_capacity(self.lines.len());
         let mut i = 0;
 
@@ -97,7 +125,7 @@ impl JsonFold {
 
     /// the text to show in the editor, collapsed regions shortened
     pub fn display_text(&self) -> String {
-        self.rows_text(&self.display_lines())
+        self.rows_text(self.display_lines())
     }
 
     /// the editor text of one visible line
